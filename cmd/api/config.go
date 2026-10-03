@@ -20,6 +20,11 @@ type config struct {
 	// feature flags: every flag then takes its default.
 	FlagsURL     *url.URL
 	FlagsTimeout time.Duration
+
+	// FlagsFallbackFile is the path of a flagd-format flag definitions file
+	// whose default variants replace those of the copy compiled into the
+	// binary. Empty uses the embedded copy.
+	FlagsFallbackFile string
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
@@ -46,6 +51,8 @@ func loadConfig(getenv func(string) string) (config, error) {
 			cfg.FlagsURL = u
 		}
 	}
+
+	cfg.FlagsFallbackFile = getenv("FLAGS_FALLBACK_FILE")
 
 	// Short by default: flag evaluation sits on the request path.
 	if v := getenv("FLAGS_TIMEOUT"); v != "" {

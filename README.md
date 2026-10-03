@@ -144,9 +144,26 @@ curl localhost:8080/items        # now includes "total"
 ```
 
 Flags never fail a request. If flagd is unreachable, slow (`FLAGS_TIMEOUT`), or doesn't know the
-flag, the API logs a warning and uses the flag's default in code. Leave `FLAGS_URL` unset to run
-without a sidecar. To add a flag, define it in `flagd/flags.json` and read it with
-`Flags.Bool(ctx, key, default)` (see `internal/item/handlers.go`).
+flag, the API logs a warning and falls back to the flag's `defaultVariant` from
+`flagd/flags.json`. That is the same file flagd serves, compiled into the API binary
+(`flagd/embed.go`), so there is one place to define a flag and the fallback can't drift from it.
+Set `FLAGS_FALLBACK_FILE` to read a different flagd-format file at startup instead (for example
+one mounted from a ConfigMap). With `FLAGS_URL` unset the API skips flagd and uses those defaults
+alone. Only boolean flags are supported; a flag whose default variant isn't a boolean stops the
+service at startup.
+
+To add a flag:
+
+1. Define it in `flagd/flags.json`.
+2. Declare and read it in code:
+   ```go
+   var FlagFoo = flags.Declare("foo") // package level
+   ...
+   if f.Bool(ctx, FlagFoo) { ... }   // f is the package's Flags
+   ```
+
+`flags.Declare` registers the key, and the service refuses to start if any declared flag is
+missing from the definitions, so a typo or forgotten step fails fast, not at request time.
 
 Evaluation currently sends an empty context, so targeting rules in flagd (per user, per tenant)
 have nothing to match on yet. Pass request attributes in `flags.OFREP` when you need them.
@@ -161,6 +178,7 @@ The API reads these environment variables:
 | `UPSTREAM_TIMEOUT` | `5s`       | Timeout for each upstream request.                         |
 | `FLAGS_URL`        |            | flagd OFREP base URL, e.g. `http://flagd:8016`. Unset disables flags. |
 | `FLAGS_TIMEOUT`    | `500ms`    | Timeout for each flag evaluation.                          |
+| `FLAGS_FALLBACK_FILE` |         | flagd-format flag file whose defaults replace the embedded `flagd/flags.json`. |
 | `ADDR`             | `:8080`    | Listen address. Takes precedence over `PORT`.              |
 | `PORT`             |            | Listen port, used only when `ADDR` is unset.               |
 | `LOG_LEVEL`        | `info`     | `debug`, `info`, `warn`, or `error`.                       |
@@ -198,8 +216,10 @@ internal/httpx/          HTTP plumbing: env config, graceful Serve, middleware,
 internal/item/           Item model, Store interface, /items handlers,
                          HTTPStore (the API's upstream client)
 internal/item/itemtest/  MemStore: in-memory Store, used only by tests
-internal/flags/          OFREP client for the flagd sidecar
-flagd/                   Feature flag definitions (mounted into flagd)
+internal/flags/          OFREP client for the flagd sidecar, flag declarations,
+                         and fallback defaults derived from flagd/flags.json
+flagd/                   Feature flag definitions: served by flagd, and embedded
+                         in the API as its fallback values
 wiremock/mappings/       WireMock stubs (mounted)
 wiremock/faults/         Opt-in fault stubs (loaded via the admin API)
 compose.yaml             Local stack: api + WireMock + flagd

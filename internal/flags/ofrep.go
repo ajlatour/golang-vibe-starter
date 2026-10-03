@@ -21,28 +21,37 @@ const maxResponseBytes = 1 << 20 // 1 MiB
 
 // OFREP evaluates flags against an OFREP endpoint such as flagd's (port 8016).
 type OFREP struct {
-	baseURL string
-	client  *http.Client
-	logger  *slog.Logger
+	baseURL  string
+	client   *http.Client
+	logger   *slog.Logger
+	defaults Defaults
 }
 
 // NewOFREP returns an evaluator that sends requests to baseURL (for example
 // "http://flagd:8016") using client. The client should have a short timeout,
-// because evaluation happens on the request path.
-func NewOFREP(baseURL string, client *http.Client, logger *slog.Logger) *OFREP {
-	return &OFREP{baseURL: strings.TrimRight(baseURL, "/"), client: client, logger: logger}
+// because evaluation happens on the request path. defaults supplies the value
+// for any flag flagd can't evaluate.
+func NewOFREP(baseURL string, client *http.Client, logger *slog.Logger, defaults Defaults) *OFREP {
+	return &OFREP{baseURL: strings.TrimRight(baseURL, "/"), client: client, logger: logger, defaults: defaults}
 }
 
 // Bool returns the value of the boolean flag key. If the flag can't be
 // evaluated (flagd unreachable, flag missing, wrong type), it logs a warning
-// and returns def: a flag problem never fails a request.
-func (c *OFREP) Bool(ctx context.Context, key string, def bool) bool {
+// and returns the flag's configured default: a flag problem never fails a
+// request. A flag with no configured default is a bug in the defaults file;
+// it is logged at error level and treated as false.
+func (c *OFREP) Bool(ctx context.Context, key string) bool {
 	v, err := c.evalBool(ctx, key)
-	if err != nil {
-		c.logger.Warn("flag evaluation failed, using default", "flag", key, "default", def, "error", err)
-		return def
+	if err == nil {
+		return v
 	}
-	return v
+	def, ok := c.defaults[key]
+	if !ok {
+		c.logger.Error("flag evaluation failed and no default is configured, using false", "flag", key, "error", err)
+		return false
+	}
+	c.logger.Warn("flag evaluation failed, using default", "flag", key, "default", def, "error", err)
+	return def
 }
 
 func (c *OFREP) evalBool(ctx context.Context, key string) (bool, error) {

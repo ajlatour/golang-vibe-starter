@@ -173,15 +173,10 @@ func decodeBody(t *testing.T, rec *httptest.ResponseRecorder, v any) {
 	}
 }
 
-// fakeFlags is a Flags that returns fixed values by key and def otherwise.
+// fakeFlags is a Flags that returns fixed values by key (false if absent).
 type fakeFlags map[string]bool
 
-func (f fakeFlags) Bool(_ context.Context, key string, def bool) bool {
-	if v, ok := f[key]; ok {
-		return v
-	}
-	return def
-}
+func (f fakeFlags) Bool(_ context.Context, key string) bool { return f[key] }
 
 func TestListTotalFlag(t *testing.T) {
 	tests := []struct {
@@ -191,7 +186,7 @@ func TestListTotalFlag(t *testing.T) {
 	}{
 		{name: "no flags configured"},
 		{name: "flag off", opts: []item.Option{item.WithFlags(fakeFlags{item.FlagListTotal: false})}},
-		{name: "flag unknown uses default", opts: []item.Option{item.WithFlags(fakeFlags{})}},
+		{name: "flag absent", opts: []item.Option{item.WithFlags(fakeFlags{})}},
 		{name: "flag on", opts: []item.Option{item.WithFlags(fakeFlags{item.FlagListTotal: true})}, wantTotal: true},
 	}
 	for _, tt := range tests {

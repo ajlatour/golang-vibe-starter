@@ -7,6 +7,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -131,4 +135,46 @@ func startRun(t *testing.T, ctx context.Context, env map[string]string) (string,
 
 func getenvFrom(env map[string]string) func(string) string {
 	return func(k string) string { return env[k] }
+}
+
+func TestNewFlags(t *testing.T) {
+	logger := slog.New(slog.DiscardHandler)
+
+	t.Run("embedded flag definitions cover every flag the app declares", func(t *testing.T) {
+		if _, err := newFlags(logger, config{}); err != nil {
+			t.Fatalf("newFlags() error = %v", err)
+		}
+	})
+	t.Run("definitions file missing a flag is rejected", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "flags.json")
+		if err := os.WriteFile(path, []byte(`{"flags":{}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := newFlags(logger, config{FlagsFallbackFile: path})
+		if err == nil || !strings.Contains(err.Error(), item.FlagListTotal) {
+			t.Errorf("newFlags() error = %v, want one naming %q", err, item.FlagListTotal)
+		}
+	})
+	t.Run("unreadable definitions file is rejected", func(t *testing.T) {
+		if _, err := newFlags(logger, config{FlagsFallbackFile: filepath.Join(t.TempDir(), "nope.json")}); err == nil {
+			t.Error("newFlags() error = nil, want error")
+		}
+	})
+	t.Run("flagd down falls back to the definitions file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "flags.json")
+		if err := os.WriteFile(path, []byte(`{"flags":{"`+item.FlagListTotal+`":{"variants":{"on":true,"off":false},"defaultVariant":"on"}}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		dead := httptest.NewServer(http.NotFoundHandler())
+		u, _ := url.Parse(dead.URL)
+		dead.Close()
+
+		f, err := newFlags(logger, config{FlagsURL: u, FlagsTimeout: time.Second, FlagsFallbackFile: path})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !f.Bool(t.Context(), item.FlagListTotal) {
+			t.Error("Bool() = false, want the definitions-file default (true) when flagd is unreachable")
+		}
+	})
 }

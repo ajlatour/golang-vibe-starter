@@ -6,17 +6,20 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/ajlatour/golang-vibe-starter/internal/flags"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 )
 
 // FlagListTotal is the feature flag that adds a "total" count to the list
-// response. Off by default.
-const FlagListTotal = "items-list-total"
+// response. Declaring it here makes the service check at startup that
+// flagd/flags.json defines it.
+var FlagListTotal = flags.Declare("items-list-total")
 
-// Flags evaluates boolean feature flags. Implementations return def when a
-// flag can't be evaluated, so handlers never handle flag errors.
+// Flags evaluates boolean feature flags. Implementations fall back to a
+// configured default when a flag can't be evaluated, so handlers never handle
+// flag errors.
 type Flags interface {
-	Bool(ctx context.Context, key string, def bool) bool
+	Bool(ctx context.Context, key string) bool
 }
 
 // Option customizes RegisterRoutes.
@@ -24,7 +27,7 @@ type Option func(*options)
 
 type options struct{ flags Flags }
 
-// WithFlags enables feature flags. Without it every flag takes its default.
+// WithFlags enables feature flags. Without it every flag is off.
 func WithFlags(f Flags) Option {
 	return func(o *options) { o.flags = f }
 }
@@ -50,7 +53,7 @@ func handleList(logger *slog.Logger, store Store, flags Flags) http.HandlerFunc 
 			return
 		}
 		resp := map[string]any{"items": items}
-		if flags != nil && flags.Bool(r.Context(), FlagListTotal, false) {
+		if flags != nil && flags.Bool(r.Context(), FlagListTotal) {
 			resp["total"] = len(items)
 		}
 		httpx.WriteJSON(w, http.StatusOK, resp)

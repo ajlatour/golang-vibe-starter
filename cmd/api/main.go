@@ -53,13 +53,33 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	logger.Info("using upstream", "url", cfg.UpstreamURL.Redacted(), "timeout", cfg.UpstreamTimeout)
 	store := item.NewHTTPStore(cfg.UpstreamURL.String(), &http.Client{Timeout: cfg.UpstreamTimeout})
 
-	var opts []item.Option
-	if cfg.FlagsURL != nil {
-		logger.Info("using feature flags", "url", cfg.FlagsURL.Redacted(), "timeout", cfg.FlagsTimeout)
-		opts = append(opts, item.WithFlags(flags.NewOFREP(cfg.FlagsURL.String(), &http.Client{Timeout: cfg.FlagsTimeout}, logger)))
+	evaluator, err := newFlags(logger, cfg)
+	if err != nil {
+		return err
 	}
 
-	return httpx.Serve(ctx, logger, cfg.ServerConfig, newHandler(logger, store, opts...))
+	return httpx.Serve(ctx, logger, cfg.ServerConfig, newHandler(logger, store, item.WithFlags(evaluator)))
+}
+
+// newFlags returns the feature flag evaluator: flagd when FLAGS_URL is set,
+// otherwise the flag definitions' default values alone. Either way every flag
+// the application declares must be defined there, because those defaults are
+// what evaluation falls back to when flagd can't answer.
+func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
+	defaults, err := flags.LoadDefaults(cfg.FlagsFallbackFile)
+	if err != nil {
+		return nil, err
+	}
+	if err := defaults.Require(flags.Declared()...); err != nil {
+		return nil, err
+	}
+
+	if cfg.FlagsURL == nil {
+		logger.Info("feature flags: no FLAGS_URL, using default values only")
+		return defaults, nil
+	}
+	logger.Info("using feature flags", "url", cfg.FlagsURL.Redacted(), "timeout", cfg.FlagsTimeout)
+	return flags.NewOFREP(cfg.FlagsURL.String(), &http.Client{Timeout: cfg.FlagsTimeout}, logger, defaults), nil
 }
 
 // newHandler builds the API's root handler: routes plus middleware.

@@ -1,4 +1,5 @@
-# Only go.mod, internal/ and cmd/api/ are needed to build the image.
+# Only go.mod, flagd/ (embedded flag definitions), internal/ and cmd/api/ are
+# needed to build the image.
 .git
 .gitignore
 .dockerignore
@@ -9,4 +10,3 @@ compose.yaml
 **/*_test.go
 bin/
 wiremock/
-flagd/

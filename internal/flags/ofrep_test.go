@@ -17,7 +17,7 @@ func TestOFREPBool(t *testing.T) {
 		name     string
 		status   int
 		body     string
-		def      bool
+		def      bool // the configured default for "some-flag"
 		want     bool
 		wantWarn bool
 	}{
@@ -41,8 +41,8 @@ func TestOFREPBool(t *testing.T) {
 			defer srv.Close()
 
 			var logs bytes.Buffer
-			c := flags.NewOFREP(srv.URL+"/", srv.Client(), slog.New(slog.NewTextHandler(&logs, nil)))
-			if got := c.Bool(t.Context(), "some-flag", tt.def); got != tt.want {
+			c := flags.NewOFREP(srv.URL+"/", srv.Client(), slog.New(slog.NewTextHandler(&logs, nil)), flags.Defaults{"some-flag": tt.def})
+			if got := c.Bool(t.Context(), "some-flag"); got != tt.want {
 				t.Errorf("Bool() = %v, want %v", got, tt.want)
 			}
 			if warned := strings.Contains(logs.String(), "level=WARN"); warned != tt.wantWarn {
@@ -57,8 +57,22 @@ func TestOFREPBoolUnreachable(t *testing.T) {
 	url := srv.URL
 	srv.Close() // nothing is listening any more
 
-	c := flags.NewOFREP(url, &http.Client{Timeout: time.Second}, slog.New(slog.DiscardHandler))
-	if got := c.Bool(t.Context(), "k", true); !got {
+	c := flags.NewOFREP(url, &http.Client{Timeout: time.Second}, slog.New(slog.DiscardHandler), flags.Defaults{"k": true})
+	if got := c.Bool(t.Context(), "k"); !got {
 		t.Error("Bool() = false, want the default (true) when flagd is unreachable")
+	}
+}
+
+func TestOFREPBoolNoConfiguredDefault(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	defer srv.Close()
+
+	var logs bytes.Buffer
+	c := flags.NewOFREP(srv.URL, srv.Client(), slog.New(slog.NewTextHandler(&logs, nil)), flags.Defaults{})
+	if got := c.Bool(t.Context(), "undeclared"); got {
+		t.Error("Bool() = true, want false for a flag with no configured default")
+	}
+	if !strings.Contains(logs.String(), "level=ERROR") {
+		t.Errorf("want an error-level log for the missing default, got: %s", logs.String())
 	}
 }
