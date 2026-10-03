@@ -1,0 +1,17 @@
+# Build output
+/golang-vibe-starter
+/bin/
+
+# Test and coverage output
+*.test
+*.out
+coverage.*
+
+# Local env files
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
