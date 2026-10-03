@@ -9,7 +9,7 @@ import (
 )
 
 func TestServerRoutes(t *testing.T) {
-	srv := newServer(slog.New(slog.DiscardHandler))
+	srv := newServer(slog.New(slog.DiscardHandler), newMemStore())
 
 	tests := []struct {
 		name       string

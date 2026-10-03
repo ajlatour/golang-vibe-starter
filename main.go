@@ -41,7 +41,7 @@ func run(ctx context.Context, getenv func(string) string, stdout io.Writer) erro
 	logger := newLogger(stdout, cfg)
 
 	srv := &http.Server{
-		Handler:           newServer(logger),
+		Handler:           newServer(logger, newMemStore()),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
