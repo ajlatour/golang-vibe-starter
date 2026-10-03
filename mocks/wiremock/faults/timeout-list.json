@@ -1,0 +1,12 @@
+{
+  "id": "f0000000-0000-4000-8000-000000000002",
+  "name": "FAULT: GET /items responds after 8s (past the API's 5s UPSTREAM_TIMEOUT)",
+  "priority": 1,
+  "request": { "method": "GET", "url": "/items" },
+  "response": {
+    "status": 200,
+    "fixedDelayMilliseconds": 8000,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "items": [] }
+  }
+}

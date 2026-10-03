@@ -1,0 +1,16 @@
+{
+  "id": "f0000000-0000-4000-8000-000000000001",
+  "name": "FAULT: GET /items responds after 2s (under the API's 5s UPSTREAM_TIMEOUT)",
+  "priority": 1,
+  "request": { "method": "GET", "url": "/items" },
+  "response": {
+    "status": 200,
+    "fixedDelayMilliseconds": 2000,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": {
+      "items": [
+        { "id": "widget", "name": "Widget", "description": "A standard widget.", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z" }
+      ]
+    }
+  }
+}

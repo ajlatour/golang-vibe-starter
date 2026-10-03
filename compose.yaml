@@ -1,6 +1,21 @@
-# Local development stack: the API plus the mock upstream it reads items from.
+# Local development stack.
+#
+# Default: the API plus the lean Go mock upstream. Use this for normal dev
+# and for load testing.
 #   docker compose up --build
-# API:  http://localhost:8080   Mock: http://localhost:8081
+#   API: http://localhost:8080   Go mock: http://localhost:8081
+#
+# WireMock profile: a second API instance wired to WireMock, for declarative
+# stubs and fault injection. Targeting api-wiremock starts only it and
+# WireMock (the Go mock and default API stay down):
+#   docker compose up --build api-wiremock
+#   API: http://localhost:8090   WireMock: http://localhost:8082 (admin: /__admin)
+# Stop with: docker compose --profile wiremock down
+#
+# Compose profiles can only add services, never remove profile-less ones,
+# so WireMock gets its own API instance on its own port instead of
+# re-pointing the default one. Each API has exactly one upstream, and no
+# two services share a host port, so both stacks can even run at once.
 
 name: golang-vibe-starter
 
@@ -11,31 +26,39 @@ x-healthcheck: &healthcheck
   start_period: 10s
   start_interval: 1s
 
+x-api: &api
+  build:
+    context: .
+    dockerfile: cmd/api/Dockerfile
+  image: golang-vibe-starter-api
+  healthcheck:
+    <<: *healthcheck
+    test: ["CMD", "/api", "healthcheck"]
+  # Longer than the default SHUTDOWN_TIMEOUT (10s) so in-flight requests
+  # can drain before Docker sends SIGKILL.
+  stop_grace_period: 15s
+
+x-api-env: &api-env
+  UPSTREAM_TIMEOUT: 5s
+  LOG_FORMAT: text
+
 services:
   api:
-    build:
-      context: .
-      dockerfile: cmd/api/Dockerfile
+    <<: *api
     ports:
       - "8080:8080"
     environment:
+      <<: *api-env
       UPSTREAM_URL: http://mock:8080
-      UPSTREAM_TIMEOUT: 5s
-      LOG_FORMAT: text
     depends_on:
       mock:
         condition: service_healthy
-    healthcheck:
-      <<: *healthcheck
-      test: ["CMD", "/api", "healthcheck"]
-    # Longer than the default SHUTDOWN_TIMEOUT (10s) so in-flight requests
-    # can drain before Docker sends SIGKILL.
-    stop_grace_period: 15s
 
   mock:
     build:
       context: .
       dockerfile: cmd/mock/Dockerfile
+    image: golang-vibe-starter-mock
     ports:
       - "8081:8080" # exposed for poking at the mock directly
     environment:
@@ -43,4 +66,42 @@ services:
     healthcheck:
       <<: *healthcheck
       test: ["CMD", "/mock", "healthcheck"]
+    stop_grace_period: 15s
+
+  api-wiremock:
+    <<: *api
+    profiles: [wiremock]
+    ports:
+      - "8090:8080"
+    environment:
+      <<: *api-env
+      UPSTREAM_URL: http://wiremock:8080
+    depends_on:
+      wiremock:
+        condition: service_healthy
+
+  wiremock:
+    image: wiremock/wiremock:3.13.2 # the -alpine variant has no arm64 build
+    profiles: [wiremock]
+    ports:
+      - "8082:8080"
+    volumes:
+      # Happy-path stubs only. Fault stubs in mocks/wiremock/faults are added
+      # at runtime through the admin API; see README.
+      - ./mocks/wiremock/mappings:/home/wiremock/mappings:ro
+    environment:
+      # Fixed heap: no resize pauses mid-run, and a predictable footprint.
+      JAVA_OPTS: -Xms512m -Xmx512m
+    command:
+      # Defaults tuned for long-running load tests (see README):
+      - --no-request-journal # don't record every request in memory (unbounded heap growth)
+      - --disable-request-logging # no per-request log lines
+      - --async-response-enabled=true # delayed responses don't hold Jetty threads
+      - --async-response-threads=32
+      - --container-threads=200 # Jetty request thread pool, raised for concurrency
+      - --disable-gzip # the Go mock doesn't gzip; keep CPU cost comparable
+      - --disable-banner
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/__admin/health"]
     stop_grace_period: 15s

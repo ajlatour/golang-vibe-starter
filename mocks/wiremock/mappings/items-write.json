@@ -1,0 +1,144 @@
+{
+  "mappings": [
+    {
+      "name": "create/update: malformed body or unknown fields: 400",
+      "priority": 1,
+      "request": {
+        "method": "ANY",
+        "urlPathPattern": "/items(/[^/]+)?",
+        "headers": { "Content-Length": { "matches": "[0-9]+" } },
+        "bodyPatterns": [
+          { "not": { "matchesJsonSchema": "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"},\"description\":{\"type\":\"string\"}},\"additionalProperties\":false}" } }
+        ]
+      },
+      "response": {
+        "status": 400,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "error": "invalid JSON" }
+      }
+    },
+    {
+      "name": "create/update: name missing: 422",
+      "priority": 2,
+      "request": {
+        "method": "ANY",
+        "urlPathPattern": "/items(/[^/]+)?",
+        "headers": { "Content-Length": { "matches": "[0-9]+" } },
+        "bodyPatterns": [{ "not": { "matchesJsonPath": "$.name" } }]
+      },
+      "response": {
+        "status": 422,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "error": "name is required" }
+      }
+    },
+    {
+      "name": "create/update: name blank: 422",
+      "priority": 2,
+      "request": {
+        "method": "ANY",
+        "urlPathPattern": "/items(/[^/]+)?",
+        "bodyPatterns": [{ "matchesJsonPath": { "expression": "$.name", "matches": "^\\s*$" } }]
+      },
+      "response": {
+        "status": 422,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "error": "name is required" }
+      }
+    },
+    {
+      "name": "create/update: name too long: 422",
+      "priority": 2,
+      "request": {
+        "method": "ANY",
+        "urlPathPattern": "/items(/[^/]+)?",
+        "bodyPatterns": [{ "matchesJsonPath": { "expression": "$.name", "matches": "^(?s)\\s*\\S.{199,}\\S\\s*$" } }]
+      },
+      "response": {
+        "status": 422,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "error": "name must be at most 200 characters" }
+      }
+    },
+    {
+      "name": "create item (echoes name/description)",
+      "priority": 5,
+      "request": { "method": "POST", "url": "/items" },
+      "response": {
+        "status": 201,
+        "headers": { "Content-Type": "application/json", "Location": "/items/new-item" },
+        "body": "{\"id\":\"new-item\",\"name\":{{toJson (trim (jsonPath request.body '$.name'))}},\"description\":{{toJson (jsonPath request.body '$.description' default='')}},\"created_at\":\"{{now}}\",\"updated_at\":\"{{now}}\" }",
+        "transformers": ["response-template"]
+      }
+    },
+    {
+      "name": "update widget (echoes name/description)",
+      "priority": 5,
+      "request": { "method": "PUT", "url": "/items/widget" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "body": "{\"id\":\"widget\",\"name\":{{toJson (trim (jsonPath request.body '$.name'))}},\"description\":{{toJson (jsonPath request.body '$.description' default='')}},\"created_at\":\"2026-01-01T00:00:00Z\",\"updated_at\":\"{{now}}\" }",
+        "transformers": ["response-template"]
+      }
+    },
+    {
+      "name": "update gadget (echoes name/description)",
+      "priority": 5,
+      "request": { "method": "PUT", "url": "/items/gadget" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "body": "{\"id\":\"gadget\",\"name\":{{toJson (trim (jsonPath request.body '$.name'))}},\"description\":{{toJson (jsonPath request.body '$.description' default='')}},\"created_at\":\"2026-01-01T00:00:01Z\",\"updated_at\":\"{{now}}\" }",
+        "transformers": ["response-template"]
+      }
+    },
+    {
+      "name": "update gizmo (echoes name/description)",
+      "priority": 5,
+      "request": { "method": "PUT", "url": "/items/gizmo" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "body": "{\"id\":\"gizmo\",\"name\":{{toJson (trim (jsonPath request.body '$.name'))}},\"description\":{{toJson (jsonPath request.body '$.description' default='')}},\"created_at\":\"2026-01-01T00:00:02Z\",\"updated_at\":\"{{now}}\" }",
+        "transformers": ["response-template"]
+      }
+    },
+    {
+      "name": "update unknown item: 404",
+      "priority": 10,
+      "request": { "method": "PUT", "urlPathPattern": "/items/[^/]+" },
+      "response": {
+        "status": 404,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "error": "item not found" }
+      }
+    },
+    {
+      "name": "delete known item",
+      "priority": 5,
+      "request": { "method": "DELETE", "urlPathPattern": "/items/(widget|gadget|gizmo)" },
+      "response": { "status": 204 }
+    },
+    {
+      "name": "any other method on /items routes: 405",
+      "priority": 20,
+      "request": { "method": "ANY", "urlPathPattern": "/items(/[^/]+)?" },
+      "response": {
+        "status": 405,
+        "headers": { "Content-Type": "text/plain; charset=utf-8" },
+        "body": "Method Not Allowed\n"
+      }
+    },
+    {
+      "name": "delete unknown item: 404",
+      "priority": 10,
+      "request": { "method": "DELETE", "urlPathPattern": "/items/[^/]+" },
+      "response": {
+        "status": 404,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "error": "item not found" }
+      }
+    }
+  ]
+}

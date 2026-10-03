@@ -1,0 +1,60 @@
+{
+  "mappings": [
+    {
+      "name": "list items",
+      "priority": 5,
+      "request": { "method": "GET", "url": "/items" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "items": [
+            { "id": "widget", "name": "Widget", "description": "A standard widget.", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z" },
+            { "id": "gadget", "name": "Gadget", "description": "A gadget with extra features.", "created_at": "2026-01-01T00:00:01Z", "updated_at": "2026-01-01T00:00:01Z" },
+            { "id": "gizmo", "name": "Gizmo", "created_at": "2026-01-01T00:00:02Z", "updated_at": "2026-01-01T00:00:02Z" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "get widget",
+      "priority": 5,
+      "request": { "method": "GET", "url": "/items/widget" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "id": "widget", "name": "Widget", "description": "A standard widget.", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z" }
+      }
+    },
+    {
+      "name": "get gadget",
+      "priority": 5,
+      "request": { "method": "GET", "url": "/items/gadget" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "id": "gadget", "name": "Gadget", "description": "A gadget with extra features.", "created_at": "2026-01-01T00:00:01Z", "updated_at": "2026-01-01T00:00:01Z" }
+      }
+    },
+    {
+      "name": "get gizmo",
+      "priority": 5,
+      "request": { "method": "GET", "url": "/items/gizmo" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "id": "gizmo", "name": "Gizmo", "created_at": "2026-01-01T00:00:02Z", "updated_at": "2026-01-01T00:00:02Z" }
+      }
+    },
+    {
+      "name": "get unknown item: 404",
+      "priority": 10,
+      "request": { "method": "GET", "urlPathPattern": "/items/[^/]+" },
+      "response": {
+        "status": 404,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "error": "item not found" }
+      }
+    }
+  ]
+}

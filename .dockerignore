@@ -8,3 +8,4 @@ compose.yaml
 **/Dockerfile
 **/*_test.go
 bin/
+mocks/

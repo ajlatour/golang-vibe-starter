@@ -1,0 +1,11 @@
+{
+  "id": "f0000000-0000-4000-8000-000000000003",
+  "name": "FAULT: every /items request returns 503",
+  "priority": 1,
+  "request": { "method": "ANY", "urlPathPattern": "/items(/.*)?" },
+  "response": {
+    "status": 503,
+    "headers": { "Content-Type": "application/json", "Retry-After": "5" },
+    "jsonBody": { "error": "service unavailable" }
+  }
+}
