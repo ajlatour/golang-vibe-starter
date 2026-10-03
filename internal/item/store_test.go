@@ -9,15 +9,17 @@ import (
 	"testing"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 )
 
+// TestMemStore checks the test fake itself, since TestHTTPStore relies on it.
 func TestMemStore(t *testing.T) {
-	testStore(t, func(t *testing.T) item.Store { return item.NewMemStore() })
+	testStore(t, func(t *testing.T) item.Store { return itemtest.NewMemStore() })
 }
 
 // TestHTTPStore runs the contract against an HTTPStore talking to an
-// in-process upstream that serves the item routes from a MemStore, the same
-// shape as the mock service, without needing a container.
+// in-process upstream (the item routes over a MemStore), so it needs no
+// container. TestHTTPStoreLive covers the real WireMock upstream.
 func TestHTTPStore(t *testing.T) {
 	testStore(t, func(t *testing.T) item.Store {
 		return item.NewHTTPStore(newUpstream(t).URL, &http.Client{})
@@ -29,7 +31,7 @@ func TestHTTPStore(t *testing.T) {
 func newUpstream(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
-	item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), item.NewMemStore())
+	item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), itemtest.NewMemStore())
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv

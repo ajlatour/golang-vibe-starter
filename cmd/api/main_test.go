@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 )
 
 // TestRun starts the API on a random port against an in-process upstream
@@ -18,7 +19,7 @@ import (
 // proxied through it, runs the healthcheck subcommand against it, then
 // cancels the context and checks for a clean shutdown.
 func TestRun(t *testing.T) {
-	upstreamStore := item.NewMemStore()
+	upstreamStore := itemtest.NewMemStore()
 	seeded, err := upstreamStore.Create(t.Context(), item.Item{Name: "from upstream"})
 	if err != nil {
 		t.Fatalf("seed: %v", err)

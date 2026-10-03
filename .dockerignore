@@ -1,4 +1,4 @@
-# Only go.mod, internal/ and cmd/<service>/ are needed to build an image.
+# Only go.mod, internal/ and cmd/api/ are needed to build the image.
 .git
 .gitignore
 .dockerignore
@@ -8,4 +8,4 @@ compose.yaml
 **/Dockerfile
 **/*_test.go
 bin/
-mocks/
+wiremock/

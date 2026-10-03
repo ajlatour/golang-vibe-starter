@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -93,6 +94,72 @@ func TestHTTPStoreRequests(t *testing.T) {
 				t.Errorf("upstream path = %q, want %q", gotPath, tt.wantPath)
 			}
 		})
+	}
+}
+
+// TestHTTPStoreLive checks HTTPStore against a running upstream, to catch
+// drift between the WireMock stubs and what HTTPStore expects. It is skipped
+// unless LIVE_UPSTREAM_URL is set, e.g.:
+//
+//	docker compose up -d --wait mock
+//	LIVE_UPSTREAM_URL=http://localhost:8081 go test ./internal/item -run Live
+//
+// Assertions hold for a stateless stub server and a real backend alike: the
+// only item it updates or deletes is the one it created.
+func TestHTTPStoreLive(t *testing.T) {
+	base := os.Getenv("LIVE_UPSTREAM_URL")
+	if base == "" {
+		t.Skip("LIVE_UPSTREAM_URL not set")
+	}
+	ctx := t.Context()
+	store := item.NewHTTPStore(base, &http.Client{Timeout: 5 * time.Second})
+
+	list, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) == 0 {
+		t.Fatal("List returned no items; want seeded data")
+	}
+	for _, it := range list {
+		if it.ID == "" || it.Name == "" || it.CreatedAt.IsZero() || it.UpdatedAt.IsZero() {
+			t.Errorf("List item missing fields: %+v", it)
+		}
+	}
+	got, err := store.Get(ctx, list[0].ID)
+	if err != nil {
+		t.Fatalf("Get(%q): %v", list[0].ID, err)
+	}
+	if !sameItem(got, list[0]) {
+		t.Errorf("Get = %+v, want %+v (as listed)", got, list[0])
+	}
+
+	created, err := store.Create(ctx, item.Item{Name: "live test", Description: `say "hi"`})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.ID == "" || created.Name != "live test" || created.Description != `say "hi"` || created.CreatedAt.IsZero() {
+		t.Errorf("Create = %+v, want ID, timestamps and echoed fields", created)
+	}
+	updated, err := store.Update(ctx, item.Item{ID: created.ID, Name: "live renamed"})
+	if err != nil {
+		t.Fatalf("Update(%q): %v", created.ID, err)
+	}
+	if updated.ID != created.ID || updated.Name != "live renamed" || updated.Description != "" {
+		t.Errorf("Update = %+v, want ID %q with replaced fields", updated, created.ID)
+	}
+	if err := store.Delete(ctx, created.ID); err != nil {
+		t.Errorf("Delete(%q): %v", created.ID, err)
+	}
+
+	if _, err := store.Get(ctx, "does-not-exist"); !errors.Is(err, item.ErrNotFound) {
+		t.Errorf("Get unknown error = %v, want ErrNotFound", err)
+	}
+	if _, err := store.Update(ctx, item.Item{ID: "does-not-exist", Name: "x"}); !errors.Is(err, item.ErrNotFound) {
+		t.Errorf("Update unknown error = %v, want ErrNotFound", err)
+	}
+	if err := store.Delete(ctx, "does-not-exist"); !errors.Is(err, item.ErrNotFound) {
+		t.Errorf("Delete unknown error = %v, want ErrNotFound", err)
 	}
 }
 

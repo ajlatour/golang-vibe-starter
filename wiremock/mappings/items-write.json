@@ -105,6 +105,17 @@
       }
     },
     {
+      "name": "update new-item, the ID create returns (echoes name/description)",
+      "priority": 5,
+      "request": { "method": "PUT", "url": "/items/new-item" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "body": "{\"id\":\"new-item\",\"name\":{{toJson (trim (jsonPath request.body '$.name'))}},\"description\":{{toJson (jsonPath request.body '$.description' default='')}},\"created_at\":\"{{now}}\",\"updated_at\":\"{{now}}\" }",
+        "transformers": ["response-template"]
+      }
+    },
+    {
       "name": "update unknown item: 404",
       "priority": 10,
       "request": { "method": "PUT", "urlPathPattern": "/items/[^/]+" },
@@ -117,7 +128,7 @@
     {
       "name": "delete known item",
       "priority": 5,
-      "request": { "method": "DELETE", "urlPathPattern": "/items/(widget|gadget|gizmo)" },
+      "request": { "method": "DELETE", "urlPathPattern": "/items/(widget|gadget|gizmo|new-item)" },
       "response": { "status": 204 }
     },
     {

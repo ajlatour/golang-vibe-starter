@@ -1,6 +1,6 @@
-// Package item is the mock resource served by both services. The API serves
-// it backed by an HTTPStore pointed at the mock service, and the mock service
-// serves the same routes backed by a MemStore.
+// Package item is the placeholder resource the API serves. The API's routes
+// are backed by an HTTPStore that reads and writes items on an upstream
+// speaking the same /items contract (WireMock in local development).
 package item
 
 import (

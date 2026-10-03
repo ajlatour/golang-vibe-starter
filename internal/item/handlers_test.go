@@ -12,6 +12,7 @@ import (
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 )
 
 func TestHandlers(t *testing.T) {
@@ -97,7 +98,7 @@ func TestHandlers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := item.NewMemStore()
+			store := itemtest.NewMemStore()
 			seeded, err := store.Create(t.Context(), item.Item{Name: "seeded"})
 			if err != nil {
 				t.Fatalf("seed: %v", err)

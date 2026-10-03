@@ -13,8 +13,8 @@ import (
 )
 
 // HTTPStore is a Store backed by an upstream service that speaks the same
-// /items JSON API that RegisterRoutes serves: today the mock service, later
-// a real backend. Switching upstreams is a base URL change.
+// /items JSON API that RegisterRoutes serves: WireMock stubs in local
+// development, later a real backend. Switching upstreams is a base URL change.
 type HTTPStore struct {
 	baseURL string
 	client  *http.Client
