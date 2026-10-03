@@ -1,0 +1,46 @@
+# Local development stack: the API plus the mock upstream it reads items from.
+#   docker compose up --build
+# API:  http://localhost:8080   Mock: http://localhost:8081
+
+name: golang-vibe-starter
+
+x-healthcheck: &healthcheck
+  interval: 10s
+  timeout: 3s
+  retries: 3
+  start_period: 10s
+  start_interval: 1s
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: cmd/api/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      UPSTREAM_URL: http://mock:8080
+      UPSTREAM_TIMEOUT: 5s
+      LOG_FORMAT: text
+    depends_on:
+      mock:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "/api", "healthcheck"]
+    # Longer than the default SHUTDOWN_TIMEOUT (10s) so in-flight requests
+    # can drain before Docker sends SIGKILL.
+    stop_grace_period: 15s
+
+  mock:
+    build:
+      context: .
+      dockerfile: cmd/mock/Dockerfile
+    ports:
+      - "8081:8080" # exposed for poking at the mock directly
+    environment:
+      LOG_FORMAT: text
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "/mock", "healthcheck"]
+    stop_grace_period: 15s

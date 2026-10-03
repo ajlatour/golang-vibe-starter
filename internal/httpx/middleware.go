@@ -1,4 +1,4 @@
-package main
+package httpx
 
 import (
 	"log/slog"
@@ -6,6 +6,12 @@ import (
 	"runtime/debug"
 	"time"
 )
+
+// Middleware wraps h with the standard stack: request logging around panic
+// recovery, so a recovered panic is still logged as a 500.
+func Middleware(logger *slog.Logger, h http.Handler) http.Handler {
+	return logRequests(logger, recoverPanics(logger, h))
+}
 
 // logRequests logs one line per request with its status and duration.
 func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
@@ -41,7 +47,7 @@ func recoverPanics(logger *slog.Logger, next http.Handler) http.Handler {
 				"panic", v,
 				"stack", string(debug.Stack()),
 			)
-			writeError(w, http.StatusInternalServerError, "internal server error")
+			WriteError(w, http.StatusInternalServerError, "internal server error")
 		}()
 		next.ServeHTTP(w, r)
 	})

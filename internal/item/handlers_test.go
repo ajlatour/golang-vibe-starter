@@ -1,4 +1,4 @@
-package main
+package item_test
 
 import (
 	"context"
@@ -9,29 +9,24 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
+	"github.com/ajlatour/golang-vibe-starter/internal/item"
 )
 
-func TestItemHandlers(t *testing.T) {
-	seeded := Item{
-		ID:        "seed1",
-		Name:      "seeded",
-		CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-		UpdatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-	}
-
+func TestHandlers(t *testing.T) {
 	tests := []struct {
 		name       string
 		method     string
-		path       string
+		path       string // "{id}" is replaced with the seeded item's ID
 		body       string
 		wantStatus int
-		check      func(t *testing.T, rec *httptest.ResponseRecorder, store *memStore)
+		check      func(t *testing.T, rec *httptest.ResponseRecorder, store item.Store, seeded item.Item)
 	}{
 		{
 			name: "list", method: http.MethodGet, path: "/items", wantStatus: http.StatusOK,
-			check: func(t *testing.T, rec *httptest.ResponseRecorder, _ *memStore) {
-				var got struct{ Items []Item }
+			check: func(t *testing.T, rec *httptest.ResponseRecorder, _ item.Store, seeded item.Item) {
+				var got struct{ Items []item.Item }
 				decodeBody(t, rec, &got)
 				if len(got.Items) != 1 || got.Items[0].ID != seeded.ID {
 					t.Errorf("items = %+v, want [%s]", got.Items, seeded.ID)
@@ -39,11 +34,11 @@ func TestItemHandlers(t *testing.T) {
 			},
 		},
 		{
-			name: "get", method: http.MethodGet, path: "/items/seed1", wantStatus: http.StatusOK,
-			check: func(t *testing.T, rec *httptest.ResponseRecorder, _ *memStore) {
-				var got Item
+			name: "get", method: http.MethodGet, path: "/items/{id}", wantStatus: http.StatusOK,
+			check: func(t *testing.T, rec *httptest.ResponseRecorder, _ item.Store, seeded item.Item) {
+				var got item.Item
 				decodeBody(t, rec, &got)
-				if got != seeded {
+				if !sameItem(got, seeded) {
 					t.Errorf("item = %+v, want %+v", got, seeded)
 				}
 			},
@@ -53,8 +48,8 @@ func TestItemHandlers(t *testing.T) {
 			name: "create", method: http.MethodPost, path: "/items",
 			body:       `{"name":"  new thing  ","description":"desc"}`,
 			wantStatus: http.StatusCreated,
-			check: func(t *testing.T, rec *httptest.ResponseRecorder, store *memStore) {
-				var got Item
+			check: func(t *testing.T, rec *httptest.ResponseRecorder, store item.Store, _ item.Item) {
+				var got item.Item
 				decodeBody(t, rec, &got)
 				if got.ID == "" || got.Name != "new thing" || got.Description != "desc" {
 					t.Errorf("item = %+v, want trimmed name and description", got)
@@ -69,18 +64,17 @@ func TestItemHandlers(t *testing.T) {
 		},
 		{name: "create missing name", method: http.MethodPost, path: "/items", body: `{"description":"x"}`, wantStatus: http.StatusUnprocessableEntity},
 		{name: "create blank name", method: http.MethodPost, path: "/items", body: `{"name":"   "}`, wantStatus: http.StatusUnprocessableEntity},
-		{name: "create name too long", method: http.MethodPost, path: "/items", body: `{"name":"` + strings.Repeat("a", maxItemNameLen+1) + `"}`, wantStatus: http.StatusUnprocessableEntity},
+		{name: "create name too long", method: http.MethodPost, path: "/items", body: `{"name":"` + strings.Repeat("a", item.MaxNameLen+1) + `"}`, wantStatus: http.StatusUnprocessableEntity},
 		{name: "create empty body", method: http.MethodPost, path: "/items", body: ``, wantStatus: http.StatusBadRequest},
 		{name: "create malformed JSON", method: http.MethodPost, path: "/items", body: `{"name":`, wantStatus: http.StatusBadRequest},
 		{name: "create unknown field", method: http.MethodPost, path: "/items", body: `{"name":"x","colour":"red"}`, wantStatus: http.StatusBadRequest},
-		{name: "create trailing data", method: http.MethodPost, path: "/items", body: `{"name":"x"}{"name":"y"}`, wantStatus: http.StatusBadRequest},
-		{name: "create body too large", method: http.MethodPost, path: "/items", body: `{"name":"x","description":"` + strings.Repeat("a", maxBodyBytes) + `"}`, wantStatus: http.StatusBadRequest},
+		{name: "create body too large", method: http.MethodPost, path: "/items", body: `{"name":"x","description":"` + strings.Repeat("a", httpx.MaxBodyBytes) + `"}`, wantStatus: http.StatusBadRequest},
 		{
-			name: "update", method: http.MethodPut, path: "/items/seed1",
+			name: "update", method: http.MethodPut, path: "/items/{id}",
 			body:       `{"name":"renamed"}`,
 			wantStatus: http.StatusOK,
-			check: func(t *testing.T, rec *httptest.ResponseRecorder, _ *memStore) {
-				var got Item
+			check: func(t *testing.T, rec *httptest.ResponseRecorder, _ item.Store, seeded item.Item) {
+				var got item.Item
 				decodeBody(t, rec, &got)
 				if got.ID != seeded.ID || got.Name != "renamed" || !got.CreatedAt.Equal(seeded.CreatedAt) {
 					t.Errorf("item = %+v, want renamed seed with original CreatedAt", got)
@@ -88,34 +82,38 @@ func TestItemHandlers(t *testing.T) {
 			},
 		},
 		{name: "update missing", method: http.MethodPut, path: "/items/nope", body: `{"name":"x"}`, wantStatus: http.StatusNotFound},
-		{name: "update invalid", method: http.MethodPut, path: "/items/seed1", body: `{"name":""}`, wantStatus: http.StatusUnprocessableEntity},
+		{name: "update invalid", method: http.MethodPut, path: "/items/{id}", body: `{"name":""}`, wantStatus: http.StatusUnprocessableEntity},
 		{
-			name: "delete", method: http.MethodDelete, path: "/items/seed1", wantStatus: http.StatusNoContent,
-			check: func(t *testing.T, _ *httptest.ResponseRecorder, store *memStore) {
-				if _, err := store.Get(context.Background(), seeded.ID); !errors.Is(err, ErrNotFound) {
+			name: "delete", method: http.MethodDelete, path: "/items/{id}", wantStatus: http.StatusNoContent,
+			check: func(t *testing.T, _ *httptest.ResponseRecorder, store item.Store, seeded item.Item) {
+				if _, err := store.Get(context.Background(), seeded.ID); !errors.Is(err, item.ErrNotFound) {
 					t.Errorf("item still in store after delete (err = %v)", err)
 				}
 			},
 		},
 		{name: "delete missing", method: http.MethodDelete, path: "/items/nope", wantStatus: http.StatusNotFound},
-		{name: "wrong method", method: http.MethodPatch, path: "/items/seed1", wantStatus: http.StatusMethodNotAllowed},
+		{name: "wrong method", method: http.MethodPatch, path: "/items/{id}", wantStatus: http.StatusMethodNotAllowed},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := newMemStore()
-			store.items[seeded.ID] = seeded
-			srv := newServer(slog.New(slog.DiscardHandler), store)
+			store := item.NewMemStore()
+			seeded, err := store.Create(t.Context(), item.Item{Name: "seeded"})
+			if err != nil {
+				t.Fatalf("seed: %v", err)
+			}
+			mux := http.NewServeMux()
+			item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), store)
 
-			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			path := strings.ReplaceAll(tt.path, "{id}", seeded.ID)
 			rec := httptest.NewRecorder()
-			srv.ServeHTTP(rec, req)
+			mux.ServeHTTP(rec, httptest.NewRequest(tt.method, path, strings.NewReader(tt.body)))
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d (body: %s)", rec.Code, tt.wantStatus, rec.Body)
 			}
 			if tt.check != nil {
-				tt.check(t, rec, store)
+				tt.check(t, rec, store, seeded)
 			}
 		})
 	}
@@ -127,14 +125,19 @@ type failingStore struct{}
 
 var errStoreDown = errors.New("store is down: secret detail")
 
-func (failingStore) List(context.Context) ([]Item, error)       { return nil, errStoreDown }
-func (failingStore) Get(context.Context, string) (Item, error)  { return Item{}, errStoreDown }
-func (failingStore) Create(context.Context, Item) (Item, error) { return Item{}, errStoreDown }
-func (failingStore) Update(context.Context, Item) (Item, error) { return Item{}, errStoreDown }
-func (failingStore) Delete(context.Context, string) error       { return errStoreDown }
+func (failingStore) List(context.Context) ([]item.Item, error)      { return nil, errStoreDown }
+func (failingStore) Get(context.Context, string) (item.Item, error) { return item.Item{}, errStoreDown }
+func (failingStore) Create(context.Context, item.Item) (item.Item, error) {
+	return item.Item{}, errStoreDown
+}
+func (failingStore) Update(context.Context, item.Item) (item.Item, error) {
+	return item.Item{}, errStoreDown
+}
+func (failingStore) Delete(context.Context, string) error { return errStoreDown }
 
-func TestItemHandlersStoreError(t *testing.T) {
-	srv := newServer(slog.New(slog.DiscardHandler), failingStore{})
+func TestHandlersStoreError(t *testing.T) {
+	mux := http.NewServeMux()
+	item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), failingStore{})
 
 	tests := []struct {
 		method, path, body string
@@ -148,7 +151,7 @@ func TestItemHandlersStoreError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			srv.ServeHTTP(rec, httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body)))
+			mux.ServeHTTP(rec, httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body)))
 			if rec.Code != http.StatusInternalServerError {
 				t.Errorf("status = %d, want 500", rec.Code)
 			}

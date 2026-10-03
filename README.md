@@ -1,17 +1,39 @@
 # golang-vibe-starter
 
-A Go HTTP microservice built on the standard library only: no third-party dependencies.
+Go HTTP microservices built on the standard library only: no third-party dependencies.
 
-## Requirements
+There are two services:
 
-Go 1.27+. If your installed `go` is older, `GOTOOLCHAIN=auto` (the default) switches to the toolchain pinned in `go.mod`.
+- **api** (`cmd/api`): the service being built. It serves `/items` and gets the data from an upstream service over HTTP.
+- **mock** (`cmd/mock`): a stand-in for that upstream. It serves `/items` from memory, starts with seeded sample data, and resets on restart.
 
-## Run
+```
+client ──▶ api :8080 ──HTTP──▶ mock :8080 (host :8081)
+           HTTPStore            MemStore
+```
+
+The API's upstream is set by `UPSTREAM_URL`. To use a real backend that serves the same `/items` contract, change that variable; no code changes are needed.
+
+## Run with Docker Compose
 
 ```sh
-go run .
-curl localhost:8080/healthz
+docker compose up --build
+curl localhost:8080/items          # through the API
+curl localhost:8081/items          # the mock directly
+docker compose down
 ```
+
+The mock must pass its healthcheck before the API starts, and both services have healthchecks.
+The images are distroless and static (about 16 MB). They contain no shell or curl, so each binary checks its own health with `/<binary> healthcheck`.
+
+## Run without Docker
+
+```sh
+PORT=8081 go run ./cmd/mock
+UPSTREAM_URL=http://localhost:8081 go run ./cmd/api
+```
+
+Go 1.27+ is required. If your installed `go` is older, `GOTOOLCHAIN=auto` (the default) switches to the version pinned in `go.mod`.
 
 ## Test
 
@@ -19,19 +41,30 @@ curl localhost:8080/healthz
 go test ./...
 ```
 
+The tests don't need Docker. Wherever a test needs an upstream, it starts one in-process with `net/http/httptest`.
+
 ## Configuration
 
-All configuration comes from environment variables.
+Both services read these environment variables:
 
-| Variable           | Default | Description                                             |
-| ------------------ | ------- | ------------------------------------------------------- |
-| `ADDR`             | `:8080` | Listen address. Takes precedence over `PORT`.           |
-| `PORT`             |         | Listen port, used only when `ADDR` is unset.            |
-| `LOG_LEVEL`        | `info`  | `debug`, `info`, `warn`, or `error`.                    |
-| `LOG_FORMAT`       | `json`  | `json` or `text`.                                       |
-| `SHUTDOWN_TIMEOUT` | `10s`   | How long to let in-flight requests finish on SIGTERM.   |
+| Variable           | Default | Description                                            |
+| ------------------ | ------- | ------------------------------------------------------ |
+| `ADDR`             | `:8080` | Listen address. Takes precedence over `PORT`.          |
+| `PORT`             |         | Listen port, used only when `ADDR` is unset.           |
+| `LOG_LEVEL`        | `info`  | `debug`, `info`, `warn`, or `error`.                   |
+| `LOG_FORMAT`       | `json`  | `json` or `text`.                                      |
+| `SHUTDOWN_TIMEOUT` | `10s`   | How long in-flight requests get to finish on SIGTERM.  |
+
+The API also reads these:
+
+| Variable           | Default    | Description                                                |
+| ------------------ | ---------- | ---------------------------------------------------------- |
+| `UPSTREAM_URL`     | (required) | Base URL of the items upstream. May include a path prefix. |
+| `UPSTREAM_TIMEOUT` | `5s`       | Timeout for each upstream request.                         |
 
 ## Endpoints
+
+Both services serve these:
 
 | Method | Path          | Success | Description                                   |
 | ------ | ------------- | ------- | --------------------------------------------- |
@@ -51,29 +84,20 @@ Errors are JSON, `{"error":"..."}`:
 - 400: malformed body
 - 404: unknown ID
 - 422: validation failure
-- 500: unexpected failure; details are logged, not returned
-
-```sh
-curl -X POST localhost:8080/items -d '{"name":"first"}'
-curl localhost:8080/items
-```
-
-## Storage
-
-Handlers depend only on the `ItemStore` interface (`items.go`). The only implementation
-right now is `memStore` (`memstore.go`), which keeps data in memory, so data is lost on restart.
-To add a real datastore, implement `ItemStore`, run it through `testItemStore` in
-`memstore_test.go` (the shared contract test), and pass it to `newServer` in `run()`.
+- 500: unexpected failure, including the upstream being unreachable; details are logged, not returned
 
 ## Layout
 
-Everything is in `package main` at the repo root for now:
+```
+cmd/api/          API service: config, wiring, Dockerfile
+cmd/mock/         Mock upstream: seed data, wiring, Dockerfile
+internal/httpx/   Shared plumbing: env config, graceful Serve, middleware,
+                  JSON helpers, healthcheck probe
+internal/item/    Item model, Store interface, /items handlers,
+                  MemStore (mock) and HTTPStore (API → upstream)
+compose.yaml      Local stack
+```
 
-- `main.go`: entrypoint, `run()`, graceful shutdown
-- `config.go`: environment config
-- `server.go`: route registration (`addRoutes`) and JSON request/response helpers
-- `middleware.go`: request logging and panic recovery
-- `items.go`: `Item` model, `ItemStore` interface, and item handlers
-- `memstore.go`: in-memory `ItemStore`
-
-New endpoints go in `addRoutes`. Once there is real domain logic, move it into its own package (for example `internal/<domain>`) instead of growing `package main`.
+The handlers in `internal/item` depend only on the `Store` interface. To add a new backing store,
+implement `Store` and run it through `testStore` in `internal/item/store_test.go`, the contract
+that `MemStore` and `HTTPStore` both pass.

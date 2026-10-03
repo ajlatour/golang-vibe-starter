@@ -1,0 +1,10 @@
+# Only go.mod, internal/ and cmd/<service>/ are needed to build an image.
+.git
+.gitignore
+.dockerignore
+.env*
+*.md
+compose.yaml
+**/Dockerfile
+**/*_test.go
+bin/

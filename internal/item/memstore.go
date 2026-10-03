@@ -1,4 +1,4 @@
-package main
+package item
 
 import (
 	"cmp"
@@ -9,21 +9,21 @@ import (
 	"time"
 )
 
-// memStore is an in-memory ItemStore. Data is lost on restart.
-type memStore struct {
+// MemStore is an in-memory Store. Data is lost on restart. The mock service
+// uses it as its backing data.
+type MemStore struct {
 	mu    sync.RWMutex
 	items map[string]Item
 	now   func() time.Time
 }
 
-var _ ItemStore = (*memStore)(nil)
+var _ Store = (*MemStore)(nil)
 
-func newMemStore() *memStore {
-	return &memStore{items: make(map[string]Item), now: time.Now}
+func NewMemStore() *MemStore {
+	return &MemStore{items: make(map[string]Item), now: time.Now}
 }
 
-// List returns all items, oldest first.
-func (s *memStore) List(_ context.Context) ([]Item, error) {
+func (s *MemStore) List(_ context.Context) ([]Item, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	items := make([]Item, 0, len(s.items))
@@ -36,7 +36,7 @@ func (s *memStore) List(_ context.Context) ([]Item, error) {
 	return items, nil
 }
 
-func (s *memStore) Get(_ context.Context, id string) (Item, error) {
+func (s *MemStore) Get(_ context.Context, id string) (Item, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	it, ok := s.items[id]
@@ -46,7 +46,7 @@ func (s *memStore) Get(_ context.Context, id string) (Item, error) {
 	return it, nil
 }
 
-func (s *memStore) Create(_ context.Context, it Item) (Item, error) {
+func (s *MemStore) Create(_ context.Context, it Item) (Item, error) {
 	now := s.now().UTC()
 	it.ID = rand.Text()
 	it.CreatedAt = now
@@ -58,7 +58,7 @@ func (s *memStore) Create(_ context.Context, it Item) (Item, error) {
 	return it, nil
 }
 
-func (s *memStore) Update(_ context.Context, it Item) (Item, error) {
+func (s *MemStore) Update(_ context.Context, it Item) (Item, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cur, ok := s.items[it.ID]
@@ -72,7 +72,7 @@ func (s *memStore) Update(_ context.Context, it Item) (Item, error) {
 	return cur, nil
 }
 
-func (s *memStore) Delete(_ context.Context, id string) error {
+func (s *MemStore) Delete(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.items[id]; !ok {

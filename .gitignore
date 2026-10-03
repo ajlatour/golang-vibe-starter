@@ -1,5 +1,6 @@
 # Build output
-/golang-vibe-starter
+/api
+/mock
 /bin/
 
 # Test and coverage output
