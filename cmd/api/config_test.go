@@ -55,3 +55,53 @@ func TestLoadConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadConfigFlags(t *testing.T) {
+	base := map[string]string{"UPSTREAM_URL": "http://mock:8080"}
+	with := func(k, v string) func(string) string {
+		return func(key string) string {
+			if key == k {
+				return v
+			}
+			return base[key]
+		}
+	}
+
+	t.Run("disabled by default", func(t *testing.T) {
+		got, err := loadConfig(func(k string) string { return base[k] })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.FlagsURL != nil {
+			t.Errorf("FlagsURL = %v, want nil", got.FlagsURL)
+		}
+		if got.FlagsTimeout != 500*time.Millisecond {
+			t.Errorf("FlagsTimeout = %v, want 500ms", got.FlagsTimeout)
+		}
+	})
+	t.Run("url and timeout", func(t *testing.T) {
+		env := map[string]string{"UPSTREAM_URL": "http://mock:8080", "FLAGS_URL": "http://flagd:8016", "FLAGS_TIMEOUT": "1s"}
+		got, err := loadConfig(func(k string) string { return env[k] })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.FlagsURL == nil || got.FlagsURL.String() != "http://flagd:8016" {
+			t.Errorf("FlagsURL = %v, want http://flagd:8016", got.FlagsURL)
+		}
+		if got.FlagsTimeout != time.Second {
+			t.Errorf("FlagsTimeout = %v, want 1s", got.FlagsTimeout)
+		}
+	})
+	for name, getenv := range map[string]func(string) string{
+		"relative url":    with("FLAGS_URL", "/ofrep"),
+		"bad scheme":      with("FLAGS_URL", "grpc://flagd:8013"),
+		"zero timeout":    with("FLAGS_TIMEOUT", "0s"),
+		"garbage timeout": with("FLAGS_TIMEOUT", "soon"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadConfig(getenv); err == nil {
+				t.Error("loadConfig() error = nil, want error")
+			}
+		})
+	}
+}

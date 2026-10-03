@@ -172,3 +172,57 @@ func decodeBody(t *testing.T, rec *httptest.ResponseRecorder, v any) {
 		t.Fatalf("decode body: %v", err)
 	}
 }
+
+// fakeFlags is a Flags that returns fixed values by key and def otherwise.
+type fakeFlags map[string]bool
+
+func (f fakeFlags) Bool(_ context.Context, key string, def bool) bool {
+	if v, ok := f[key]; ok {
+		return v
+	}
+	return def
+}
+
+func TestListTotalFlag(t *testing.T) {
+	tests := []struct {
+		name      string
+		opts      []item.Option
+		wantTotal bool
+	}{
+		{name: "no flags configured"},
+		{name: "flag off", opts: []item.Option{item.WithFlags(fakeFlags{item.FlagListTotal: false})}},
+		{name: "flag unknown uses default", opts: []item.Option{item.WithFlags(fakeFlags{})}},
+		{name: "flag on", opts: []item.Option{item.WithFlags(fakeFlags{item.FlagListTotal: true})}, wantTotal: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := itemtest.NewMemStore()
+			for _, name := range []string{"a", "b"} {
+				if _, err := store.Create(t.Context(), item.Item{Name: name}); err != nil {
+					t.Fatalf("seed: %v", err)
+				}
+			}
+			mux := http.NewServeMux()
+			item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), store, tt.opts...)
+
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/items", nil))
+
+			var got struct {
+				Items []item.Item
+				Total *int
+			}
+			decodeBody(t, rec, &got)
+			if len(got.Items) != 2 {
+				t.Errorf("items = %d, want 2", len(got.Items))
+			}
+			if tt.wantTotal {
+				if got.Total == nil || *got.Total != 2 {
+					t.Errorf("total = %v, want 2", got.Total)
+				}
+			} else if got.Total != nil {
+				t.Errorf("total = %d, want it absent", *got.Total)
+			}
+		})
+	}
+}

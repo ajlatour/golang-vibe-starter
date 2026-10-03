@@ -6,7 +6,10 @@ and gets the data from an upstream service over HTTP. In local development that 
 
 ```
 client ──▶ api :8080 ──HTTP──▶ mock (WireMock) :8080, host :8081
-           HTTPStore            stubs in wiremock/mappings
+           HTTPStore  │         stubs in wiremock/mappings
+                      │
+                      └─OFREP─▶ flagd :8016 (OpenFeature sidecar)
+                                flags in flagd/flags.json
 ```
 
 The upstream is set by `UPSTREAM_URL`. To use a real backend that serves the same `/items`
@@ -121,6 +124,33 @@ p99 and p99.9 as upstream latency. When load testing:
 - WireMock competes with the API and the load generator for CPU. Consider capping it with `cpus:`
   in compose, and keep the load generator's CPU usage in view.
 
+## Feature flags (OpenFeature)
+
+[flagd](https://flagd.dev), an OpenFeature-compliant flag service, runs next to the API as a
+sidecar. The API evaluates flags over [OFREP](https://openfeature.dev/specification/appendix-c)
+(the OpenFeature Remote Evaluation Protocol), which is plain HTTP/JSON, so the project stays
+standard-library only. There is no OpenFeature SDK or gRPC dependency.
+
+Flags live in `flagd/flags.json`, which flagd watches and reloads on change, with no restart.
+
+| Flag               | Type    | Default | Effect                                              |
+| ------------------ | ------- | ------- | --------------------------------------------------- |
+| `items-list-total` | boolean | off     | `GET /items` also returns `"total": <item count>`.  |
+
+```sh
+curl -s -X POST localhost:8016/ofrep/v1/evaluate/flags/items-list-total -d '{"context":{}}'
+# edit flagd/flags.json: set "defaultVariant" to "on", then
+curl localhost:8080/items        # now includes "total"
+```
+
+Flags never fail a request. If flagd is unreachable, slow (`FLAGS_TIMEOUT`), or doesn't know the
+flag, the API logs a warning and uses the flag's default in code. Leave `FLAGS_URL` unset to run
+without a sidecar. To add a flag, define it in `flagd/flags.json` and read it with
+`Flags.Bool(ctx, key, default)` (see `internal/item/handlers.go`).
+
+Evaluation currently sends an empty context, so targeting rules in flagd (per user, per tenant)
+have nothing to match on yet. Pass request attributes in `flags.OFREP` when you need them.
+
 ## Configuration
 
 The API reads these environment variables:
@@ -129,6 +159,8 @@ The API reads these environment variables:
 | ------------------ | ---------- | ---------------------------------------------------------- |
 | `UPSTREAM_URL`     | (required) | Base URL of the items upstream. May include a path prefix. |
 | `UPSTREAM_TIMEOUT` | `5s`       | Timeout for each upstream request.                         |
+| `FLAGS_URL`        |            | flagd OFREP base URL, e.g. `http://flagd:8016`. Unset disables flags. |
+| `FLAGS_TIMEOUT`    | `500ms`    | Timeout for each flag evaluation.                          |
 | `ADDR`             | `:8080`    | Listen address. Takes precedence over `PORT`.              |
 | `PORT`             |            | Listen port, used only when `ADDR` is unset.               |
 | `LOG_LEVEL`        | `info`     | `debug`, `info`, `warn`, or `error`.                       |
@@ -166,9 +198,11 @@ internal/httpx/          HTTP plumbing: env config, graceful Serve, middleware,
 internal/item/           Item model, Store interface, /items handlers,
                          HTTPStore (the API's upstream client)
 internal/item/itemtest/  MemStore: in-memory Store, used only by tests
+internal/flags/          OFREP client for the flagd sidecar
+flagd/                   Feature flag definitions (mounted into flagd)
 wiremock/mappings/       WireMock stubs (mounted)
 wiremock/faults/         Opt-in fault stubs (loaded via the admin API)
-compose.yaml             Local stack: api + WireMock
+compose.yaml             Local stack: api + WireMock + flagd
 ```
 
 The handlers in `internal/item` depend only on the `Store` interface. To add a new backing store,

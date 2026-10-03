@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/ajlatour/golang-vibe-starter/internal/flags"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 )
@@ -52,13 +53,19 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	logger.Info("using upstream", "url", cfg.UpstreamURL.Redacted(), "timeout", cfg.UpstreamTimeout)
 	store := item.NewHTTPStore(cfg.UpstreamURL.String(), &http.Client{Timeout: cfg.UpstreamTimeout})
 
-	return httpx.Serve(ctx, logger, cfg.ServerConfig, newHandler(logger, store))
+	var opts []item.Option
+	if cfg.FlagsURL != nil {
+		logger.Info("using feature flags", "url", cfg.FlagsURL.Redacted(), "timeout", cfg.FlagsTimeout)
+		opts = append(opts, item.WithFlags(flags.NewOFREP(cfg.FlagsURL.String(), &http.Client{Timeout: cfg.FlagsTimeout}, logger)))
+	}
+
+	return httpx.Serve(ctx, logger, cfg.ServerConfig, newHandler(logger, store, opts...))
 }
 
 // newHandler builds the API's root handler: routes plus middleware.
-func newHandler(logger *slog.Logger, items item.Store) http.Handler {
+func newHandler(logger *slog.Logger, items item.Store, opts ...item.Option) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", httpx.Healthz)
-	item.RegisterRoutes(mux, logger, items)
+	item.RegisterRoutes(mux, logger, items, opts...)
 	return httpx.Middleware(logger, mux)
 }

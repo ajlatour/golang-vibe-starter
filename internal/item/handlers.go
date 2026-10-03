@@ -1,6 +1,7 @@
 package item
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -8,23 +9,51 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 )
 
+// FlagListTotal is the feature flag that adds a "total" count to the list
+// response. Off by default.
+const FlagListTotal = "items-list-total"
+
+// Flags evaluates boolean feature flags. Implementations return def when a
+// flag can't be evaluated, so handlers never handle flag errors.
+type Flags interface {
+	Bool(ctx context.Context, key string, def bool) bool
+}
+
+// Option customizes RegisterRoutes.
+type Option func(*options)
+
+type options struct{ flags Flags }
+
+// WithFlags enables feature flags. Without it every flag takes its default.
+func WithFlags(f Flags) Option {
+	return func(o *options) { o.flags = f }
+}
+
 // RegisterRoutes adds the /items CRUD routes to mux, backed by store.
-func RegisterRoutes(mux *http.ServeMux, logger *slog.Logger, store Store) {
-	mux.Handle("GET /items", handleList(logger, store))
+func RegisterRoutes(mux *http.ServeMux, logger *slog.Logger, store Store, opts ...Option) {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+	mux.Handle("GET /items", handleList(logger, store, o.flags))
 	mux.Handle("POST /items", handleCreate(logger, store))
 	mux.Handle("GET /items/{id}", handleGet(logger, store))
 	mux.Handle("PUT /items/{id}", handleUpdate(logger, store))
 	mux.Handle("DELETE /items/{id}", handleDelete(logger, store))
 }
 
-func handleList(logger *slog.Logger, store Store) http.HandlerFunc {
+func handleList(logger *slog.Logger, store Store, flags Flags) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		items, err := store.List(r.Context())
 		if err != nil {
 			httpx.ServerError(logger, w, r, err)
 			return
 		}
-		httpx.WriteJSON(w, http.StatusOK, map[string][]Item{"items": items})
+		resp := map[string]any{"items": items}
+		if flags != nil && flags.Bool(r.Context(), FlagListTotal, false) {
+			resp["total"] = len(items)
+		}
+		httpx.WriteJSON(w, http.StatusOK, resp)
 	}
 }
 
