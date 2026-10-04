@@ -275,3 +275,50 @@ func TestUpstreamTimeoutIsStillAnError(t *testing.T) {
 		t.Errorf("log = %v, want ERROR", line)
 	}
 }
+
+func TestTruncate(t *testing.T) {
+	tests := []struct {
+		in   string
+		n    int
+		want string
+	}{
+		{"short", 10, "short"},
+		{"exact", 5, "exact"},
+		{"abcdef", 3, "abc…"},
+		{"héllo wörld", 5, "héllo…"}, // counts runes, never splits one
+		{"", 3, ""},
+	}
+	for _, tt := range tests {
+		if got := Truncate(tt.in, tt.n); got != tt.want {
+			t.Errorf("Truncate(%q, %d) = %q, want %q", tt.in, tt.n, got, tt.want)
+		}
+	}
+}
+
+func TestRedactURLError(t *testing.T) {
+	_, err := http.Get("http://alice:s3cret@127.0.0.1:1/v1/items")
+	if err == nil {
+		t.Fatal("expected a connection error")
+	}
+	got := RedactURLError(fmt.Errorf("upstream: %w", err)).Error()
+	if strings.Contains(got, "s3cret") || strings.Contains(got, "***") {
+		t.Errorf("error %q still shows the password", got)
+	}
+	if !strings.Contains(got, "xxxxx") {
+		t.Errorf("error %q, want the password shown as xxxxx like url.Redacted", got)
+	}
+
+	plain := errors.New("not a url error")
+	if RedactURLError(plain) != plain {
+		t.Error("RedactURLError changed an error that isn't a *url.Error")
+	}
+}
+
+func TestLongPathIsTruncatedInRequestLog(t *testing.T) {
+	long := "/items/" + strings.Repeat("a", 5000)
+	line := serveAt(t, long, 200)
+	path, _ := line[LogKeyPath].(string)
+	if n := len([]rune(path)); n > MaxLoggedPath+1 {
+		t.Errorf("logged path has %d runes, want at most %d", n, MaxLoggedPath+1)
+	}
+}

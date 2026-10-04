@@ -29,6 +29,9 @@ func TestLoadConfig(t *testing.T) {
 		{name: "upstream relative", env: map[string]string{"UPSTREAM_URL": "/items"}, wantErr: true},
 		{name: "upstream bad scheme", env: map[string]string{"UPSTREAM_URL": "ftp://mock"}, wantErr: true},
 		{name: "upstream no host", env: map[string]string{"UPSTREAM_URL": "http://"}, wantErr: true},
+		{name: "upstream with query", env: map[string]string{"UPSTREAM_URL": "http://mock?token=abc"}, wantErr: true},
+		{name: "upstream with empty query", env: map[string]string{"UPSTREAM_URL": "http://mock/v1?"}, wantErr: true},
+		{name: "upstream with fragment", env: map[string]string{"UPSTREAM_URL": "http://mock/v1#x"}, wantErr: true},
 		{name: "upstream unparseable", env: map[string]string{"UPSTREAM_URL": "http://[::1"}, wantErr: true},
 		{name: "bad upstream timeout", env: map[string]string{"UPSTREAM_URL": "http://mock", "UPSTREAM_TIMEOUT": "0s"}, wantErr: true},
 		{name: "shared config error surfaces", env: map[string]string{"UPSTREAM_URL": "http://mock", "LOG_LEVEL": "loud"}, wantErr: true},
@@ -95,6 +98,7 @@ func TestLoadConfigFlags(t *testing.T) {
 	for name, getenv := range map[string]func(string) string{
 		"relative url":    with("FLAGS_URL", "/ofrep"),
 		"bad scheme":      with("FLAGS_URL", "grpc://flagd:8013"),
+		"query string":    with("FLAGS_URL", "http://flagd:8016?key=abc"),
 		"zero timeout":    with("FLAGS_TIMEOUT", "0s"),
 		"garbage timeout": with("FLAGS_TIMEOUT", "soon"),
 	} {

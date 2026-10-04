@@ -61,7 +61,7 @@ func requestAttrs(r *http.Request) []slog.Attr {
 	return []slog.Attr{
 		slog.String(LogKeyMethod, r.Method),
 		slog.String(LogKeyRoute, r.Pattern),
-		slog.String(LogKeyPath, r.URL.Path),
+		slog.String(LogKeyPath, Truncate(r.URL.Path, MaxLoggedPath)),
 	}
 }
 

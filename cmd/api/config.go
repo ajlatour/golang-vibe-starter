@@ -76,7 +76,8 @@ func loadConfig(getenv func(string) string) (config, error) {
 	return cfg, errors.Join(errs...)
 }
 
-// parseHTTPURL parses v as an absolute http(s) URL.
+// parseHTTPURL parses v as an absolute http(s) base URL, without a query
+// string or fragment.
 func parseHTTPURL(v string) (*url.URL, error) {
 	u, err := url.Parse(v)
 	if err != nil {
@@ -84,6 +85,12 @@ func parseHTTPURL(v string) (*url.URL, error) {
 	}
 	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return nil, fmt.Errorf("must be an absolute http(s) URL, got %q", u.Redacted())
+	}
+	// These are base URLs that request paths are appended to, so a query or
+	// fragment could never work, and any token in one would end up in logged
+	// errors.
+	if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return nil, fmt.Errorf("must not contain a query string or fragment, got %q", u.Redacted())
 	}
 	return u, nil
 }

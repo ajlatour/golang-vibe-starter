@@ -157,7 +157,7 @@ func (c *OFREP) evalBool(ctx context.Context, key string) (bool, error) {
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return false, &unavailableError{fmt.Errorf("ofrep %s: %w", path, err)}
+		return false, &unavailableError{fmt.Errorf("ofrep %s: %w", path, httpx.RedactURLError(err))}
 	}
 	body := io.LimitReader(resp.Body, maxResponseBytes)
 	defer func() {
@@ -172,7 +172,7 @@ func (c *OFREP) evalBool(ctx context.Context, key string) (bool, error) {
 			ErrorDetails string `json:"errorDetails"`
 		}
 		_ = json.NewDecoder(body).Decode(&e)
-		err := fmt.Errorf("ofrep %s: unexpected status %d: %s %q", path, resp.StatusCode, e.ErrorCode, e.ErrorDetails)
+		err := fmt.Errorf("ofrep %s: unexpected status %d: %s %q", path, resp.StatusCode, httpx.Truncate(e.ErrorCode, 64), httpx.Truncate(e.ErrorDetails, 200))
 		if resp.StatusCode >= 500 {
 			return false, &unavailableError{err}
 		}

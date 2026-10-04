@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -261,4 +262,55 @@ func TestUpstreamFailureEndToEnd(t *testing.T) {
 	if rec.Body.String() == "" || bytes.Contains(rec.Body.Bytes(), []byte("db down")) {
 		t.Errorf("response body %q leaks the upstream message", rec.Body)
 	}
+}
+
+// TestUpstreamErrorsAreRedactedAndBounded checks what can reach a log line
+// through an upstream error: credentials in the base URL are masked, the
+// upstream's own error message is capped, and so is a very long path.
+func TestUpstreamErrorsAreRedactedAndBounded(t *testing.T) {
+	t.Run("credentials in the base URL", func(t *testing.T) {
+		dead := httptest.NewServer(http.NotFoundHandler())
+		base := dead.URL
+		dead.Close()
+		base = "http://alice:s3cret@" + base[len("http://"):]
+
+		_, err := item.NewHTTPStore(base, &http.Client{Timeout: time.Second}).List(t.Context())
+		if err == nil {
+			t.Fatal("expected an error")
+		}
+		if strings.Contains(err.Error(), "s3cret") || strings.Contains(err.Error(), "***") {
+			t.Errorf("error %q shows the password", err)
+		}
+	})
+
+	t.Run("upstream error message is capped", func(t *testing.T) {
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": strings.Repeat("x", 5000)})
+		}))
+		defer upstream.Close()
+
+		_, err := item.NewHTTPStore(upstream.URL, upstream.Client()).List(t.Context())
+		if err == nil || len(err.Error()) > 400 {
+			t.Errorf("error is %d bytes, want it capped well under 400: %.120q", len(err.Error()), err)
+		}
+	})
+
+	t.Run("long path is capped in the error and the log", func(t *testing.T) {
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer upstream.Close()
+
+		var logs bytes.Buffer
+		store := item.NewHTTPStore(upstream.URL, upstream.Client(), item.WithStoreLogger(debugLogger(&logs)))
+		_, err := store.Get(t.Context(), strings.Repeat("a", 5000))
+		if err == nil || len(err.Error()) > 1000 {
+			t.Errorf("error is %d bytes, want it capped", len(err.Error()))
+		}
+		if logs.Len() > 2000 {
+			t.Errorf("log output is %d bytes, want it capped", logs.Len())
+		}
+	})
 }

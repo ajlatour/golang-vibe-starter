@@ -28,6 +28,10 @@ type HTTPStore struct {
 
 var _ Store = (*HTTPStore)(nil)
 
+// maxLoggedUpstreamMessage caps the upstream's own error message, the one
+// piece of an upstream response body that is quoted in errors and logs.
+const maxLoggedUpstreamMessage = 200
+
 // maxResponseBytes caps how much of an upstream response is read.
 const maxResponseBytes = 4 << 20 // 4 MiB
 
@@ -134,7 +138,7 @@ func itemPath(id string) string {
 // than want is an *UpstreamError that includes the upstream's error message.
 // Every call is logged: see WithStoreLogger.
 func (s *HTTPStore) do(ctx context.Context, method, path string, body any, want int, out any) error {
-	call := method + " " + path
+	call := method + " " + httpx.Truncate(path, httpx.MaxLoggedPath)
 	start := time.Now()
 	status, err := s.roundTrip(ctx, method, path, body, want, out)
 	elapsed := time.Since(start)
@@ -161,18 +165,21 @@ func (s *HTTPStore) do(ctx context.Context, method, path string, body any, want 
 // roundTrip performs one call. It returns the response status (0 if no
 // response arrived) alongside any error.
 func (s *HTTPStore) roundTrip(ctx context.Context, method, path string, body any, want int, out any) (status int, err error) {
+	// Everything below that reaches an error message, and so a log line, uses
+	// logPath, not path.
+	logPath := httpx.Truncate(path, httpx.MaxLoggedPath)
 	var reqBody io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			return 0, fmt.Errorf("upstream %s %s: encode request: %w", method, path, err)
+			return 0, fmt.Errorf("upstream %s %s: encode request: %w", method, logPath, err)
 		}
 		reqBody = bytes.NewReader(b)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, s.baseURL+path, reqBody)
 	if err != nil {
-		return 0, fmt.Errorf("upstream %s %s: %w", method, path, err)
+		return 0, fmt.Errorf("upstream %s %s: %w", method, logPath, err)
 	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
@@ -181,7 +188,7 @@ func (s *HTTPStore) roundTrip(ctx context.Context, method, path string, body any
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("upstream %s %s: %w", method, path, err)
+		return 0, fmt.Errorf("upstream %s %s: %w", method, logPath, httpx.RedactURLError(err))
 	}
 	respBody := io.LimitReader(resp.Body, maxResponseBytes)
 	defer func() {
@@ -200,14 +207,14 @@ func (s *HTTPStore) roundTrip(ctx context.Context, method, path string, body any
 			Error string `json:"error"`
 		}
 		_ = json.NewDecoder(respBody).Decode(&e)
-		return resp.StatusCode, fmt.Errorf("upstream %s %s: unexpected status %d: %q", method, path, resp.StatusCode, e.Error)
+		return resp.StatusCode, fmt.Errorf("upstream %s %s: unexpected status %d: %q", method, logPath, resp.StatusCode, httpx.Truncate(e.Error, maxLoggedUpstreamMessage))
 	}
 
 	if out == nil {
 		return resp.StatusCode, nil
 	}
 	if err := json.NewDecoder(respBody).Decode(out); err != nil {
-		return resp.StatusCode, fmt.Errorf("upstream %s %s: decode response: %w", method, path, err)
+		return resp.StatusCode, fmt.Errorf("upstream %s %s: decode response: %w", method, logPath, err)
 	}
 	return resp.StatusCode, nil
 }

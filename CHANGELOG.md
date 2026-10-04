@@ -6,15 +6,8 @@ everything is under Unreleased.
 
 ## Roadmap
 
-Planned work for structured logging. Phases 1 to 3 are done (see Unreleased); the rest is not
-started.
-The goal is logs that are easy to read and to query when debugging a deployed instance.
-
-### Phase 4: safety and tests
-
-- Write down the redaction rules: never log bodies, query strings, or headers outside an
-  allowlist; URLs always via `Redacted()`.
-- Extend log-output tests so required keys, `request_id` on error lines, and levels can't drift.
+The structured logging plan (phases 1 to 4) is complete; see Unreleased. The goal was logs that
+are easy to read and to query when debugging a deployed instance. What's left is deferred:
 
 ### Deferred
 
@@ -59,6 +52,13 @@ The goal is logs that are easy to read and to query when debugging a deployed in
   - A failed call returns an `*item.UpstreamError`, and the handler's `internal error` line
     includes the same three fields, so one line shows what the upstream did. Error messages are
     unchanged.
+- Structured logging, phase 4:
+  - Written rules for log lines in the README: what is never logged, the bounds on logged values,
+    and how to add a line.
+  - A log contract test (`cmd/api/logcontract_test.go`) that runs the whole service and checks
+    every line against a schema table: required fields, levels, `request_id`, forbidden field
+    names, planted secrets, unredacted URLs and line size. A log message missing from the table
+    fails the test.
 - Feature flags with a flagd (OpenFeature) sidecar, evaluated over OFREP. The demo flag
   `items-list-total` adds `"total"` to `GET /items`.
 - Flag fallbacks: when flagd can't answer, the API uses each flag's `defaultVariant` from
@@ -68,6 +68,15 @@ The goal is logs that are easy to read and to query when debugging a deployed in
 - `FLAGS_URL`, `FLAGS_TIMEOUT` and `FLAGS_FALLBACK_FILE` environment variables.
 
 ### Changed
+
+- Logging safety (phase 4):
+  - `UPSTREAM_URL` and `FLAGS_URL` are rejected at startup if they contain a query string or
+    fragment. Request paths are appended to these URLs, so they never worked, and a token in one
+    would have appeared in logged errors.
+  - Credentials in a base URL are masked in logged transport errors (`user:xxxxx@`). Before, the
+    username was visible.
+  - `path` and upstream paths are cut at 512 characters, and the upstream's and flagd's error
+    messages at 200.
 
 - Log field renames, which affect any existing log queries:
   - `err` is now `error` (on `internal error` lines).

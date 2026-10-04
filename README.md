@@ -174,9 +174,9 @@ The API reads these environment variables:
 
 | Variable           | Default    | Description                                                |
 | ------------------ | ---------- | ---------------------------------------------------------- |
-| `UPSTREAM_URL`     | (required) | Base URL of the items upstream. May include a path prefix. |
+| `UPSTREAM_URL`     | (required) | Base URL of the items upstream. May include a path prefix, but no query string or fragment. |
 | `UPSTREAM_TIMEOUT` | `5s`       | Timeout for each upstream request.                         |
-| `FLAGS_URL`        |            | flagd OFREP base URL, e.g. `http://flagd:8016`. Unset disables flags. |
+| `FLAGS_URL`        |            | flagd OFREP base URL, e.g. `http://flagd:8016`, without a query string or fragment. Unset disables flags. |
 | `FLAGS_TIMEOUT`    | `500ms`    | Timeout for each flag evaluation.                          |
 | `FLAGS_FALLBACK_FILE` |         | flagd-format flag file whose defaults replace the embedded `flagd/flags.json`. |
 | `ADDR`             | `:8080`    | Listen address. Takes precedence over `PORT`.              |
@@ -238,8 +238,37 @@ confused. A client disconnecting mid-call is logged at `DEBUG`, not as an upstre
 and `duration_ms`, how long the outage lasted) when it's back. A problem with a single flag logs
 one `WARN` until it evaluates again. Per-evaluation detail is `DEBUG`.
 
-Request and response bodies, query strings and headers are not logged, and URLs logged at startup
-have credentials redacted.
+### Rules for log lines
+
+What is never logged:
+
+- Request or response bodies. The one exception is the upstream's own `error` message, quoted in
+  an upstream failure and capped at 200 characters.
+- Query strings. `path` is the URL path only, and the base URLs in config (`UPSTREAM_URL`,
+  `FLAGS_URL`) are rejected at startup if they contain a query string or fragment.
+- Headers, except the correlation ID, which is validated first (see above). `Authorization`,
+  `Cookie` and everything else are never read by the logging code.
+- URL credentials. A URL goes into a log only through `(*url.URL).Redacted()`, and any error that
+  can come from `http.Client.Do` goes through `httpx.RedactURLError` first, because net/http puts
+  the URL in the error text.
+
+Bounds: `path` and `upstream` paths are cut at 512 characters, and the upstream and flagd error
+messages at 200, with a trailing `…`. Use `httpx.Truncate` for any other logged value that comes
+from outside the service.
+
+To add a log line:
+
+1. Log with a `*Context` method (`InfoContext`, `LogAttrs(ctx, ...)`) so it gets `request_id`. A
+   line without the request's context can't be correlated.
+2. Use the schema's field names (`error`, `duration_ms`, `route`, ...), the constants in
+   `internal/httpx/log.go`, and `httpx.DurationMS` for durations.
+3. Pick the level by who should act: `ERROR` for the service's own failures, `WARN` for a
+   dependency misbehaving, `INFO` for normal events, `DEBUG` for per-call detail.
+4. Add the message to `logContract` in `cmd/api/logcontract_test.go` with its level and required
+   fields. The test runs the whole service and fails on any message it doesn't know, on missing
+   fields, wrong levels, a missing `request_id`, forbidden field names (`err`, `duration`), planted
+   secrets (in bodies, query strings, headers and URL credentials), unredacted URLs, and
+   unbounded lines. Update the table above to match.
 
 `version` comes from the commit Go stamps into the binary. The Docker build doesn't include
 `.git`, so pass it in: `VERSION=$(git rev-parse --short HEAD) docker compose up --build`. Without
