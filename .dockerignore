@@ -10,3 +10,4 @@ compose.yaml
 **/*_test.go
 bin/
 wiremock/
+docs/

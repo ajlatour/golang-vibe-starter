@@ -21,6 +21,12 @@ are easy to read and to query when debugging a deployed instance. What's left is
 
 ### Added
 
+- An OpenAPI 3.0 spec of the API, `docs/openapi.json`: the routes, request and response schemas,
+  status codes (including 502 and 504 for upstream failures) and the `Client-Correlation-Id`
+  header. Tests (`cmd/api/openapi_test.go`) run the real handlers against it, so the spec and the
+  code can't drift apart: routes, statuses, bodies, headers, the `Item` fields, the name-length
+  limit and the correlation ID format are all checked.
+
 - Request and upstream lifecycle logging: a log line at each of the four ends of a request, all at
   `INFO` and sharing the request's `request_id`:
   - `request received` when it arrives (`method`, `path`, `content_length`);

@@ -1,0 +1,257 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "golang-vibe-starter API",
+    "version": "0.1.0",
+    "description": "A small HTTP API over a placeholder `items` resource. Item data comes from an upstream service, so a failure to reach or understand the upstream is reported as 502 or 504, never as a 500. Every response carries a `Client-Correlation-Id` header; send one to tie the service's log lines to your own, or quote the one returned when reporting a problem.\n\nThis file is checked against the running handlers by tests (`cmd/api/openapi_test.go`): routes, status codes, response bodies, headers and the limits stated here must match what the service actually does."
+  },
+  "servers": [
+    { "url": "http://localhost:8080", "description": "Local development (docker compose up)" }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "healthz",
+        "summary": "Liveness check",
+        "description": "Reports ok whenever the process can serve HTTP. It doesn't check the upstream.",
+        "parameters": [{ "$ref": "#/components/parameters/CorrelationID" }],
+        "responses": {
+          "200": {
+            "description": "The service is up.",
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Health" } }
+            }
+          }
+        }
+      }
+    },
+    "/items": {
+      "get": {
+        "operationId": "listItems",
+        "summary": "List items",
+        "description": "Returns all items, oldest first. When the `items-list-total` feature flag is on, the response also carries `total`.",
+        "parameters": [{ "$ref": "#/components/parameters/CorrelationID" }],
+        "responses": {
+          "200": {
+            "description": "The items.",
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ItemList" } }
+            }
+          },
+          "500": { "$ref": "#/components/responses/InternalError" },
+          "502": { "$ref": "#/components/responses/BadGateway" },
+          "504": { "$ref": "#/components/responses/GatewayTimeout" }
+        }
+      },
+      "post": {
+        "operationId": "createItem",
+        "summary": "Create an item",
+        "parameters": [{ "$ref": "#/components/parameters/CorrelationID" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ItemInput" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created item, with its URL in `Location`.",
+            "headers": {
+              "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" },
+              "Location": {
+                "required": true,
+                "description": "Path of the new item, `/items/{id}`.",
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Item" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "422": { "$ref": "#/components/responses/Unprocessable" },
+          "500": { "$ref": "#/components/responses/InternalError" },
+          "502": { "$ref": "#/components/responses/BadGateway" },
+          "504": { "$ref": "#/components/responses/GatewayTimeout" }
+        }
+      }
+    },
+    "/items/{id}": {
+      "parameters": [
+        { "$ref": "#/components/parameters/ItemID" },
+        { "$ref": "#/components/parameters/CorrelationID" }
+      ],
+      "get": {
+        "operationId": "getItem",
+        "summary": "Get one item",
+        "responses": {
+          "200": {
+            "description": "The item.",
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Item" } }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "500": { "$ref": "#/components/responses/InternalError" },
+          "502": { "$ref": "#/components/responses/BadGateway" },
+          "504": { "$ref": "#/components/responses/GatewayTimeout" }
+        }
+      },
+      "put": {
+        "operationId": "updateItem",
+        "summary": "Replace an item's name and description",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/ItemInput" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated item.",
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Item" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "422": { "$ref": "#/components/responses/Unprocessable" },
+          "500": { "$ref": "#/components/responses/InternalError" },
+          "502": { "$ref": "#/components/responses/BadGateway" },
+          "504": { "$ref": "#/components/responses/GatewayTimeout" }
+        }
+      },
+      "delete": {
+        "operationId": "deleteItem",
+        "summary": "Delete an item",
+        "responses": {
+          "204": {
+            "description": "The item was deleted. No body.",
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "500": { "$ref": "#/components/responses/InternalError" },
+          "502": { "$ref": "#/components/responses/BadGateway" },
+          "504": { "$ref": "#/components/responses/GatewayTimeout" }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "ItemID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "The item's ID.",
+        "schema": { "type": "string" }
+      },
+      "CorrelationID": {
+        "name": "Client-Correlation-Id",
+        "in": "header",
+        "required": false,
+        "description": "Your own ID for this request. It is echoed in the response and appears as `request_id` on every log line for the request. A value that doesn't fit the schema is ignored, and the service generates one instead.",
+        "schema": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" }
+      }
+    },
+    "headers": {
+      "CorrelationID": {
+        "required": true,
+        "description": "The request's correlation ID: yours if you sent a valid one, otherwise one the service generated.",
+        "schema": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" }
+      }
+    },
+    "schemas": {
+      "Item": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "created_at", "updated_at"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string", "description": "Omitted when empty." },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ItemInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "The body of a create or replace. The body is limited to 1 MiB, and fields other than these are rejected.",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Required. Surrounding whitespace is trimmed, and what's left must be 1 to 200 characters.",
+            "maxLength": 200,
+            "pattern": "\\S"
+          },
+          "description": { "type": "string" }
+        }
+      },
+      "ItemList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["items"],
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/Item" } },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The number of items. Present only when the `items-list-total` feature flag is on."
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": { "status": { "type": "string", "enum": ["ok"] } }
+      },
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string", "description": "A short message safe to show a client. Details are logged, not returned." }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "The body isn't usable: malformed JSON, the wrong shape or types, an unknown field, an empty body, or over 1 MiB.",
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "NotFound": {
+        "description": "No item has that ID.",
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "Unprocessable": {
+        "description": "The body is well-formed but a value is invalid: `name` is missing, blank, or too long.",
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "InternalError": {
+        "description": "An unexpected failure in this service itself.",
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "BadGateway": {
+        "description": "The upstream couldn't give a usable answer: connection refused or reset, an error status, or a body that wouldn't decode.",
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "GatewayTimeout": {
+        "description": "The upstream didn't answer in time.",
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      }
+    }
+  }
+}

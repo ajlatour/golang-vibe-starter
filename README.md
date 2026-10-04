@@ -339,6 +339,20 @@ it, container logs show `version=devel`.
 | PUT    | `/items/{id}` | 200     | Replace an item's `name` and `description`.   |
 | DELETE | `/items/{id}` | 204     | Delete an item.                               |
 
+The full contract is in [`docs/openapi.json`](docs/openapi.json), an OpenAPI 3.0 spec: every route,
+request and response schema, status code and header, including the `Client-Correlation-Id`
+header. Open it in any OpenAPI viewer (for example Swagger Editor, or `npx @redocly/cli
+preview-docs docs/openapi.json`). It is JSON rather than YAML because the project is standard
+library only, and Go has no YAML parser.
+
+The spec can't drift from the code: `cmd/api/openapi_test.go` runs the real handlers and fails
+if a route is served but not documented (or the reverse), if an answer has a status the spec
+doesn't list, if a documented status is never produced, if a response body or header doesn't match
+its schema, if `item.Item` and the `Item` schema disagree about fields, or if the limits stated in
+the spec (the 200-character name, the correlation ID format) differ from what the service
+enforces. When you change the API, update `docs/openapi.json` in the same change; the failing
+test says what to fix.
+
 `items` is a placeholder resource standing in for the real domain. Request bodies are JSON
 (`{"name": "...", "description": "..."}`). `name` is required, at most 200 characters, and
 trimmed of surrounding whitespace. Bodies are limited to 1 MiB, and unknown fields are rejected.
@@ -376,6 +390,7 @@ flagd/                   Feature flag definitions: served by flagd, and embedded
                          in the API as its fallback values
 wiremock/mappings/       WireMock stubs (mounted)
 wiremock/faults/         Opt-in fault stubs (loaded via the admin API)
+docs/openapi.json        OpenAPI spec of the API, checked against the handlers by tests
 compose.yaml             Local stack: api + WireMock + flagd
 ```
 
