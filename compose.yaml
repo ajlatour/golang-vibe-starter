@@ -49,13 +49,13 @@ services:
       - "8081:8080"
     volumes:
       # Happy-path stubs only. Fault stubs in wiremock/faults are added at
-      # runtime through the admin API; see README.
+      # runtime through the admin API; see docs/local-stack.md.
       - ./wiremock/mappings:/home/wiremock/mappings:ro
     environment:
       # Fixed heap: no resize pauses mid-run, and a predictable footprint.
       JAVA_OPTS: -Xms512m -Xmx512m
     command:
-      # Tuned for long-running load tests (see README):
+      # Tuned for long-running load tests (see docs/local-stack.md):
       - --no-request-journal # don't record every request in memory (unbounded heap growth)
       - --disable-request-logging # no per-request log lines
       - --async-response-enabled=true # delayed responses don't hold Jetty threads

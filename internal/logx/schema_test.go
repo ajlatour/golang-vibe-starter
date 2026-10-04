@@ -19,7 +19,7 @@ import (
 
 // These tests hold three descriptions of the log schema to each other, so
 // they can't drift: the code (which messages it emits, with which field
-// names), the contract table (logtest.Contract), and the README. Field names
+// names), the contract table (logtest.Contract), and docs/logging.md. Field names
 // are declared once, as the Key constants in keys.go.
 
 // logCall is one logging call found in non-test code.
@@ -220,23 +220,14 @@ func TestContractFieldsAreDeclared(t *testing.T) {
 	}
 }
 
-// loggingSection returns the README's Logging section.
-func loggingSection(t *testing.T) string {
+// loggingDoc returns docs/logging.md, the logging reference.
+func loggingDoc(t *testing.T) string {
 	t.Helper()
-	b, err := os.ReadFile("../../README.md")
+	b, err := os.ReadFile("../../docs/logging.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := string(b)
-	i := strings.Index(s, "\n## Logging")
-	if i < 0 {
-		t.Fatal("README has no '## Logging' section")
-	}
-	s = s[i+1:]
-	if j := strings.Index(s[3:], "\n## "); j >= 0 {
-		s = s[:j+3]
-	}
-	return s
+	return string(b)
 }
 
 // tableRows returns the rows of the markdown table whose header row starts
@@ -262,7 +253,7 @@ func tableRows(t *testing.T, section, header string) [][]string {
 		}
 	}
 	if !in {
-		t.Fatalf("README Logging section has no table starting %q", header)
+		t.Fatalf("docs/logging.md has no table starting %q", header)
 	}
 	return rows
 }
@@ -277,33 +268,33 @@ func ticks(cell string) []string {
 	return out
 }
 
-// TestREADMEFieldTable fails if the README's field table and the Key
+// TestLoggingDocFieldTable fails if the Fields table in docs/logging.md and the Key
 // constants disagree: every declared field must be documented, and every
 // documented field must exist.
-func TestREADMEFieldTable(t *testing.T) {
+func TestLoggingDocFieldTable(t *testing.T) {
 	keys := declaredKeys(t)
 	builtin := map[string]bool{"time": true, "level": true, "msg": true} // added by slog
 	documented := map[string]bool{}
-	for _, row := range tableRows(t, loggingSection(t), "| Field") {
+	for _, row := range tableRows(t, loggingDoc(t), "| Field") {
 		for _, f := range ticks(row[0]) {
 			documented[f] = true
 			if !keys[f] && !builtin[f] {
-				t.Errorf("README documents field %q, which is not a Key constant (or slog built-in)", f)
+				t.Errorf("docs/logging.md documents field %q, which is not a Key constant (or slog built-in)", f)
 			}
 		}
 	}
 	for k := range keys {
 		if !documented[k] {
-			t.Errorf("README's field table doesn't document %q (a Key constant)", k)
+			t.Errorf("the Fields table in docs/logging.md doesn't document %q (a Key constant)", k)
 		}
 	}
 }
 
-// TestREADMEMessagesTable fails if the README's Messages table and
+// TestLoggingDocMessagesTable fails if the Messages table in docs/logging.md and
 // logtest.Contract disagree about which messages exist, the levels they may
 // be logged at, or the fields they carry.
-func TestREADMEMessagesTable(t *testing.T) {
-	rows := tableRows(t, loggingSection(t), "| Message")
+func TestLoggingDocMessagesTable(t *testing.T) {
+	rows := tableRows(t, loggingDoc(t), "| Message")
 	documented := map[string]bool{}
 	for _, row := range rows {
 		if len(row) < 3 {
@@ -318,18 +309,18 @@ func TestREADMEMessagesTable(t *testing.T) {
 		documented[msg] = true
 		want, ok := logtest.Contract[msg]
 		if !ok {
-			t.Errorf("README documents message %q, which is not in logtest.Contract", msg)
+			t.Errorf("docs/logging.md documents message %q, which is not in logtest.Contract", msg)
 			continue
 		}
 		for _, level := range want.Levels {
 			if !strings.Contains(row[1], level) {
-				t.Errorf("README says %q is logged at %q; the contract allows %v", msg, row[1], want.Levels)
+				t.Errorf("docs/logging.md says %q is logged at %q; the contract allows %v", msg, row[1], want.Levels)
 				break
 			}
 		}
 		for _, level := range []string{"DEBUG", "INFO", "WARN", "ERROR"} {
 			if strings.Contains(row[1], level) && !slices.Contains(want.Levels, level) {
-				t.Errorf("README says %q may be logged at %s; the contract allows only %v", msg, level, want.Levels)
+				t.Errorf("docs/logging.md says %q may be logged at %s; the contract allows only %v", msg, level, want.Levels)
 			}
 		}
 		got := ticks(row[2])
@@ -337,12 +328,12 @@ func TestREADMEMessagesTable(t *testing.T) {
 		wantKeys := slices.Clone(want.Keys)
 		sort.Strings(wantKeys)
 		if !slices.Equal(got, wantKeys) {
-			t.Errorf("README lists fields %v for %q; the contract requires %v", got, msg, wantKeys)
+			t.Errorf("docs/logging.md lists fields %v for %q; the contract requires %v", got, msg, wantKeys)
 		}
 	}
 	for msg := range logtest.Contract {
 		if !documented[msg] {
-			t.Errorf("README's Messages table doesn't document %q", msg)
+			t.Errorf("the Messages table in docs/logging.md doesn't document %q", msg)
 		}
 	}
 }

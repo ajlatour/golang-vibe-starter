@@ -16,10 +16,10 @@ type Message struct {
 //     it writes against this table;
 //   - the schema tests (internal/logx) check that every message in the code is
 //     listed here, that nothing listed here is stale, that every field named
-//     here is a declared Key, and that the README's Messages table says the
+//     here is a declared Key, and that the Messages table in docs/logging.md says the
 //     same thing.
 //
-// Adding a log line therefore means adding it here, and to the README table.
+// Adding a log line therefore means adding it here, and to that table.
 //
 // "request received" and "response sent" have more precise level rules than a
 // set of levels can say; the contract test checks those directly: both are

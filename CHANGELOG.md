@@ -4,30 +4,8 @@ Notable changes to this project. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). There are no tagged releases yet, so
 everything is under Unreleased.
 
-## Roadmap
-
-The structured logging plan (phases 1 to 4) is complete; see Unreleased. The goal was logs that
-are easy to read and to query when debugging a deployed instance. What's left is deferred:
-
-### Integration tests with Godog
-
-Phases 1 to 4 are done (see Unreleased). End-to-end Gherkin scenarios in `integration/`, a separate Go
-module so Godog stays a test-only dependency, run against the composed stack.
-
-Test code never calls Docker: the stack is started with `docker compose` before a run, and the
-tests only talk HTTP to it (and write the test-owned flags file).
-
-- Optional, not planned: a step that checks response bodies against `docs/openapi.json`. The
-  in-process OpenAPI test already checks every documented response, so this adds little, and it
-  would mean sharing that test's schema validator with the integration module.
-
-### Deferred
-
-- OpenTelemetry tracing (`trace_id`/`span_id`): needs third-party dependencies. The
-  correlation ID covers this service; trace context can be added later through the same
-  context-aware log handler.
-- Changing the log level at runtime (`slog.LevelVar` and an admin endpoint).
-- Log sampling.
+Ideas considered but not planned are listed under
+[Open ideas](docs/development.md#open-ideas).
 
 ## Unreleased
 
@@ -121,6 +99,12 @@ tests only talk HTTP to it (and write the test-owned flags file).
 
 ### Changed
 
+- Documentation is reorganised. The README is now a short guide (what the service is,
+  prerequisites, running, testing, the API, configuration and layout), and the detail moved to
+  `docs/`: `local-stack.md` (WireMock, faults, load testing), `feature-flags.md`, `logging.md`
+  (the field and message tables, which the schema tests now check there) and `development.md`
+  (what to update when you change something, the tests, CI, and the open ideas that used to be the
+  Roadmap here).
 - Upstream failures now return `502 Bad Gateway`, or `504 Gateway Timeout` when the upstream timed
   out, instead of `500 Internal Server Error`. A 500 said the API itself had broken. The 502 covers
   connection refused or reset, an upstream error status, and a body that won't decode. The response

@@ -2,7 +2,7 @@ package logx
 
 // Log field names. This is the one list: every log line uses these names for
 // these values, so a single query finds them all, and a test fails the build
-// if code passes a raw string as a key instead. The README documents each.
+// if code passes a raw string as a key instead. docs/logging.md documents each.
 const (
 	// On every line.
 	KeyService   = "service"
