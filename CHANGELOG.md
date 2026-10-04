@@ -21,6 +21,19 @@ are easy to read and to query when debugging a deployed instance. What's left is
 
 ### Added
 
+- Request and upstream lifecycle logging: a log line at each of the four ends of a request, all at
+  `INFO` and sharing the request's `request_id`:
+  - `request received` when it arrives (`method`, `path`, `content_length`);
+  - `upstream request sent` before each upstream call (`upstream`);
+  - `upstream response received` when the upstream answers, whatever the status (`upstream`,
+    `upstream_status`, `upstream_duration_ms`);
+  - `response sent` when the reply goes out (`method`, `route`, `path`, `status`, `bytes`,
+    `duration_ms`). This is the former `request` line, renamed.
+
+  `/healthz` stays at `DEBUG`. The log contract test checks that every request opens with
+  `request received`, closes with `response sent`, and that every upstream request sent has
+  exactly one outcome. See the Logging section of the README.
+
 - Structured logging, phase 1:
   - Correlation IDs. Each request gets an ID from the `Client-Correlation-Id` request header (if
     valid: 1-128 characters of letters, digits and `-_.:`) or a generated one. It's returned in
@@ -68,6 +81,18 @@ are easy to read and to query when debugging a deployed instance. What's left is
 - `FLAGS_URL`, `FLAGS_TIMEOUT` and `FLAGS_FALLBACK_FILE` environment variables.
 
 ### Changed
+
+- Upstream failures now return `502 Bad Gateway`, or `504 Gateway Timeout` when the upstream timed
+  out, instead of `500 Internal Server Error`. A 500 said the API itself had broken. The 502 covers
+  connection refused or reset, an upstream error status, and a body that won't decode. The response
+  body is the generic `{"error":"bad gateway"}` or `{"error":"gateway timeout"}`; the upstream's
+  message stays in the logs. `500` is now only for failures in the API itself. Clients and
+  alerting that match on 500 for upstream outages need updating.
+
+- Log message renames, which affect any existing log queries: `request` is now `response sent`,
+  and `upstream request` (a successful call, formerly `DEBUG`) is now `upstream response received`
+  at `INFO`. A request now writes four `INFO` lines where it wrote one, plus one `upstream request
+  sent` per upstream call.
 
 - Logging safety (phase 4):
   - `UPSTREAM_URL` and `FLAGS_URL` are rejected at startup if they contain a query string or

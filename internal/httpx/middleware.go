@@ -20,32 +20,47 @@ func Middleware(logger *slog.Logger, h http.Handler) http.Handler {
 // nginx's non-standard 499, widely recognised in log tooling.
 const StatusClientClosedRequest = 499
 
-// requestLevel picks the level of a request's log line: server failures are
-// errors, so alerting on level=ERROR finds them; the container's healthcheck
-// is debug, because it fires every few seconds and says nothing unless it
-// fails; everything else, including 4xx (the client's mistake, not an
-// incident), is info.
-func requestLevel(r *http.Request, status int) slog.Level {
-	switch {
-	case status >= 500:
+// responseLevel picks the level of the "response sent" line: server failures
+// are errors, so alerting on level=ERROR finds them; the container's
+// healthcheck is debug, because it fires every few seconds and says nothing
+// unless it fails; everything else, including 4xx (the client's mistake, not
+// an incident), is info.
+func responseLevel(r *http.Request, status int) slog.Level {
+	if status >= 500 {
 		return slog.LevelError
-	case r.URL.Path == HealthzPath:
-		return slog.LevelDebug
-	default:
-		return slog.LevelInfo
 	}
+	return receivedLevel(r)
 }
 
-// logRequests logs one line per request with its status and duration, at the
-// level requestLevel picks.
+// receivedLevel picks the level of the "request received" line: info, except
+// for the healthcheck, which is debug.
+func receivedLevel(r *http.Request) slog.Level {
+	if r.URL.Path == HealthzPath {
+		return slog.LevelDebug
+	}
+	return slog.LevelInfo
+}
+
+// logRequests logs the two ends of every request: "request received" when it
+// arrives, and "response sent" when the handler is done, with the status,
+// size and duration. The first is what shows a request that never finishes;
+// metadata only, never headers or bodies.
 func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		// No route yet: ServeMux matches it inside next, so only the raw
+		// path identifies the request at this point.
+		logger.LogAttrs(r.Context(), receivedLevel(r), "request received",
+			slog.String(LogKeyMethod, r.Method),
+			slog.String(LogKeyPath, Truncate(r.URL.Path, MaxLoggedPath)),
+			slog.Int64(LogKeyContentLength, r.ContentLength),
+		)
+
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
 		// ServeMux sets r.Pattern on this same request when it matches a
 		// route, so it's available once the handler has returned.
-		logger.LogAttrs(r.Context(), requestLevel(r, rec.status), "request",
+		logger.LogAttrs(r.Context(), responseLevel(r, rec.status), "response sent",
 			append(requestAttrs(r),
 				slog.Int("status", rec.status),
 				slog.Int("bytes", rec.bytes),

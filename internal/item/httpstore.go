@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -38,8 +39,9 @@ const maxResponseBytes = 4 << 20 // 4 MiB
 // HTTPStoreOption customizes NewHTTPStore.
 type HTTPStoreOption func(*HTTPStore)
 
-// WithStoreLogger makes the store log every upstream call: at debug when the
-// upstream answered, at warn when the call failed. The default is no logging.
+// WithStoreLogger makes the store log every upstream call: the request going
+// out and the response coming back at info, a failed call at warn, and a call
+// abandoned because the client left at debug. The default is no logging.
 func WithStoreLogger(logger *slog.Logger) HTTPStoreOption {
 	return func(s *HTTPStore) { s.logger = logger }
 }
@@ -77,12 +79,27 @@ type UpstreamError struct {
 func (e *UpstreamError) Error() string { return e.Err.Error() }
 func (e *UpstreamError) Unwrap() error { return e.Err }
 
+// HTTPStatus implements httpx.StatusError. A timeout is the client's 504
+// Gateway Timeout; every other failure to get a usable answer from the
+// upstream (connection refused, reset, an error status, a body that won't
+// decode) is a 502 Bad Gateway. Neither says the API itself failed.
+func (e *UpstreamError) HTTPStatus() int {
+	var ne net.Error
+	if errors.Is(e.Err, context.DeadlineExceeded) || (errors.As(e.Err, &ne) && ne.Timeout()) {
+		return http.StatusGatewayTimeout
+	}
+	return http.StatusBadGateway
+}
+
 // LogAttrs implements httpx.LogAttrsError.
 func (e *UpstreamError) LogAttrs() []slog.Attr {
 	return upstreamAttrs(e.Call, e.Status, e.Duration)
 }
 
-var _ httpx.LogAttrsError = (*UpstreamError)(nil)
+var (
+	_ httpx.LogAttrsError = (*UpstreamError)(nil)
+	_ httpx.StatusError   = (*UpstreamError)(nil)
+)
 
 // upstreamAttrs builds the fields describing one upstream call. The status is
 // left out when there was no response.
@@ -136,19 +153,28 @@ func itemPath(id string) string {
 // do sends a request with an optional JSON body and decodes a JSON response
 // into out (if non-nil). A JSON 404 becomes ErrNotFound; any other status
 // than want is an *UpstreamError that includes the upstream's error message.
-// Every call is logged: see WithStoreLogger.
+//
+// Each call logs up to three lines: "upstream request sent" before it goes
+// out; "upstream response received" once a response has arrived, whatever its
+// status; and, if the call failed, one more line saying so (see
+// WithStoreLogger). Never headers or bodies.
 func (s *HTTPStore) do(ctx context.Context, method, path string, body any, want int, out any) error {
 	call := method + " " + httpx.Truncate(path, httpx.MaxLoggedPath)
+	s.logger.LogAttrs(ctx, slog.LevelInfo, "upstream request sent", slog.String(LogKeyUpstream, call))
+
 	start := time.Now()
 	status, err := s.roundTrip(ctx, method, path, body, want, out)
 	elapsed := time.Since(start)
 	attrs := upstreamAttrs(call, status, elapsed)
 
+	if status != 0 {
+		s.logger.LogAttrs(ctx, slog.LevelInfo, "upstream response received", attrs...)
+	}
+
 	switch {
 	case err == nil, errors.Is(err, ErrNotFound):
 		// The upstream answered as the contract allows; "no such item" is
 		// not a failure.
-		s.logger.LogAttrs(ctx, slog.LevelDebug, "upstream request", attrs...)
 		return err
 	case errors.Is(ctx.Err(), context.Canceled):
 		// The caller went away, which isn't the upstream's fault. Keep the

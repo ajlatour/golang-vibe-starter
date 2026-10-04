@@ -1,8 +1,6 @@
 package flags_test
 
 import (
-	"bytes"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +11,8 @@ import (
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/flags"
+	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
+	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
 )
 
 func TestOFREPBool(t *testing.T) {
@@ -43,12 +43,12 @@ func TestOFREPBool(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			var logs bytes.Buffer
-			c := flags.NewOFREP(srv.URL+"/", srv.Client(), slog.New(slog.NewTextHandler(&logs, nil)), flags.Defaults{"some-flag": tt.def})
+			var logs logtest.Buffer
+			c := flags.NewOFREP(srv.URL+"/", srv.Client(), logs.Logger(slog.LevelInfo), flags.Defaults{"some-flag": tt.def})
 			if got := c.Bool(t.Context(), "some-flag"); got != tt.want {
 				t.Errorf("Bool() = %v, want %v", got, tt.want)
 			}
-			if warned := strings.Contains(logs.String(), "level=WARN"); warned != tt.wantWarn {
+			if warned := strings.Contains(logs.String(), `"level":"WARN"`); warned != tt.wantWarn {
 				t.Errorf("warned = %v, want %v (logs: %s)", warned, tt.wantWarn, logs.String())
 			}
 		})
@@ -56,11 +56,7 @@ func TestOFREPBool(t *testing.T) {
 }
 
 func TestOFREPBoolUnreachable(t *testing.T) {
-	srv := httptest.NewServer(http.NotFoundHandler())
-	url := srv.URL
-	srv.Close() // nothing is listening any more
-
-	c := flags.NewOFREP(url, &http.Client{Timeout: time.Second}, slog.New(slog.DiscardHandler), flags.Defaults{"k": true})
+	c := flags.NewOFREP(nettest.DeadURL(), &http.Client{Timeout: time.Second}, slog.New(slog.DiscardHandler), flags.Defaults{"k": true})
 	if got := c.Bool(t.Context(), "k"); !got {
 		t.Error("Bool() = false, want the default (true) when flagd is unreachable")
 	}
@@ -70,12 +66,12 @@ func TestOFREPBoolNoConfiguredDefault(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	defer srv.Close()
 
-	var logs bytes.Buffer
-	c := flags.NewOFREP(srv.URL, srv.Client(), slog.New(slog.NewTextHandler(&logs, nil)), flags.Defaults{})
+	var logs logtest.Buffer
+	c := flags.NewOFREP(srv.URL, srv.Client(), logs.Logger(slog.LevelInfo), flags.Defaults{})
 	if got := c.Bool(t.Context(), "undeclared"); got {
 		t.Error("Bool() = true, want false for a flag with no configured default")
 	}
-	if !strings.Contains(logs.String(), "level=ERROR") {
+	if !strings.Contains(logs.String(), `"level":"ERROR"`) {
 		t.Errorf("want an error-level log for the missing default, got: %s", logs.String())
 	}
 }
@@ -103,44 +99,19 @@ func (s *flagdStub) set(status int, body string) {
 	s.body.Store(body)
 }
 
-// logRecords parses the JSON log lines in buf.
-func logRecords(t *testing.T, buf *bytes.Buffer) []map[string]any {
-	t.Helper()
-	var out []map[string]any
-	for _, line := range bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte("\n")) {
-		if len(line) == 0 {
-			continue
-		}
-		var m map[string]any
-		if err := json.Unmarshal(line, &m); err != nil {
-			t.Fatalf("parse log line %q: %v", line, err)
-		}
-		out = append(out, m)
-	}
-	return out
-}
-
-func levels(recs []map[string]any) []string {
-	var out []string
-	for _, r := range recs {
-		out = append(out, r["level"].(string)+" "+r["msg"].(string))
-	}
-	return out
-}
-
 // TestOFREPOutageLogging checks that an outage produces one warning when it
 // starts and one info line (with the fallback count) when it ends, with only
 // debug lines in between.
 func TestOFREPOutageLogging(t *testing.T) {
 	stub, srv := newFlagdStub(t)
-	var logs bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	var logs logtest.Buffer
+	logger := logs.Logger(slog.LevelDebug)
 	c := flags.NewOFREP(srv.URL, srv.Client(), logger, flags.Defaults{"f": false})
 
 	if !c.Bool(t.Context(), "f") {
 		t.Fatal("healthy Bool() = false, want true from flagd")
 	}
-	if len(logRecords(t, &logs)) != 0 {
+	if len(logs.Records(t)) != 0 {
 		t.Fatalf("healthy evaluation logged: %s", logs.String())
 	}
 
@@ -150,7 +121,7 @@ func TestOFREPOutageLogging(t *testing.T) {
 			t.Fatal("Bool() = true during outage, want the default (false)")
 		}
 	}
-	got := levels(logRecords(t, &logs))
+	got := logtest.LevelMsgs(logs.Records(t))
 	want := []string{
 		"WARN flag service unavailable, using default flag values",
 		"DEBUG flag evaluation failed, using default",
@@ -165,7 +136,7 @@ func TestOFREPOutageLogging(t *testing.T) {
 	if !c.Bool(t.Context(), "f") {
 		t.Fatal("recovered Bool() = false, want true")
 	}
-	recs := logRecords(t, &logs)
+	recs := logs.Records(t)
 	if len(recs) != 1 || recs[0]["level"] != "INFO" || recs[0]["msg"] != "flag service recovered" {
 		t.Fatalf("recovery logs = %v, want one INFO flag service recovered", recs)
 	}
@@ -180,7 +151,7 @@ func TestOFREPOutageLogging(t *testing.T) {
 	logs.Reset()
 	stub.set(500, `oops`)
 	c.Bool(t.Context(), "f")
-	if got := levels(logRecords(t, &logs)); !slices.Equal(got, want[:1]) {
+	if got := logtest.LevelMsgs(logs.Records(t)); !slices.Equal(got, want[:1]) {
 		t.Errorf("second outage logs = %q, want %q", got, want[:1])
 	}
 }
@@ -191,15 +162,15 @@ func TestOFREPOutageLogging(t *testing.T) {
 func TestOFREPFlagProblemLogging(t *testing.T) {
 	stub, srv := newFlagdStub(t)
 	stub.set(404, `{"errorCode":"FLAG_NOT_FOUND"}`)
-	var logs bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	var logs logtest.Buffer
+	logger := logs.Logger(slog.LevelDebug)
 	c := flags.NewOFREP(srv.URL, srv.Client(), logger, flags.Defaults{"f": true, "g": false})
 
 	for range 3 {
 		c.Bool(t.Context(), "f")
 	}
 	c.Bool(t.Context(), "g") // a different flag warns on its own
-	got := levels(logRecords(t, &logs))
+	got := logtest.LevelMsgs(logs.Records(t))
 	want := []string{
 		"WARN flag evaluation failed, using default",
 		"DEBUG flag evaluation failed, using default",
@@ -216,7 +187,7 @@ func TestOFREPFlagProblemLogging(t *testing.T) {
 	logs.Reset()
 	stub.set(404, `{"errorCode":"FLAG_NOT_FOUND"}`)
 	c.Bool(t.Context(), "f")
-	if got := levels(logRecords(t, &logs)); len(got) != 1 || got[0] != want[0] {
+	if got := logtest.LevelMsgs(logs.Records(t)); len(got) != 1 || got[0] != want[0] {
 		t.Errorf("logs after recovery = %q, want one WARN", got)
 	}
 }
@@ -224,13 +195,13 @@ func TestOFREPFlagProblemLogging(t *testing.T) {
 func TestOFREPMissingDefaultLoggedOnce(t *testing.T) {
 	stub, srv := newFlagdStub(t)
 	stub.set(404, `{}`)
-	var logs bytes.Buffer
-	c := flags.NewOFREP(srv.URL, srv.Client(), slog.New(slog.NewJSONHandler(&logs, nil)), flags.Defaults{})
+	var logs logtest.Buffer
+	c := flags.NewOFREP(srv.URL, srv.Client(), logs.Logger(slog.LevelInfo), flags.Defaults{})
 	for range 3 {
 		c.Bool(t.Context(), "undeclared")
 	}
 	errors := 0
-	for _, r := range logRecords(t, &logs) {
+	for _, r := range logs.Records(t) {
 		if r["level"] == "ERROR" {
 			errors++
 		}

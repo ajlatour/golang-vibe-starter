@@ -20,6 +20,9 @@ const (
 	LogKeyRoute      = "route"
 	LogKeyPath       = "path"
 	LogKeyDurationMS = "duration_ms"
+	// LogKeyContentLength is the request body size the client declared, or -1
+	// if unknown (e.g. chunked). Only the number is logged, never the body.
+	LogKeyContentLength = "content_length"
 )
 
 // NewContextHandler wraps h so that every record logged with a context

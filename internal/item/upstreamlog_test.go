@@ -8,51 +8,50 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
+	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
 )
 
-func debugLogger(buf *bytes.Buffer) *slog.Logger {
-	return slog.New(httpx.NewContextHandler(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+// debugLogger returns a debug-level logger on buf that, like the service's
+// own, adds request_id to lines logged with a request's context.
+func debugLogger(buf *logtest.Buffer) *slog.Logger {
+	return slog.New(httpx.NewContextHandler(buf.Handler(slog.LevelDebug)))
 }
 
-func parseLogs(t *testing.T, buf *bytes.Buffer) []map[string]any {
-	t.Helper()
-	var out []map[string]any
-	for _, line := range bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte("\n")) {
-		if len(line) == 0 {
-			continue
-		}
-		var m map[string]any
-		if err := json.Unmarshal(line, &m); err != nil {
-			t.Fatalf("parse log line %q: %v", line, err)
-		}
-		out = append(out, m)
-	}
-	return out
-}
+// logLine is the level and message of one expected log line.
+type logLine struct{ level, msg string }
 
-// TestHTTPStoreCallLogging checks the log line for each kind of upstream
-// outcome: its level, and its upstream_* fields.
+const (
+	sent     = "upstream request sent"
+	received = "upstream response received"
+	failed   = "upstream request failed"
+)
+
+// TestHTTPStoreCallLogging checks the lines an upstream call writes for each
+// kind of outcome: a "sent" line before the call, a "received" line whenever
+// a response came back, and a "failed" line if the call didn't succeed.
 func TestHTTPStoreCallLogging(t *testing.T) {
 	tests := []struct {
 		name       string
 		handler    http.HandlerFunc
-		wantLevel  string
-		wantMsg    string
-		wantStatus float64 // 0 means the field must be absent
+		want       []logLine
+		wantStatus float64
 	}{
 		{
-			name: "success is debug",
+			name: "success",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.Write([]byte(`{"id":"a","name":"x"}`))
 			},
-			wantLevel: "DEBUG", wantMsg: "upstream request", wantStatus: 200,
+			want:       []logLine{{"INFO", sent}, {"INFO", received}},
+			wantStatus: 200,
 		},
 		{
 			name: "json 404 is an answer, not a failure",
@@ -61,21 +60,20 @@ func TestHTTPStoreCallLogging(t *testing.T) {
 				w.WriteHeader(http.StatusNotFound)
 				w.Write([]byte(`{"error":"item not found"}`))
 			},
-			wantLevel: "DEBUG", wantMsg: "upstream request", wantStatus: 404,
+			want:       []logLine{{"INFO", sent}, {"INFO", received}},
+			wantStatus: 404,
 		},
 		{
-			name: "5xx is a warning",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusServiceUnavailable)
-			},
-			wantLevel: "WARN", wantMsg: "upstream request failed", wantStatus: 503,
+			name:       "5xx: a response arrived, and the call failed",
+			handler:    nettest.Status(http.StatusServiceUnavailable, ""),
+			want:       []logLine{{"INFO", sent}, {"INFO", received}, {"WARN", failed}},
+			wantStatus: 503,
 		},
 		{
-			name: "bad body is a warning with the status",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte(`{"id":`))
-			},
-			wantLevel: "WARN", wantMsg: "upstream request failed", wantStatus: 200,
+			name:       "bad body: a response arrived, and the call failed",
+			handler:    nettest.Status(http.StatusOK, `{"id":`),
+			want:       []logLine{{"INFO", sent}, {"INFO", received}, {"WARN", failed}},
+			wantStatus: 200,
 		},
 	}
 	for _, tt := range tests {
@@ -83,38 +81,45 @@ func TestHTTPStoreCallLogging(t *testing.T) {
 			upstream := httptest.NewServer(tt.handler)
 			defer upstream.Close()
 
-			var logs bytes.Buffer
+			var logs logtest.Buffer
 			store := item.NewHTTPStore(upstream.URL, upstream.Client(), item.WithStoreLogger(debugLogger(&logs)))
 			_, _ = store.Get(t.Context(), "a")
 
-			lines := parseLogs(t, &logs)
-			if len(lines) != 1 {
-				t.Fatalf("got %d log lines, want 1: %v", len(lines), lines)
+			lines := logs.Records(t)
+			var got []logLine
+			for _, l := range lines {
+				got = append(got, logLine{l["level"].(string), l["msg"].(string)})
+				if l[item.LogKeyUpstream] != "GET /items/a" {
+					t.Errorf("%v: upstream = %v, want GET /items/a", l["msg"], l[item.LogKeyUpstream])
+				}
 			}
-			l := lines[0]
-			if l["level"] != tt.wantLevel || l["msg"] != tt.wantMsg {
-				t.Errorf("log = %s %v, want %s %s", l["level"], l["msg"], tt.wantLevel, tt.wantMsg)
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("lines = %v, want %v", got, tt.want)
 			}
-			if l[item.LogKeyUpstream] != "GET /items/a" {
-				t.Errorf("upstream = %v, want GET /items/a", l[item.LogKeyUpstream])
+
+			// The "sent" line is logged before the call, so it has no outcome.
+			for _, key := range []string{item.LogKeyUpstreamStatus, item.LogKeyUpstreamDurationMS} {
+				if _, ok := lines[0][key]; ok {
+					t.Errorf("sent line has %s: %v", key, lines[0])
+				}
 			}
-			if got, _ := l[item.LogKeyUpstreamStatus].(float64); got != tt.wantStatus {
-				t.Errorf("upstream_status = %v, want %v", l[item.LogKeyUpstreamStatus], tt.wantStatus)
+			for _, l := range lines[1:] {
+				if got, _ := l[item.LogKeyUpstreamStatus].(float64); got != tt.wantStatus {
+					t.Errorf("%v: upstream_status = %v, want %v", l["msg"], l[item.LogKeyUpstreamStatus], tt.wantStatus)
+				}
+				if _, ok := l[item.LogKeyUpstreamDurationMS].(float64); !ok {
+					t.Errorf("%v: upstream_duration_ms = %v, want a number", l["msg"], l[item.LogKeyUpstreamDurationMS])
+				}
 			}
-			if _, ok := l[item.LogKeyUpstreamDurationMS].(float64); !ok {
-				t.Errorf("upstream_duration_ms = %v, want a number", l[item.LogKeyUpstreamDurationMS])
-			}
-			if tt.wantLevel == "WARN" && l[httpx.LogKeyError] == nil {
-				t.Errorf("warning has no error field: %v", l)
+			if last := lines[len(lines)-1]; last["level"] == "WARN" && last[httpx.LogKeyError] == nil {
+				t.Errorf("warning has no error field: %v", last)
 			}
 		})
 	}
 }
 
 func TestHTTPStoreNoLoggerByDefault(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusBadGateway)
-	}))
+	upstream := httptest.NewServer(nettest.Status(http.StatusBadGateway, ""))
 	defer upstream.Close()
 	// Must not panic or write anywhere without WithStoreLogger.
 	_, _ = item.NewHTTPStore(upstream.URL, upstream.Client()).List(t.Context())
@@ -122,9 +127,7 @@ func TestHTTPStoreNoLoggerByDefault(t *testing.T) {
 
 func TestUpstreamErrorFields(t *testing.T) {
 	t.Run("bad status", func(t *testing.T) {
-		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusBadGateway)
-		}))
+		upstream := httptest.NewServer(nettest.Status(http.StatusBadGateway, ""))
 		defer upstream.Close()
 
 		_, err := item.NewHTTPStore(upstream.URL, upstream.Client()).List(t.Context())
@@ -138,11 +141,7 @@ func TestUpstreamErrorFields(t *testing.T) {
 	})
 
 	t.Run("no response has no status", func(t *testing.T) {
-		upstream := httptest.NewServer(http.NotFoundHandler())
-		url := upstream.URL
-		upstream.Close()
-
-		_, err := item.NewHTTPStore(url, &http.Client{Timeout: time.Second}).List(t.Context())
+		_, err := item.NewHTTPStore(nettest.DeadURL(), &http.Client{Timeout: time.Second}).List(t.Context())
 		var ue *item.UpstreamError
 		if !errors.As(err, &ue) || ue.Status != 0 {
 			t.Fatalf("error = %v, want *UpstreamError with status 0", err)
@@ -172,17 +171,19 @@ func TestUpstreamErrorFields(t *testing.T) {
 // TestUpstreamTimeoutLogged checks a slow upstream: a warning with no status
 // (no response arrived) and a duration near the client timeout.
 func TestUpstreamTimeoutLogged(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-r.Context().Done()
-	}))
+	upstream := httptest.NewServer(http.HandlerFunc(nettest.Hang))
 	defer upstream.Close()
 
-	var logs bytes.Buffer
+	var logs logtest.Buffer
 	store := item.NewHTTPStore(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond}, item.WithStoreLogger(debugLogger(&logs)))
 	if _, err := store.List(t.Context()); err == nil {
 		t.Fatal("List() error = nil, want a timeout")
 	}
-	l := parseLogs(t, &logs)[0]
+	lines := logs.Records(t)
+	if len(lines) != 2 || lines[0]["msg"] != sent || lines[1]["msg"] != failed {
+		t.Fatalf("lines = %v, want sent then failed (no response arrived, so no received line)", lines)
+	}
+	l := lines[1]
 	if l["level"] != "WARN" {
 		t.Errorf("level = %v, want WARN", l["level"])
 	}
@@ -197,21 +198,20 @@ func TestUpstreamTimeoutLogged(t *testing.T) {
 // TestUpstreamCancelledIsDebug checks that a client abandoning the request
 // isn't reported as an upstream failure.
 func TestUpstreamCancelledIsDebug(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-r.Context().Done()
-	}))
+	upstream := httptest.NewServer(http.HandlerFunc(nettest.Hang))
 	defer upstream.Close()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	var logs bytes.Buffer
+	var logs logtest.Buffer
 	store := item.NewHTTPStore(upstream.URL, upstream.Client(), item.WithStoreLogger(debugLogger(&logs)))
 	_, err := store.List(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want one wrapping context.Canceled", err)
 	}
-	if l := parseLogs(t, &logs)[0]; l["level"] != "DEBUG" {
-		t.Errorf("level = %v, want DEBUG: %v", l["level"], l)
+	lines := logs.Records(t)
+	if last := lines[len(lines)-1]; last["msg"] != "upstream request cancelled" || last["level"] != "DEBUG" {
+		t.Errorf("last line = %v, want DEBUG upstream request cancelled", last)
 	}
 }
 
@@ -220,13 +220,10 @@ func TestUpstreamCancelledIsDebug(t *testing.T) {
 // share a request_id and that the "internal error" line has the upstream
 // fields: one line is enough to see what the upstream did.
 func TestUpstreamFailureEndToEnd(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte(`{"error":"db down"}`))
-	}))
+	upstream := httptest.NewServer(nettest.Status(http.StatusServiceUnavailable, `{"error":"db down"}`))
 	defer upstream.Close()
 
-	var logs bytes.Buffer
+	var logs logtest.Buffer
 	logger := debugLogger(&logs)
 	store := item.NewHTTPStore(upstream.URL, upstream.Client(), item.WithStoreLogger(logger))
 	mux := http.NewServeMux()
@@ -237,17 +234,19 @@ func TestUpstreamFailureEndToEnd(t *testing.T) {
 	rec := httptest.NewRecorder()
 	httpx.Middleware(logger, mux).ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500", rec.Code)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 for an upstream 503", rec.Code)
 	}
 	byMsg := map[string]map[string]any{}
-	for _, l := range parseLogs(t, &logs) {
+	for _, l := range logs.Records(t) {
 		byMsg[l["msg"].(string)] = l
 		if l[httpx.LogKeyRequestID] != "corr-9" {
 			t.Errorf("%q line request_id = %v, want corr-9", l["msg"], l[httpx.LogKeyRequestID])
 		}
 	}
-	for _, msg := range []string{"upstream request failed", "internal error", "request"} {
+	for _, msg := range []string{
+		"request received", sent, received, failed, "internal error", "response sent",
+	} {
 		if byMsg[msg] == nil {
 			t.Fatalf("no %q line in logs: %s", msg, logs.String())
 		}
@@ -269,10 +268,7 @@ func TestUpstreamFailureEndToEnd(t *testing.T) {
 // upstream's own error message is capped, and so is a very long path.
 func TestUpstreamErrorsAreRedactedAndBounded(t *testing.T) {
 	t.Run("credentials in the base URL", func(t *testing.T) {
-		dead := httptest.NewServer(http.NotFoundHandler())
-		base := dead.URL
-		dead.Close()
-		base = "http://alice:s3cret@" + base[len("http://"):]
+		base := "http://alice:s3cret@" + strings.TrimPrefix(nettest.DeadURL(), "http://")
 
 		_, err := item.NewHTTPStore(base, &http.Client{Timeout: time.Second}).List(t.Context())
 		if err == nil {
@@ -298,19 +294,105 @@ func TestUpstreamErrorsAreRedactedAndBounded(t *testing.T) {
 	})
 
 	t.Run("long path is capped in the error and the log", func(t *testing.T) {
-		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-		}))
+		upstream := httptest.NewServer(nettest.Status(http.StatusInternalServerError, ""))
 		defer upstream.Close()
 
-		var logs bytes.Buffer
+		var logs logtest.Buffer
 		store := item.NewHTTPStore(upstream.URL, upstream.Client(), item.WithStoreLogger(debugLogger(&logs)))
 		_, err := store.Get(t.Context(), strings.Repeat("a", 5000))
 		if err == nil || len(err.Error()) > 1000 {
 			t.Errorf("error is %d bytes, want it capped", len(err.Error()))
 		}
-		if logs.Len() > 2000 {
+		if logs.Len() > 4000 {
 			t.Errorf("log output is %d bytes, want it capped", logs.Len())
 		}
 	})
+}
+
+// TestUpstreamFailureStatuses checks what the client is told when the
+// upstream can't give a usable answer: 504 for a timeout, 502 for everything
+// else, and never a 500, which would say the API itself broke. The body is
+// the generic reason phrase, with no upstream detail.
+func TestUpstreamFailureStatuses(t *testing.T) {
+	tests := []struct {
+		name       string
+		handler    http.HandlerFunc // nil: nothing is listening
+		timeout    time.Duration
+		wantStatus int
+	}{
+		{
+			name:       "timeout",
+			handler:    nettest.Hang,
+			timeout:    50 * time.Millisecond,
+			wantStatus: http.StatusGatewayTimeout,
+		},
+		{name: "connection refused", handler: nil, wantStatus: http.StatusBadGateway},
+		{
+			name:       "connection dropped mid-request",
+			handler:    nettest.Drop,
+			wantStatus: http.StatusBadGateway,
+		},
+		{
+			name:       "upstream 503",
+			handler:    nettest.Status(http.StatusServiceUnavailable, `{"error":"secret upstream detail"}`),
+			wantStatus: http.StatusBadGateway,
+		},
+		{
+			name:       "upstream 500",
+			handler:    nettest.Status(http.StatusInternalServerError, ""),
+			wantStatus: http.StatusBadGateway,
+		},
+		{
+			name:       "undecodable body",
+			handler:    nettest.Status(http.StatusOK, `{"items":`),
+			wantStatus: http.StatusBadGateway,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var base string
+			client := &http.Client{Timeout: 5 * time.Second}
+			if tt.timeout != 0 {
+				client.Timeout = tt.timeout
+			}
+			if tt.handler == nil {
+				base = nettest.DeadURL()
+			} else {
+				upstream := httptest.NewServer(tt.handler)
+				defer upstream.Close()
+				base = upstream.URL
+			}
+
+			mux := http.NewServeMux()
+			item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), item.NewHTTPStore(base, client))
+			for _, path := range []string{"/items", "/items/a"} {
+				rec := httptest.NewRecorder()
+				mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+
+				if rec.Code != tt.wantStatus {
+					t.Errorf("GET %s status = %d, want %d", path, rec.Code, tt.wantStatus)
+				}
+				var body struct{ Error string }
+				decodeBody(t, rec, &body)
+				if want := strings.ToLower(http.StatusText(tt.wantStatus)); body.Error != want {
+					t.Errorf("GET %s error = %q, want the generic %q", path, body.Error, want)
+				}
+				if strings.Contains(rec.Body.String(), "secret") {
+					t.Errorf("response leaks upstream detail: %s", rec.Body)
+				}
+			}
+		})
+	}
+}
+
+// TestPlainStoreErrorStaysA500 checks that only upstream failures are 5xx
+// other than 500: an unexpected error from anywhere else still is one.
+func TestPlainStoreErrorStaysA500(t *testing.T) {
+	mux := http.NewServeMux()
+	item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), failingStore{})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/items", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", rec.Code)
+	}
 }

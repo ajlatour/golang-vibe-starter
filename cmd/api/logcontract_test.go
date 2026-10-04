@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -11,13 +10,13 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
+	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
+	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
 )
 
 // logContract is the schema every log message must follow: its level and the
@@ -25,7 +24,8 @@ import (
 // adding a log line means deciding, and recording, what it promises.
 // Keep it in step with the Logging section of the README.
 //
-// "request" is special-cased: its level depends on the response status.
+// "request received" and "response sent" are special-cased: the healthcheck
+// logs them at DEBUG, and "response sent" is ERROR for a 5xx.
 var logContract = map[string]struct {
 	level string
 	keys  []string
@@ -38,12 +38,16 @@ var logContract = map[string]struct {
 	"server stopped":      {"INFO", nil},
 
 	// Logged while handling a request, so each carries request_id.
-	"request":        {"", []string{"method", "route", "path", "status", "bytes", "duration_ms"}},
-	"internal error": {"ERROR", []string{"method", "route", "path", "error"}},
-	"upstream request": {"DEBUG", []string{
-		"upstream", "upstream_status", "upstream_duration_ms"}},
-	"upstream request failed": {"WARN", []string{
-		"upstream", "upstream_duration_ms", "error"}},
+	//
+	// The four ends of a request, in order:
+	"request received":           {"", []string{"method", "path", "content_length"}},
+	"upstream request sent":      {"INFO", []string{"upstream"}},
+	"upstream response received": {"INFO", []string{"upstream", "upstream_status", "upstream_duration_ms"}},
+	"response sent":              {"", []string{"method", "route", "path", "status", "bytes", "duration_ms"}},
+	// And what can go wrong in between:
+	"internal error":                                      {"ERROR", []string{"method", "route", "path", "error"}},
+	"upstream request failed":                             {"WARN", []string{"upstream", "upstream_duration_ms", "error"}},
+	"upstream request cancelled":                          {"DEBUG", []string{"upstream", "upstream_duration_ms", "error"}},
 	"flag service unavailable, using default flag values": {"WARN", []string{"flag", "error"}},
 	"flag evaluation failed, using default":               {"DEBUG", []string{"flag", "error"}},
 }
@@ -57,23 +61,6 @@ var outsideRequests = []string{
 // below. None may ever appear in a log line.
 var secrets = []string{
 	"BODYSECRET", "QUERYSECRET", "HEADERSECRET", "COOKIESECRET", "UPPASS", "FLAGPASS",
-}
-
-type lockedBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (l *lockedBuffer) Write(p []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.b.Write(p)
-}
-
-func (l *lockedBuffer) String() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.b.String()
 }
 
 // TestLogContract runs the whole service and drives it through success,
@@ -90,15 +77,13 @@ func TestLogContract(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/items/boom" {
 			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(map[string]string{"error": strings.Repeat("x", 5000)})
+			nettest.Status(http.StatusServiceUnavailable, `{"error":"`+strings.Repeat("x", 5000)+`"}`)(w, r)
 			return
 		}
 		if r.URL.Path == "/items/dropme" {
 			// Close the connection mid-request: a transport error whose
 			// message includes the upstream URL.
-			conn, _, _ := w.(http.Hijacker).Hijack()
-			conn.Close()
+			nettest.Drop(w, r)
 			return
 		}
 		mux.ServeHTTP(w, r)
@@ -108,26 +93,19 @@ func TestLogContract(t *testing.T) {
 	upstreamURL.User = url.UserPassword("upuser", "UPPASS")
 
 	// flagd: a dead address, so flag evaluation falls back and logs.
-	dead := httptest.NewServer(http.NotFoundHandler())
-	flagsURL, _ := url.Parse(dead.URL)
-	dead.Close()
+	flagsURL, _ := url.Parse(nettest.DeadURL())
 	flagsURL.User = url.UserPassword("flaguser", "FLAGPASS")
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	var out lockedBuffer
-	errc := make(chan error, 1)
-	go func() {
-		errc <- run(ctx, nil, getenvFrom(map[string]string{
-			"ADDR":          "127.0.0.1:0",
-			"UPSTREAM_URL":  upstreamURL.String(),
-			"FLAGS_URL":     flagsURL.String(),
-			"FLAGS_TIMEOUT": "200ms",
-			"LOG_LEVEL":     "debug", // so debug lines are checked too
-			"LOG_FORMAT":    "json",
-		}), &out)
-	}()
-	addr := waitForAddr(t, &out, errc)
+	addr, out, errc := startApp(t, ctx, map[string]string{
+		"ADDR":          "127.0.0.1:0",
+		"UPSTREAM_URL":  upstreamURL.String(),
+		"FLAGS_URL":     flagsURL.String(),
+		"FLAGS_TIMEOUT": "200ms",
+		"LOG_LEVEL":     "debug", // so debug lines are checked too
+		"LOG_FORMAT":    "json",
+	})
 	base := "http://" + addr
 
 	do := func(method, path, body string, hdr map[string]string) *http.Response {
@@ -148,17 +126,21 @@ func TestLogContract(t *testing.T) {
 		return resp
 	}
 
-	secretHeaders := map[string]string{
-		"Authorization":       "Bearer HEADERSECRET",
-		"Cookie":              "session=COOKIESECRET",
-		httpx.RequestIDHeader: "client-corr-1",
+	// Headers a careless logger might copy, with a distinct correlation ID
+	// per request so each request's lines can be told apart.
+	secretHeaders := func(id string) map[string]string {
+		return map[string]string{
+			"Authorization":       "Bearer HEADERSECRET",
+			"Cookie":              "session=COOKIESECRET",
+			httpx.RequestIDHeader: id,
+		}
 	}
-	resp := do("GET", "/items?api_key=QUERYSECRET", "", secretHeaders)
+	resp := do("GET", "/items?api_key=QUERYSECRET", "", secretHeaders("client-corr-1"))
 	if got := resp.Header.Get(httpx.RequestIDHeader); got != "client-corr-1" {
 		t.Errorf("response %s = %q, want the client's ID echoed", httpx.RequestIDHeader, got)
 	}
 	do("GET", "/items", "", nil) // a second list: flag evaluation falls back again
-	do("POST", "/items?x=QUERYSECRET", `{"name":"BODYSECRET-ok","description":"BODYSECRET"}`, secretHeaders)
+	do("POST", "/items?x=QUERYSECRET", `{"name":"BODYSECRET-ok","description":"BODYSECRET"}`, secretHeaders("client-corr-2"))
 	do("POST", "/items", `{"name":"","description":"BODYSECRET"}`, nil) // 422
 	do("POST", "/items", `{"name": BODYSECRET`, nil)                    // 400
 	do("GET", "/items/missing", "", nil)                                // 404
@@ -168,19 +150,10 @@ func TestLogContract(t *testing.T) {
 	do("GET", "/healthz", "", nil)
 
 	cancel()
-	select {
-	case err := <-errc:
-		if err != nil {
-			t.Fatalf("run() error = %v", err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("service did not shut down")
-	}
+	waitForShutdown(t, errc)
 
-	raw := out.String()
-	lines := strings.Split(strings.TrimSpace(raw), "\n")
 	var recs []map[string]any
-	for _, line := range lines {
+	for _, line := range out.Lines() {
 		var m map[string]any
 		if err := json.Unmarshal([]byte(line), &m); err != nil {
 			t.Fatalf("log line is not JSON: %q (%v)", line, err)
@@ -213,10 +186,22 @@ func TestLogContract(t *testing.T) {
 	if len(byID["client-corr-1"]) == 0 {
 		t.Error("no log lines carry the client's correlation ID client-corr-1")
 	}
-	boom := msgs(byID["client-boom"])
-	for _, want := range []string{"upstream request failed", "internal error", "request"} {
-		if !slices.Contains(boom, want) {
-			t.Errorf("failing upstream request logged %q, want it to include %q", boom, want)
+	// The full story of one failing request, in order: it arrives, the
+	// upstream call goes out, the upstream's 503 comes back, the call is
+	// reported failed, the handler logs the error, and the 502 goes out.
+	wantBoom := []string{
+		"request received", "upstream request sent", "upstream response received",
+		"upstream request failed", "internal error", "response sent",
+	}
+	if got := logtest.Msgs(byID["client-boom"]); !slices.Equal(got, wantBoom) {
+		t.Errorf("failing request logged %q, want %q", got, wantBoom)
+	}
+	checkPairing(t, byID)
+
+	// The client is told the upstream failed (502), not that the API did (500).
+	for _, m := range byID["client-boom"] {
+		if m["msg"] == "response sent" && m["status"] != float64(http.StatusBadGateway) {
+			t.Errorf("response sent for a failing upstream has status %v, want 502", m["status"])
 		}
 	}
 	for _, m := range byID["client-boom"] {
@@ -224,11 +209,12 @@ func TestLogContract(t *testing.T) {
 			t.Errorf("internal error line = %v, want upstream_status=503", m)
 		}
 	}
-	all := msgs(recs)
+	all := logtest.Msgs(recs)
 	for _, want := range []string{
 		"flag service unavailable, using default flag values",
 		"flag evaluation failed, using default",
-		"upstream request",
+		"upstream request sent",
+		"upstream response received",
 	} {
 		if !slices.Contains(all, want) {
 			t.Errorf("no %q line logged; the scenario no longer exercises it", want)
@@ -267,7 +253,13 @@ func checkLine(t *testing.T, m map[string]any, raw string) {
 
 	level, _ := m["level"].(string)
 	want := c.level
-	if msg == "request" {
+	switch msg {
+	case "request received":
+		want = "INFO"
+		if m["path"] == httpx.HealthzPath {
+			want = "DEBUG"
+		}
+	case "response sent":
 		status, _ := m["status"].(float64)
 		switch {
 		case status >= 500:
@@ -296,35 +288,40 @@ func checkLine(t *testing.T, m map[string]any, raw string) {
 	}
 }
 
-func msgs(recs []map[string]any) []string {
-	var out []string
-	for _, m := range recs {
-		out = append(out, m["msg"].(string))
-	}
-	return out
-}
-
-// waitForAddr returns the address from the "server started" line in out.
-func waitForAddr(t *testing.T, out *lockedBuffer, errc <-chan error) string {
+// checkPairing verifies, for every request, that its events are complete and
+// ordered: it opens with "request received" and closes with "response sent",
+// each exactly once, and every "upstream request sent" is answered by exactly
+// one outcome, a response or (when none arrived) a failure.
+func checkPairing(t *testing.T, byID map[string][]map[string]any) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		select {
-		case err := <-errc:
-			t.Fatalf("run() exited before starting: %v\nlogs: %s", err, out.String())
-		default:
+	for id, recs := range byID {
+		got := logtest.Msgs(recs)
+		if got[0] != "request received" || got[len(got)-1] != "response sent" {
+			t.Errorf("request %s: lines %q, want first request received and last response sent", id, got)
 		}
-		for _, line := range strings.Split(out.String(), "\n") {
-			var m struct {
-				Msg  string `json:"msg"`
-				Addr string `json:"addr"`
+		count := func(msg string) int {
+			n := 0
+			for _, m := range got {
+				if m == msg {
+					n++
+				}
 			}
-			if json.Unmarshal([]byte(line), &m) == nil && m.Msg == "server started" {
-				return m.Addr
+			return n
+		}
+		if count("request received") != 1 || count("response sent") != 1 {
+			t.Errorf("request %s: want exactly one request received and one response sent, got %q", id, got)
+		}
+
+		// An outcome is a response, or a failure that has no response.
+		outcomes := count("upstream response received")
+		for _, m := range recs {
+			msg := m["msg"]
+			if (msg == "upstream request failed" || msg == "upstream request cancelled") && m["upstream_status"] == nil {
+				outcomes++
 			}
 		}
-		time.Sleep(10 * time.Millisecond)
+		if sent := count("upstream request sent"); sent != outcomes {
+			t.Errorf("request %s: %d upstream requests sent but %d outcomes: %q", id, sent, outcomes, got)
+		}
 	}
-	t.Fatalf("server did not start; logs: %s", out.String())
-	return ""
 }

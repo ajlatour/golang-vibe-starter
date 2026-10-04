@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
 )
 
 // TestHTTPStoreUpstreamResponses checks how HTTPStore handles upstream
@@ -164,22 +165,15 @@ func TestHTTPStoreLive(t *testing.T) {
 }
 
 func TestHTTPStoreUnreachable(t *testing.T) {
-	upstream := httptest.NewServer(http.NotFoundHandler())
-	upstream.Close()
-
-	store := item.NewHTTPStore(upstream.URL, &http.Client{Timeout: time.Second})
+	store := item.NewHTTPStore(nettest.DeadURL(), &http.Client{Timeout: time.Second})
 	if _, err := store.List(t.Context()); err == nil || errors.Is(err, item.ErrNotFound) {
 		t.Errorf("List error = %v, want connection error", err)
 	}
 }
 
 func TestHTTPStoreTimeout(t *testing.T) {
-	release := make(chan struct{})
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-release
-	}))
+	upstream := httptest.NewServer(http.HandlerFunc(nettest.Hang))
 	defer upstream.Close()
-	defer close(release)
 
 	store := item.NewHTTPStore(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})
 	if _, err := store.List(t.Context()); err == nil {

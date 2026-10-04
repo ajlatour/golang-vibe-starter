@@ -79,10 +79,10 @@ happy-path stub while it's loaded:
 | File                    | Effect on the upstream                          | What the API does                    |
 | ----------------------- | ----------------------------------------------- | ------------------------------------ |
 | `slow-list.json`        | `GET /items` takes 2s                           | 200 after ~2s                        |
-| `timeout-list.json`     | `GET /items` takes 8s                           | 500 after 5s (`UPSTREAM_TIMEOUT`)    |
-| `unavailable.json`      | Every `/items` request returns 503              | 500, logs the upstream 503           |
-| `connection-reset.json` | Every `/items` connection is reset              | 500, logs the connection reset       |
-| `malformed-list.json`   | `GET /items` returns truncated JSON             | 500, logs the decode error           |
+| `timeout-list.json`     | `GET /items` takes 8s                           | 504 after 5s (`UPSTREAM_TIMEOUT`)    |
+| `unavailable.json`      | Every `/items` request returns 503              | 502, logs the upstream 503           |
+| `connection-reset.json` | Every `/items` connection is reset              | 502, logs the connection reset       |
+| `malformed-list.json`   | `GET /items` returns truncated JSON             | 502, logs the decode error           |
 
 ```sh
 # turn a fault on
@@ -200,37 +200,60 @@ that request can be found with one query.
 | ------------- | ---------------------- | ------------------------------------------------------------ |
 | `time`        | every line             | RFC 3339 timestamp.                                          |
 | `level`       | every line             | `DEBUG`, `INFO`, `WARN`, `ERROR`.                            |
-| `msg`         | every line             | Fixed event name: `request`, `internal error`, ... |
+| `msg`         | every line             | Fixed event name: `request received`, `response sent`, `internal error`, ... |
 | `service`     | every line             | Always `api` for this binary.                                |
 | `version`     | every line             | Commit that built the binary (see below), or `devel`.        |
 | `request_id`  | lines within a request | Correlation ID (see above).                                  |
-| `method`      | request, error lines   | HTTP method.                                                 |
-| `route`       | request, error lines   | Matched route pattern, e.g. `GET /items/{id}`. Group by this, not `path`. Empty if no route matched. |
-| `path`        | request, error lines   | Raw URL path. The query string is never logged.              |
-| `status`      | `request`              | Response status code.                                        |
-| `bytes`       | `request`              | Response body size.                                          |
-| `duration_ms` | `request`, `flag service recovered` | Time to serve the request, or the length of a flagd outage, in milliseconds (a decimal number). |
+| `method`      | `request received`, `response sent`, error lines | HTTP method.                                |
+| `route`       | `response sent`, error lines | Matched route pattern, e.g. `GET /items/{id}`. Group by this, not `path`. Empty if no route matched. Not on `request received`: routing hasn't happened yet. |
+| `path`        | `request received`, `response sent`, error lines | Raw URL path. The query string is never logged. |
+| `content_length` | `request received`  | Size of the request body the client declared, in bytes; -1 if unknown. The body itself is never logged. |
+| `status`      | `response sent`        | Response status code.                                        |
+| `bytes`       | `response sent`        | Response body size.                                          |
+| `duration_ms` | `response sent`, `flag service recovered` | Time to serve the request, or the length of a flagd outage, in milliseconds (a decimal number). |
 | `upstream`    | upstream call lines, `internal error` | The upstream call, `METHOD /path`, e.g. `GET /items`. |
-| `upstream_status` | same               | Upstream response status. Absent if no response arrived (timeout, connection error). |
-| `upstream_duration_ms` | same          | Time spent on the upstream call, in milliseconds.            |
+| `upstream_status` | `upstream response received`, failure lines, `internal error` | Upstream response status. Absent if no response arrived (timeout, connection error). |
+| `upstream_duration_ms` | same, not `upstream request sent` | Time spent on the upstream call, in milliseconds. |
 | `error`       | error and warning lines | Error message. Always `error`, never `err`.                 |
 | `flag`        | flag lines             | Feature flag key.                                            |
 | `fallbacks`   | `flag service recovered` | Evaluations served from defaults during the outage.        |
 
-**Levels.** A `request` line is `ERROR` for 5xx responses and `INFO` otherwise (4xx are the
-client's mistake, not an incident), so alerting on `level=ERROR` finds server failures.
-`/healthz` requests are `DEBUG`, so the container's probe doesn't appear unless
-`LOG_LEVEL=debug`; a failing healthcheck is still `ERROR`. A client that disconnects mid-request
-logs `client disconnected` at `INFO` and a `request` line with status 499, not an error.
+**The four ends of a request.** Each request is logged where it enters and leaves the API, and
+where it enters and leaves the upstream, in this order:
 
-**Upstream calls.** Every call to the upstream logs one line: `upstream request` at `DEBUG` when
-it answered (a JSON 404, meaning "no such item", counts as an answer), `upstream request failed`
-at `WARN` with `error` when it didn't. The `internal error` line a failure produces carries the
+| Event                    | `msg`                        | Fields beyond the common ones                                  |
+| ------------------------ | ---------------------------- | -------------------------------------------------------------- |
+| Request arrives          | `request received`           | `method`, `path`, `content_length`                             |
+| Request goes upstream    | `upstream request sent`      | `upstream`                                                     |
+| Response from upstream   | `upstream response received` | `upstream`, `upstream_status`, `upstream_duration_ms`          |
+| Response goes to client  | `response sent`              | `method`, `route`, `path`, `status`, `bytes`, `duration_ms`    |
+
+All four carry the same `request_id`, so filtering on it shows the whole exchange. The two
+"received/sent" pairs bracket the work, so a request that hangs shows as a `request received`
+with no `response sent`, and a stuck upstream call as an `upstream request sent` with no
+`upstream response received`. A request that doesn't touch the upstream (`GET /healthz`) has just
+the outer pair, and a handler may make several upstream calls. Only metadata is logged, never
+headers or bodies (see the rules below).
+
+**Levels.** All four events are `INFO`, except that `/healthz` is `DEBUG` so the container's probe
+doesn't appear unless `LOG_LEVEL=debug`. That is four lines for a request that makes one upstream
+call. `response sent` is `ERROR` for 5xx responses, including the 502 and 504 an upstream failure
+produces (4xx are the client's mistake, not an incident), so alerting on `level=ERROR` finds
+server and upstream failures alike; a failing healthcheck is still
+`ERROR`. A client that disconnects mid-request logs `client disconnected` at `INFO` and a
+`response sent` line with status 499, not an error.
+
+**Upstream failures.** `upstream response received` is logged whenever any response came back, a
+JSON 404 ("no such item") and a 503 alike. If the call then failed (an unexpected status, a body
+that won't decode) an `upstream request failed` line at `WARN` follows, with `error`. If no
+response came back at all (timeout, connection refused) there is no `received` line, only the
+`WARN`, and `upstream_status` is absent. The `internal error` line a failure produces carries the
 same `upstream`, `upstream_status` and `upstream_duration_ms` fields, so one line is enough to see
 what the upstream did and how long it took: a 503 with a 2 ms duration is the upstream refusing,
 a missing `upstream_status` with a duration near `UPSTREAM_TIMEOUT` is a timeout. The inbound
 request's `method`, `path` and `status` never share a name with these, so the two can't be
-confused. A client disconnecting mid-call is logged at `DEBUG`, not as an upstream failure.
+confused. A client disconnecting mid-call is logged at `DEBUG` (`upstream request cancelled`), not
+as an upstream failure.
 
 **Feature flags** log without flooding: when flagd stops answering the API logs one `WARN`
 (`flag service unavailable, using default flag values`) and keeps serving defaults, then one
@@ -294,7 +317,11 @@ Errors are JSON, `{"error":"..."}`:
 - 400: malformed body
 - 404: unknown ID
 - 422: validation failure
-- 500: unexpected failure, including the upstream being unreachable; details are logged, not returned
+- 500: unexpected failure in the API itself; details are logged, not returned
+- 502: the upstream couldn't give a usable answer: connection refused or reset, an error status,
+  or a body that won't decode. The body is just `{"error":"bad gateway"}`; the upstream's message
+  is logged, not returned
+- 504: the upstream didn't answer within `UPSTREAM_TIMEOUT` (`{"error":"gateway timeout"}`)
 
 ## Layout
 

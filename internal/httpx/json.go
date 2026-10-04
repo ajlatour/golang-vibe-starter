@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 )
 
 // MaxBodyBytes is the largest request body DecodeJSON accepts.
@@ -36,7 +37,17 @@ func WriteError(w http.ResponseWriter, status int, msg string) {
 	WriteJSON(w, status, map[string]string{"error": msg})
 }
 
-// ServerError logs err and sends a generic 500 so internals aren't leaked.
+// StatusError is implemented by errors that map to a specific 5xx status for
+// the client, such as a failed upstream call (502 or 504). ServerError sends
+// that status with the standard reason phrase as the message, so nothing
+// internal is exposed.
+type StatusError interface {
+	error
+	HTTPStatus() int
+}
+
+// ServerError logs err and sends a 5xx so internals aren't leaked: a generic
+// 500, or the status of the first StatusError in err's chain.
 // If err (or an error it wraps) is a LogAttrsError, its fields are logged too.
 // If err is only because the client went away (the request's context was
 // cancelled), that's not a server fault: it is logged at info as
@@ -52,7 +63,13 @@ func ServerError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, er
 	logger.LogAttrs(r.Context(), slog.LevelError, "internal error",
 		append(requestAttrs(r), errorAttrs(err)...)...,
 	)
-	WriteError(w, http.StatusInternalServerError, "internal server error")
+	status, msg := http.StatusInternalServerError, "internal server error"
+	var se StatusError
+	if errors.As(err, &se) {
+		status = se.HTTPStatus()
+		msg = strings.ToLower(http.StatusText(status))
+	}
+	WriteError(w, status, msg)
 }
 
 // DecodeJSON decodes a single JSON object from the request body into v,
