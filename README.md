@@ -131,7 +131,7 @@ internal/httpx/          HTTP plumbing: env config, graceful Serve, middleware
 internal/logx/           Logging toolkit: logger, the Key field names, request-ID
                          context, redaction and truncation helpers. Imports nothing
                          from this module.
-internal/flags/          OFREP client for the flagd sidecar, flag declarations,
+internal/featureflag/    OFREP client for the flagd sidecar, flag declarations,
                          and fallback defaults derived from flagd/flags.json
 internal/jsoncall/       One JSON-over-HTTP call: encode, send, redact, cap, decode, and
                          classify failures. Used by HTTPStore and the flags client.

@@ -47,13 +47,13 @@ How flag problems are logged, without flooding the logs during an outage, is in
 1. Define it in `flagd/flags.json`.
 2. Declare and read it in code:
    ```go
-   var FlagFoo = flags.Declare("foo") // package level
+   var FlagFoo = featureflag.Declare("foo") // package level
    ...
    if f.Bool(ctx, FlagFoo) { ... }   // f is the package's Flags
    ```
 
-`flags.Declare` registers the key, and the service refuses to start if any declared flag is
+`featureflag.Declare` registers the key, and the service refuses to start if any declared flag is
 missing from the definitions, so a typo or forgotten step fails fast, not at request time.
 
 Evaluation currently sends an empty context, so targeting rules in flagd (per user, per tenant)
-have nothing to match on yet. Pass request attributes in `flags.OFREP` when you need them.
+have nothing to match on yet. Pass request attributes in `featureflag.OFREP` when you need them.

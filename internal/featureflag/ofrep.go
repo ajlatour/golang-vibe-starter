@@ -1,8 +1,8 @@
-// Package flags evaluates OpenFeature feature flags by calling a flagd
+// Package featureflag evaluates OpenFeature feature flags by calling a flagd
 // sidecar over OFREP, the OpenFeature Remote Evaluation Protocol (plain
 // HTTP/JSON). Using OFREP rather than the gRPC provider keeps the module free
 // of third-party dependencies.
-package flags
+package featureflag
 
 import (
 	"context"

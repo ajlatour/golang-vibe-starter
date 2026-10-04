@@ -1,4 +1,4 @@
-package flags_test
+package featureflag_test
 
 import (
 	"log/slog"
@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ajlatour/golang-vibe-starter/internal/flags"
+	"github.com/ajlatour/golang-vibe-starter/internal/featureflag"
 	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
 )
@@ -44,7 +44,7 @@ func TestOFREPBool(t *testing.T) {
 			defer srv.Close()
 
 			var logs logtest.Buffer
-			c := flags.NewOFREP(srv.URL+"/", srv.Client(), logs.Logger(slog.LevelInfo), flags.Defaults{"some-flag": tt.def})
+			c := featureflag.NewOFREP(srv.URL+"/", srv.Client(), logs.Logger(slog.LevelInfo), featureflag.Defaults{"some-flag": tt.def})
 			if got := c.Bool(t.Context(), "some-flag"); got != tt.want {
 				t.Errorf("Bool() = %v, want %v", got, tt.want)
 			}
@@ -56,7 +56,7 @@ func TestOFREPBool(t *testing.T) {
 }
 
 func TestOFREPBoolUnreachable(t *testing.T) {
-	c := flags.NewOFREP(nettest.DeadURL(), &http.Client{Timeout: time.Second}, slog.New(slog.DiscardHandler), flags.Defaults{"k": true})
+	c := featureflag.NewOFREP(nettest.DeadURL(), &http.Client{Timeout: time.Second}, slog.New(slog.DiscardHandler), featureflag.Defaults{"k": true})
 	if got := c.Bool(t.Context(), "k"); !got {
 		t.Error("Bool() = false, want the default (true) when flagd is unreachable")
 	}
@@ -67,7 +67,7 @@ func TestOFREPBoolNoConfiguredDefault(t *testing.T) {
 	defer srv.Close()
 
 	var logs logtest.Buffer
-	c := flags.NewOFREP(srv.URL, srv.Client(), logs.Logger(slog.LevelInfo), flags.Defaults{})
+	c := featureflag.NewOFREP(srv.URL, srv.Client(), logs.Logger(slog.LevelInfo), featureflag.Defaults{})
 	if got := c.Bool(t.Context(), "undeclared"); got {
 		t.Error("Bool() = true, want false for a flag with no configured default")
 	}
@@ -106,7 +106,7 @@ func TestOFREPOutageLogging(t *testing.T) {
 	stub, srv := newFlagdStub(t)
 	var logs logtest.Buffer
 	logger := logs.Logger(slog.LevelDebug)
-	c := flags.NewOFREP(srv.URL, srv.Client(), logger, flags.Defaults{"f": false})
+	c := featureflag.NewOFREP(srv.URL, srv.Client(), logger, featureflag.Defaults{"f": false})
 
 	if !c.Bool(t.Context(), "f") {
 		t.Fatal("healthy Bool() = false, want true from flagd")
@@ -164,7 +164,7 @@ func TestOFREPFlagProblemLogging(t *testing.T) {
 	stub.set(404, `{"errorCode":"FLAG_NOT_FOUND"}`)
 	var logs logtest.Buffer
 	logger := logs.Logger(slog.LevelDebug)
-	c := flags.NewOFREP(srv.URL, srv.Client(), logger, flags.Defaults{"f": true, "g": false})
+	c := featureflag.NewOFREP(srv.URL, srv.Client(), logger, featureflag.Defaults{"f": true, "g": false})
 
 	for range 3 {
 		c.Bool(t.Context(), "f")
@@ -196,7 +196,7 @@ func TestOFREPMissingDefaultLoggedOnce(t *testing.T) {
 	stub, srv := newFlagdStub(t)
 	stub.set(404, `{}`)
 	var logs logtest.Buffer
-	c := flags.NewOFREP(srv.URL, srv.Client(), logs.Logger(slog.LevelInfo), flags.Defaults{})
+	c := featureflag.NewOFREP(srv.URL, srv.Client(), logs.Logger(slog.LevelInfo), featureflag.Defaults{})
 	for range 3 {
 		c.Bool(t.Context(), "undeclared")
 	}

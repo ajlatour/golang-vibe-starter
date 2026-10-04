@@ -12,7 +12,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ajlatour/golang-vibe-starter/internal/flags"
+	"github.com/ajlatour/golang-vibe-starter/internal/featureflag"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
@@ -80,11 +80,11 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 // the application declares must be defined there, because those defaults are
 // what evaluation falls back to when flagd can't answer.
 func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
-	defaults, err := flags.LoadDefaults(cfg.FlagsFallbackFile)
+	defaults, err := featureflag.LoadDefaults(cfg.FlagsFallbackFile)
 	if err != nil {
 		return nil, err
 	}
-	if err := defaults.Require(flags.Declared()...); err != nil {
+	if err := defaults.Require(featureflag.Declared()...); err != nil {
 		return nil, err
 	}
 
@@ -93,7 +93,7 @@ func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
 		return defaults, nil
 	}
 	logger.Info("using feature flags", logx.KeyURL, cfg.FlagsURL.Redacted(), logx.KeyTimeout, cfg.FlagsTimeout.String())
-	return flags.NewOFREP(cfg.FlagsURL.String(), &http.Client{Timeout: cfg.FlagsTimeout}, logger, defaults), nil
+	return featureflag.NewOFREP(cfg.FlagsURL.String(), &http.Client{Timeout: cfg.FlagsTimeout}, logger, defaults), nil
 }
 
 // newHandler builds the API's root handler: routes plus middleware.

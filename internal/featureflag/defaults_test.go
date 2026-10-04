@@ -1,18 +1,18 @@
-package flags_test
+package featureflag_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/ajlatour/golang-vibe-starter/internal/flags"
+	"github.com/ajlatour/golang-vibe-starter/internal/featureflag"
 )
 
 func TestParseDefaults(t *testing.T) {
 	tests := []struct {
 		name    string
 		in      string
-		want    flags.Defaults
+		want    featureflag.Defaults
 		wantErr bool
 	}{
 		{
@@ -21,9 +21,9 @@ func TestParseDefaults(t *testing.T) {
 				"a":{"state":"ENABLED","variants":{"on":true,"off":false},"defaultVariant":"on"},
 				"b":{"variants":{"on":true,"off":false},"defaultVariant":"off","targeting":{"if":[true,"on"]}}
 			}}`,
-			want: flags.Defaults{"a": true, "b": false},
+			want: featureflag.Defaults{"a": true, "b": false},
 		},
-		{name: "no flags", in: `{"flags":{}}`, want: flags.Defaults{}},
+		{name: "no flags", in: `{"flags":{}}`, want: featureflag.Defaults{}},
 		{name: "unknown default variant", in: `{"flags":{"a":{"variants":{"on":true},"defaultVariant":"nope"}}}`, wantErr: true},
 		{name: "missing default variant", in: `{"flags":{"a":{"variants":{"on":true}}}}`, wantErr: true},
 		{name: "non-boolean flag", in: `{"flags":{"a":{"variants":{"x":"red"},"defaultVariant":"x"}}}`, wantErr: true},
@@ -33,7 +33,7 @@ func TestParseDefaults(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := flags.ParseDefaults([]byte(tt.in))
+			got, err := featureflag.ParseDefaults([]byte(tt.in))
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("ParseDefaults() error = nil, want error")
@@ -57,7 +57,7 @@ func TestParseDefaults(t *testing.T) {
 
 func TestLoadDefaults(t *testing.T) {
 	t.Run("embedded flagd/flags.json", func(t *testing.T) {
-		got, err := flags.LoadDefaults("")
+		got, err := featureflag.LoadDefaults("")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -71,7 +71,7 @@ func TestLoadDefaults(t *testing.T) {
 		if err := os.WriteFile(path, []byte(in), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		got, err := flags.LoadDefaults(path)
+		got, err := featureflag.LoadDefaults(path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -80,14 +80,14 @@ func TestLoadDefaults(t *testing.T) {
 		}
 	})
 	t.Run("missing file", func(t *testing.T) {
-		if _, err := flags.LoadDefaults(filepath.Join(t.TempDir(), "nope.json")); err == nil {
+		if _, err := featureflag.LoadDefaults(filepath.Join(t.TempDir(), "nope.json")); err == nil {
 			t.Error("LoadDefaults() error = nil, want error")
 		}
 	})
 }
 
 func TestRequire(t *testing.T) {
-	d := flags.Defaults{"a": true}
+	d := featureflag.Defaults{"a": true}
 	if err := d.Require("a"); err != nil {
 		t.Errorf("Require(a) = %v, want nil", err)
 	}
@@ -97,11 +97,11 @@ func TestRequire(t *testing.T) {
 }
 
 func TestDeclare(t *testing.T) {
-	if got := flags.Declare("declared-in-test"); got != "declared-in-test" {
+	if got := featureflag.Declare("declared-in-test"); got != "declared-in-test" {
 		t.Errorf("Declare() = %q, want the key back", got)
 	}
 	found := false
-	for _, k := range flags.Declared() {
+	for _, k := range featureflag.Declared() {
 		found = found || k == "declared-in-test"
 	}
 	if !found {

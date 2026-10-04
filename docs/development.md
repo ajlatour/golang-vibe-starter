@@ -34,7 +34,7 @@ don't, and its message says what to fix.
 | The fields of `item.Item`, the name limit, or the correlation ID format | `docs/openapi.json` | `cmd/api/openapi_test.go` |
 | A log message (new, renamed, or a level or field changed) | `logtest.Contract` (`internal/logtest/contract.go`) and the Messages table in `docs/logging.md` | `internal/logx/schema_test.go`, and `cmd/api/logcontract_test.go`, which runs the whole service |
 | A log field name | A `Key` constant in `internal/logx/keys.go` and the Fields table in `docs/logging.md` | `internal/logx/schema_test.go`; a raw string key fails the build |
-| A feature flag | `flagd/flags.json`, and `flags.Declare` in code | The service won't start if a declared flag is missing; `cmd/api/main_test.go` |
+| A feature flag | `flagd/flags.json`, and `featureflag.Declare` in code | The service won't start if a declared flag is missing; `cmd/api/main_test.go` |
 | A store implementation | Nothing: run it through `testStore` in `internal/item/store_test.go` | The same contract `HTTPStore` and the in-memory fake pass |
 | An environment variable | The Configuration table in the README | Not checked: keep it in step by hand |
 

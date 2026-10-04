@@ -6,14 +6,14 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/ajlatour/golang-vibe-starter/internal/flags"
+	"github.com/ajlatour/golang-vibe-starter/internal/featureflag"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 )
 
 // FlagListTotal is the feature flag that adds a "total" count to the list
 // response. Declaring it here makes the service check at startup that
 // flagd/flags.json defines it.
-var FlagListTotal = flags.Declare("items-list-total")
+var FlagListTotal = featureflag.Declare("items-list-total")
 
 // Flags evaluates boolean feature flags. Implementations fall back to a
 // configured default when a flag can't be evaluated, so handlers never handle
