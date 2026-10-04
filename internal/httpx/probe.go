@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// Probe GETs /healthz on the server listening at addr (a listen address such
+// Probe GETs HealthzPath on the server listening at addr (a listen address such
 // as ":8080") and returns an error unless it answers 200. It backs each
 // binary's "healthcheck" subcommand, which container healthchecks run because
 // the runtime image has no curl or wget.
@@ -24,7 +24,7 @@ func Probe(ctx context.Context, addr string) error {
 
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	url := "http://" + net.JoinHostPort(host, port) + "/healthz"
+	url := "http://" + net.JoinHostPort(host, port) + HealthzPath
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("probe: %w", err)

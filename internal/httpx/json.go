@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,9 @@ import (
 
 // MaxBodyBytes is the largest request body DecodeJSON accepts.
 const MaxBodyBytes = 1 << 20 // 1 MiB
+
+// HealthzPath is where services serve Healthz and where Probe looks.
+const HealthzPath = "/healthz"
 
 // Healthz is a liveness handler: it reports ok whenever the process can
 // serve HTTP.
@@ -33,7 +37,17 @@ func WriteError(w http.ResponseWriter, status int, msg string) {
 }
 
 // ServerError logs err and sends a generic 500 so internals aren't leaked.
+// If err is only because the client went away (the request's context was
+// cancelled), that's not a server fault: it is logged at info as
+// "client disconnected" and answered with 499 instead.
 func ServerError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(r.Context().Err(), context.Canceled) && errors.Is(err, context.Canceled) {
+		logger.LogAttrs(r.Context(), slog.LevelInfo, "client disconnected",
+			append(requestAttrs(r), slog.Any(LogKeyError, err))...,
+		)
+		WriteError(w, StatusClientClosedRequest, "client closed request")
+		return
+	}
 	logger.LogAttrs(r.Context(), slog.LevelError, "internal error",
 		append(requestAttrs(r), slog.Any(LogKeyError, err))...,
 	)

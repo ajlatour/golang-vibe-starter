@@ -15,7 +15,29 @@ func Middleware(logger *slog.Logger, h http.Handler) http.Handler {
 	return assignRequestID(logRequests(logger, recoverPanics(logger, h)))
 }
 
-// logRequests logs one line per request with its status and duration.
+// StatusClientClosedRequest is the status logged (and sent, though no one is
+// listening) when the client disconnects before the response is ready. It is
+// nginx's non-standard 499, widely recognised in log tooling.
+const StatusClientClosedRequest = 499
+
+// requestLevel picks the level of a request's log line: server failures are
+// errors, so alerting on level=ERROR finds them; the container's healthcheck
+// is debug, because it fires every few seconds and says nothing unless it
+// fails; everything else, including 4xx (the client's mistake, not an
+// incident), is info.
+func requestLevel(r *http.Request, status int) slog.Level {
+	switch {
+	case status >= 500:
+		return slog.LevelError
+	case r.URL.Path == HealthzPath:
+		return slog.LevelDebug
+	default:
+		return slog.LevelInfo
+	}
+}
+
+// logRequests logs one line per request with its status and duration, at the
+// level requestLevel picks.
 func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -23,7 +45,7 @@ func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 		next.ServeHTTP(rec, r)
 		// ServeMux sets r.Pattern on this same request when it matches a
 		// route, so it's available once the handler has returned.
-		logger.LogAttrs(r.Context(), slog.LevelInfo, "request",
+		logger.LogAttrs(r.Context(), requestLevel(r, rec.status), "request",
 			append(requestAttrs(r),
 				slog.Int("status", rec.status),
 				slog.Int("bytes", rec.bytes),

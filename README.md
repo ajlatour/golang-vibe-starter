@@ -209,9 +209,22 @@ that request can be found with one query.
 | `path`        | request, error lines   | Raw URL path. The query string is never logged.              |
 | `status`      | `request`              | Response status code.                                        |
 | `bytes`       | `request`              | Response body size.                                          |
-| `duration_ms` | `request`              | Time to serve the request, in milliseconds (a decimal number). |
+| `duration_ms` | `request`, `flag service recovered` | Time to serve the request, or the length of a flagd outage, in milliseconds (a decimal number). |
 | `error`       | error and warning lines | Error message. Always `error`, never `err`.                 |
 | `flag`        | flag lines             | Feature flag key.                                            |
+| `fallbacks`   | `flag service recovered` | Evaluations served from defaults during the outage.        |
+
+**Levels.** A `request` line is `ERROR` for 5xx responses and `INFO` otherwise (4xx are the
+client's mistake, not an incident), so alerting on `level=ERROR` finds server failures.
+`/healthz` requests are `DEBUG`, so the container's probe doesn't appear unless
+`LOG_LEVEL=debug`; a failing healthcheck is still `ERROR`. A client that disconnects mid-request
+logs `client disconnected` at `INFO` and a `request` line with status 499, not an error.
+
+**Feature flags** log without flooding: when flagd stops answering the API logs one `WARN`
+(`flag service unavailable, using default flag values`) and keeps serving defaults, then one
+`INFO` (`flag service recovered`, with `fallbacks`, the number of evaluations served from defaults,
+and `duration_ms`, how long the outage lasted) when it's back. A problem with a single flag logs
+one `WARN` until it evaluates again. Per-evaluation detail is `DEBUG`.
 
 Request and response bodies, query strings and headers are not logged, and URLs logged at startup
 have credentials redacted.

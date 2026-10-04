@@ -2,8 +2,10 @@ package httpx
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -159,5 +161,117 @@ func TestNewLogger(t *testing.T) {
 func TestBuildVersion(t *testing.T) {
 	if BuildVersion() == "" {
 		t.Error("BuildVersion() is empty")
+	}
+}
+
+// serveAt runs a request for path through Middleware with a debug-level
+// logger and returns the single request log line.
+func serveAt(t *testing.T, path string, status int) map[string]any {
+	t.Helper()
+	var logs bytes.Buffer
+	logger := slog.New(NewContextHandler(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	h := Middleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(status)
+	}))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	lines := logLines(t, &logs)
+	if len(lines) != 1 {
+		t.Fatalf("got %d log lines, want 1: %v", len(lines), lines)
+	}
+	return lines[0]
+}
+
+func TestRequestLogLevel(t *testing.T) {
+	tests := []struct {
+		name   string
+		path   string
+		status int
+		want   string
+	}{
+		{name: "success", path: "/items", status: 200, want: "INFO"},
+		{name: "created", path: "/items", status: 201, want: "INFO"},
+		{name: "client error is not an incident", path: "/items/x", status: 404, want: "INFO"},
+		{name: "validation failure", path: "/items", status: 422, want: "INFO"},
+		{name: "server error", path: "/items", status: 500, want: "ERROR"},
+		{name: "bad gateway", path: "/items", status: 502, want: "ERROR"},
+		{name: "healthcheck is debug", path: HealthzPath, status: 200, want: "DEBUG"},
+		{name: "failing healthcheck is an error", path: HealthzPath, status: 503, want: "ERROR"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			line := serveAt(t, tt.path, tt.status)
+			if line["level"] != tt.want {
+				t.Errorf("level = %v, want %s", line["level"], tt.want)
+			}
+		})
+	}
+}
+
+// TestHealthzHiddenAtInfo checks the point of the debug level: the default
+// info-level logger doesn't emit healthcheck requests at all.
+func TestHealthzHiddenAtInfo(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	h := Middleware(logger, http.HandlerFunc(Healthz))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, HealthzPath, nil))
+	if logs.Len() != 0 {
+		t.Errorf("healthcheck logged at info: %s", logs.String())
+	}
+}
+
+func TestClientDisconnect(t *testing.T) {
+	// The store fails because the client's request context was cancelled.
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/things/1", nil).WithContext(ctx)
+
+	rec, lines := serveLogged(t, func(w http.ResponseWriter, r *http.Request) {
+		ServerError(slog.New(slog.DiscardHandler), w, r, fmt.Errorf("upstream GET /items: %w", context.Canceled))
+	}, req)
+
+	for _, l := range lines {
+		if l["level"] == "ERROR" {
+			t.Errorf("client disconnect logged at ERROR: %v", l)
+		}
+	}
+	if rec.Code != StatusClientClosedRequest {
+		t.Errorf("status = %d, want %d", rec.Code, StatusClientClosedRequest)
+	}
+	last := lines[len(lines)-1]
+	if last["msg"] != "request" || last["status"] != float64(StatusClientClosedRequest) || last["level"] != "INFO" {
+		t.Errorf("request log = %v, want INFO request with status 499", last)
+	}
+}
+
+// TestCancelledWhileClientStillConnected checks that a context.Canceled
+// error is only treated as a disconnect when the request's own context is
+// cancelled; otherwise it's a real internal error.
+func TestCancelledWhileClientStillConnected(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/things/1", nil) // context live
+	ServerError(logger, rec, req, fmt.Errorf("internal: %w", context.Canceled))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", rec.Code)
+	}
+	if line := logLines(t, &logs)[0]; line["level"] != "ERROR" || line["msg"] != "internal error" {
+		t.Errorf("log = %v, want ERROR internal error", line)
+	}
+}
+
+func TestUpstreamTimeoutIsStillAnError(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/things/1", nil)
+	ServerError(logger, rec, req, fmt.Errorf("upstream: %w", context.DeadlineExceeded))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", rec.Code)
+	}
+	if line := logLines(t, &logs)[0]; line["level"] != "ERROR" {
+		t.Errorf("log = %v, want ERROR", line)
 	}
 }

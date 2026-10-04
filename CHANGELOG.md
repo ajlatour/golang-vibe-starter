@@ -6,19 +6,9 @@ everything is under Unreleased.
 
 ## Roadmap
 
-Planned work for structured logging. Phase 1 is done (see Unreleased); the rest is not started.
+Planned work for structured logging. Phases 1 and 2 are done (see Unreleased); the rest is not
+started.
 The goal is logs that are easy to read and to query when debugging a deployed instance.
-
-### Phase 2: correct levels and less noise
-
-- Set the request log level from the status: 5xx at `ERROR`, everything else at `INFO`.
-- Log `/healthz` requests at `DEBUG`, so the container probe (every 10s) doesn't bury real
-  traffic.
-- Treat a client disconnecting mid-request (`context.Canceled` from the client) as a 499-style
-  outcome at `INFO`/`WARN`, not as an `internal error`.
-- flagd outages: log one `WARN` when flagd becomes unavailable and one `INFO` when it recovers,
-  with a count of fallbacks in between; keep per-request detail at `DEBUG`. Today every request
-  logs the same warning while flagd is down.
 
 ### Phase 3: upstream visibility
 
@@ -54,6 +44,18 @@ The goal is logs that are easy to read and to query when debugging a deployed in
     build info, or the `VERSION` build arg for Docker images (`devel` if unset).
   - `route` (the matched pattern, e.g. `GET /items/{id}`) on request and error lines, for grouping.
   - A documented log schema in the README.
+- Structured logging, phase 2:
+  - Request log lines are at `ERROR` for 5xx and `INFO` otherwise, including 4xx, which are the
+    client's mistake rather than an incident.
+  - `/healthz` requests log at `DEBUG`, so the container probe no longer appears at the default
+    level. A failing healthcheck (5xx) still logs at `ERROR`.
+  - A client disconnecting mid-request is logged as `client disconnected` at `INFO` and answered
+    with status 499, instead of an `internal error` at `ERROR`. Upstream timeouts remain errors.
+  - flagd outages log one `WARN` (`flag service unavailable, using default flag values`) when
+    they start and one `INFO` (`flag service recovered`, with `fallbacks` and `duration_ms`) when
+    they end; failed evaluations in between log at `DEBUG`. A problem with a single flag (unknown,
+    wrong type) logs one `WARN` for that flag until it evaluates again, and a flag with no
+    configured default logs one `ERROR`.
 - Feature flags with a flagd (OpenFeature) sidecar, evaluated over OFREP. The demo flag
   `items-list-total` adds `"total"` to `GET /items`.
 - Flag fallbacks: when flagd can't answer, the API uses each flag's `defaultVariant` from
@@ -68,4 +70,5 @@ The goal is logs that are easy to read and to query when debugging a deployed in
   - `err` is now `error` (on `internal error` lines).
   - `duration` (integer nanoseconds in JSON) is now `duration_ms` (decimal milliseconds).
   - Timeouts on startup and shutdown lines are strings such as `5s` instead of nanoseconds.
+- Flag evaluation no longer logs a warning on every failed evaluation (see phase 2 above).
 - Feature-flag warnings are logged with the request context, so they carry `request_id`.
