@@ -16,13 +16,14 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
 )
 
 // debugLogger returns a debug-level logger on buf that, like the service's
 // own, adds request_id to lines logged with a request's context.
 func debugLogger(buf *logtest.Buffer) *slog.Logger {
-	return slog.New(httpx.NewContextHandler(buf.Handler(slog.LevelDebug)))
+	return slog.New(logx.NewContextHandler(buf.Handler(slog.LevelDebug)))
 }
 
 // logLine is the level and message of one expected log line.
@@ -89,8 +90,8 @@ func TestHTTPStoreCallLogging(t *testing.T) {
 			var got []logLine
 			for _, l := range lines {
 				got = append(got, logLine{l["level"].(string), l["msg"].(string)})
-				if l[httpx.LogKeyUpstream] != "GET /items/a" {
-					t.Errorf("%v: upstream = %v, want GET /items/a", l["msg"], l[httpx.LogKeyUpstream])
+				if l[logx.KeyUpstream] != "GET /items/a" {
+					t.Errorf("%v: upstream = %v, want GET /items/a", l["msg"], l[logx.KeyUpstream])
 				}
 			}
 			if !slices.Equal(got, tt.want) {
@@ -98,20 +99,20 @@ func TestHTTPStoreCallLogging(t *testing.T) {
 			}
 
 			// The "sent" line is logged before the call, so it has no outcome.
-			for _, key := range []string{httpx.LogKeyUpstreamStatus, httpx.LogKeyUpstreamDurationMS} {
+			for _, key := range []string{logx.KeyUpstreamStatus, logx.KeyUpstreamDurationMS} {
 				if _, ok := lines[0][key]; ok {
 					t.Errorf("sent line has %s: %v", key, lines[0])
 				}
 			}
 			for _, l := range lines[1:] {
-				if got, _ := l[httpx.LogKeyUpstreamStatus].(float64); got != tt.wantStatus {
-					t.Errorf("%v: upstream_status = %v, want %v", l["msg"], l[httpx.LogKeyUpstreamStatus], tt.wantStatus)
+				if got, _ := l[logx.KeyUpstreamStatus].(float64); got != tt.wantStatus {
+					t.Errorf("%v: upstream_status = %v, want %v", l["msg"], l[logx.KeyUpstreamStatus], tt.wantStatus)
 				}
-				if _, ok := l[httpx.LogKeyUpstreamDurationMS].(float64); !ok {
-					t.Errorf("%v: upstream_duration_ms = %v, want a number", l["msg"], l[httpx.LogKeyUpstreamDurationMS])
+				if _, ok := l[logx.KeyUpstreamDurationMS].(float64); !ok {
+					t.Errorf("%v: upstream_duration_ms = %v, want a number", l["msg"], l[logx.KeyUpstreamDurationMS])
 				}
 			}
-			if last := lines[len(lines)-1]; last["level"] == "WARN" && last[httpx.LogKeyError] == nil {
+			if last := lines[len(lines)-1]; last["level"] == "WARN" && last[logx.KeyError] == nil {
 				t.Errorf("warning has no error field: %v", last)
 			}
 		})
@@ -147,7 +148,7 @@ func TestUpstreamErrorFields(t *testing.T) {
 			t.Fatalf("error = %v, want *UpstreamError with status 0", err)
 		}
 		for _, a := range ue.LogAttrs() {
-			if a.Key == httpx.LogKeyUpstreamStatus {
+			if a.Key == logx.KeyUpstreamStatus {
 				t.Error("LogAttrs includes upstream_status without a response")
 			}
 		}
@@ -187,10 +188,10 @@ func TestUpstreamTimeoutLogged(t *testing.T) {
 	if l["level"] != "WARN" {
 		t.Errorf("level = %v, want WARN", l["level"])
 	}
-	if _, ok := l[httpx.LogKeyUpstreamStatus]; ok {
+	if _, ok := l[logx.KeyUpstreamStatus]; ok {
 		t.Errorf("timeout line has upstream_status: %v", l)
 	}
-	if d, _ := l[httpx.LogKeyUpstreamDurationMS].(float64); d < 40 {
+	if d, _ := l[logx.KeyUpstreamDurationMS].(float64); d < 40 {
 		t.Errorf("upstream_duration_ms = %v, want about 50", d)
 	}
 }
@@ -240,8 +241,8 @@ func TestUpstreamFailureEndToEnd(t *testing.T) {
 	byMsg := map[string]map[string]any{}
 	for _, l := range logs.Records(t) {
 		byMsg[l["msg"].(string)] = l
-		if l[httpx.LogKeyRequestID] != "corr-9" {
-			t.Errorf("%q line request_id = %v, want corr-9", l["msg"], l[httpx.LogKeyRequestID])
+		if l[logx.KeyRequestID] != "corr-9" {
+			t.Errorf("%q line request_id = %v, want corr-9", l["msg"], l[logx.KeyRequestID])
 		}
 	}
 	for _, msg := range []string{
@@ -252,10 +253,10 @@ func TestUpstreamFailureEndToEnd(t *testing.T) {
 		}
 	}
 	ie := byMsg["internal error"]
-	if ie["level"] != "ERROR" || ie[httpx.LogKeyUpstream] != "GET /items" || ie[httpx.LogKeyUpstreamStatus] != float64(503) {
+	if ie["level"] != "ERROR" || ie[logx.KeyUpstream] != "GET /items" || ie[logx.KeyUpstreamStatus] != float64(503) {
 		t.Errorf("internal error line = %v, want ERROR with upstream=GET /items, upstream_status=503", ie)
 	}
-	if _, ok := ie[httpx.LogKeyUpstreamDurationMS].(float64); !ok {
+	if _, ok := ie[logx.KeyUpstreamDurationMS].(float64); !ok {
 		t.Errorf("internal error line has no upstream_duration_ms: %v", ie)
 	}
 	if rec.Body.String() == "" || bytes.Contains(rec.Body.Bytes(), []byte("db down")) {

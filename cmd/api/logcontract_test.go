@@ -16,6 +16,7 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
 )
 
@@ -179,7 +180,7 @@ func TestLogContract(t *testing.T) {
 	// Specific scenarios, found by their request_id.
 	byID := map[string][]map[string]any{}
 	for _, m := range recs {
-		if id, _ := m[httpx.LogKeyRequestID].(string); id != "" {
+		if id, _ := m[logx.KeyRequestID].(string); id != "" {
 			byID[id] = append(byID[id], m)
 		}
 	}
@@ -274,7 +275,7 @@ func checkLine(t *testing.T, m map[string]any, raw string) {
 		t.Errorf("%q line level = %s, want %s: %.200s", msg, level, want, raw)
 	}
 
-	id, _ := m[httpx.LogKeyRequestID].(string)
+	id, _ := m[logx.KeyRequestID].(string)
 	if slices.Contains(outsideRequests, msg) {
 		if id != "" {
 			t.Errorf("%q line has request_id %q but isn't logged within a request", msg, id)
@@ -283,8 +284,8 @@ func checkLine(t *testing.T, m map[string]any, raw string) {
 		t.Errorf("%q line has no request_id: %.300s", msg, raw)
 	}
 
-	if p, _ := m["path"].(string); len([]rune(p)) > httpx.MaxLoggedPath+1 {
-		t.Errorf("%q line path has %d runes, want at most %d", msg, len([]rune(p)), httpx.MaxLoggedPath+1)
+	if p, _ := m["path"].(string); len([]rune(p)) > logx.MaxLoggedPath+1 {
+		t.Errorf("%q line path has %d runes, want at most %d", msg, len([]rune(p)), logx.MaxLoggedPath+1)
 	}
 }
 

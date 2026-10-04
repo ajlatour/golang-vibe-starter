@@ -1,4 +1,4 @@
-package httpx
+package logx
 
 import (
 	"go/ast"
@@ -13,7 +13,7 @@ import (
 // TestLogKeysAreConstants fails if any non-test code passes a string literal
 // as a log field name, to slog.String and friends or to a logger's
 // Info/Warn/Error/Debug/Log/With methods. Field names are declared once, as
-// LogKey constants in log.go, so a single query finds every line that carries
+// Key constants in keys.go, so a single query finds every line that carries
 // a given value and a rename happens in one place.
 func TestLogKeysAreConstants(t *testing.T) {
 	// Where the message sits in each logger method's arguments; the
@@ -75,7 +75,7 @@ func TestLogKeysAreConstants(t *testing.T) {
 							report(arg, name+" with a literal key "+litValue(arg))
 							expectKey = false
 						case expectKey && isCall(arg):
-							// An slog.Attr (e.g. DurationMS(d)) takes one slot.
+							// An slog.Attr (e.g. logx.DurationMS(d)) takes one slot.
 						default:
 							expectKey = !expectKey
 						}
@@ -91,7 +91,7 @@ func TestLogKeysAreConstants(t *testing.T) {
 	}
 
 	for _, v := range violations {
-		t.Errorf("%s: use a LogKey constant from internal/httpx/log.go", v)
+		t.Errorf("%s: use a Key constant from internal/logx/keys.go", v)
 	}
 }
 

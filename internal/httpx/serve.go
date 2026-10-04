@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
 // Serve runs handler on cfg.Addr until ctx is cancelled, then shuts down
@@ -32,7 +34,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg ServerConfig, handler h
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
-	logger.Info("server started", LogKeyAddr, ln.Addr().String())
+	logger.Info("server started", logx.KeyAddr, ln.Addr().String())
 
 	select {
 	case err := <-serveErr:
@@ -40,7 +42,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg ServerConfig, handler h
 	case <-ctx.Done():
 	}
 
-	logger.Info("shutting down", LogKeyTimeout, cfg.ShutdownTimeout.String())
+	logger.Info("shutting down", logx.KeyTimeout, cfg.ShutdownTimeout.String())
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {

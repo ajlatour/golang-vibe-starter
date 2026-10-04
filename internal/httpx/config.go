@@ -1,6 +1,7 @@
 // Package httpx is the HTTP service plumbing shared by every binary in this
-// repo: env config, logging, graceful serving, middleware, JSON helpers, and
-// the container healthcheck probe.
+// repo: env config, graceful serving, middleware (correlation IDs, request
+// logging, panic recovery), JSON helpers, and the container healthcheck probe.
+// The logging toolkit it builds on lives in internal/logx.
 package httpx
 
 import (
@@ -8,6 +9,8 @@ import (
 	"io"
 	"log/slog"
 	"time"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
 // ServerConfig holds the settings every service reads from the environment.
@@ -74,10 +77,5 @@ func ParsePositiveDuration(s string) (time.Duration, error) {
 // Every line carries service and version, and lines logged with a request's
 // context carry its request_id.
 func (c ServerConfig) NewLogger(w io.Writer, service, version string) *slog.Logger {
-	opts := &slog.HandlerOptions{Level: c.LogLevel}
-	var h slog.Handler = slog.NewJSONHandler(w, opts)
-	if c.LogFormat == "text" {
-		h = slog.NewTextHandler(w, opts)
-	}
-	return slog.New(NewContextHandler(h)).With(LogKeyService, service, LogKeyVersion, version)
+	return logx.New(w, c.LogLevel, c.LogFormat, service, version)
 }

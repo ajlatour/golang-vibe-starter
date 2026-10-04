@@ -16,7 +16,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
 // maxResponseBytes caps how much of a flagd response is read.
@@ -73,7 +73,7 @@ func (c *OFREP) Bool(ctx context.Context, key string) bool {
 	if errors.As(err, &unavailable) {
 		if c.outage.failed() {
 			c.logger.WarnContext(ctx, "flag service unavailable, using default flag values",
-				httpx.LogKeyFlag, key, httpx.LogKeyError, err)
+				logx.KeyFlag, key, logx.KeyError, err)
 		} else {
 			c.logFallback(ctx, slog.LevelDebug, key, def, err)
 		}
@@ -87,7 +87,7 @@ func (c *OFREP) Bool(ctx context.Context, key string) bool {
 	}
 
 	if !hasDefault && c.noDefault.first(key) {
-		c.logger.ErrorContext(ctx, "flag has no configured default, using false", httpx.LogKeyFlag, key)
+		c.logger.ErrorContext(ctx, "flag has no configured default, using false", logx.KeyFlag, key)
 	}
 	return def
 }
@@ -95,7 +95,7 @@ func (c *OFREP) Bool(ctx context.Context, key string) bool {
 // logFallback logs that a flag couldn't be evaluated and def was used.
 func (c *OFREP) logFallback(ctx context.Context, level slog.Level, key string, def bool, err error) {
 	c.logger.Log(ctx, level, "flag evaluation failed, using default",
-		httpx.LogKeyFlag, key, httpx.LogKeyDefault, def, httpx.LogKeyError, err)
+		logx.KeyFlag, key, logx.KeyDefault, def, logx.KeyError, err)
 }
 
 // answered notes that flagd replied, and logs the end of an outage if one was
@@ -103,8 +103,8 @@ func (c *OFREP) logFallback(ctx context.Context, level slog.Level, key string, d
 func (c *OFREP) answered(ctx context.Context) {
 	if ended, fallbacks, took := c.outage.answered(); ended {
 		c.logger.InfoContext(ctx, "flag service recovered",
-			httpx.LogKeyFallbacks, fallbacks,
-			httpx.DurationMS(took),
+			logx.KeyFallbacks, fallbacks,
+			logx.DurationMS(took),
 		)
 	}
 }
@@ -127,7 +127,7 @@ func (c *OFREP) evalBool(ctx context.Context, key string) (bool, error) {
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return false, &unavailableError{fmt.Errorf("ofrep %s: %w", path, httpx.RedactURLError(err))}
+		return false, &unavailableError{fmt.Errorf("ofrep %s: %w", path, logx.RedactURLError(err))}
 	}
 	body := io.LimitReader(resp.Body, maxResponseBytes)
 	defer func() {
@@ -142,7 +142,7 @@ func (c *OFREP) evalBool(ctx context.Context, key string) (bool, error) {
 			ErrorDetails string `json:"errorDetails"`
 		}
 		_ = json.NewDecoder(body).Decode(&e)
-		err := fmt.Errorf("ofrep %s: unexpected status %d: %s %q", path, resp.StatusCode, httpx.Truncate(e.ErrorCode, 64), httpx.Truncate(e.ErrorDetails, 200))
+		err := fmt.Errorf("ofrep %s: unexpected status %d: %s %q", path, resp.StatusCode, logx.Truncate(e.ErrorCode, 64), logx.Truncate(e.ErrorDetails, 200))
 		if resp.StatusCode >= 500 {
 			return false, &unavailableError{err}
 		}

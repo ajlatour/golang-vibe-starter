@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
 // HTTPStore is a Store backed by an upstream service that speaks the same
@@ -104,8 +104,8 @@ func itemPath(id string) string {
 // status; and, if the call failed, one more line saying so (see
 // WithStoreLogger). Never headers or bodies.
 func (s *HTTPStore) do(ctx context.Context, method, path string, body any, want int, out any) error {
-	call := method + " " + httpx.Truncate(path, httpx.MaxLoggedPath)
-	s.logger.LogAttrs(ctx, slog.LevelInfo, "upstream request sent", slog.String(httpx.LogKeyUpstream, call))
+	call := method + " " + logx.Truncate(path, logx.MaxLoggedPath)
+	s.logger.LogAttrs(ctx, slog.LevelInfo, "upstream request sent", slog.String(logx.KeyUpstream, call))
 
 	start := time.Now()
 	status, err := s.roundTrip(ctx, method, path, body, want, out)
@@ -125,10 +125,10 @@ func (s *HTTPStore) do(ctx context.Context, method, path string, body any, want 
 		// The caller went away, which isn't the upstream's fault. Keep the
 		// error typed so the handler can tell this was a disconnect.
 		s.logger.LogAttrs(ctx, slog.LevelDebug, "upstream request cancelled",
-			append(attrs, slog.Any(httpx.LogKeyError, err))...)
+			append(attrs, slog.Any(logx.KeyError, err))...)
 	default:
 		s.logger.LogAttrs(ctx, slog.LevelWarn, "upstream request failed",
-			append(attrs, slog.Any(httpx.LogKeyError, err))...)
+			append(attrs, slog.Any(logx.KeyError, err))...)
 	}
 	return &UpstreamError{Call: call, Status: status, Duration: elapsed, Err: err}
 }
@@ -138,7 +138,7 @@ func (s *HTTPStore) do(ctx context.Context, method, path string, body any, want 
 func (s *HTTPStore) roundTrip(ctx context.Context, method, path string, body any, want int, out any) (status int, err error) {
 	// Everything below that reaches an error message, and so a log line, uses
 	// logPath, not path.
-	logPath := httpx.Truncate(path, httpx.MaxLoggedPath)
+	logPath := logx.Truncate(path, logx.MaxLoggedPath)
 	var reqBody io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -159,7 +159,7 @@ func (s *HTTPStore) roundTrip(ctx context.Context, method, path string, body any
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("upstream %s %s: %w", method, logPath, httpx.RedactURLError(err))
+		return 0, fmt.Errorf("upstream %s %s: %w", method, logPath, logx.RedactURLError(err))
 	}
 	respBody := io.LimitReader(resp.Body, maxResponseBytes)
 	defer func() {
@@ -178,7 +178,7 @@ func (s *HTTPStore) roundTrip(ctx context.Context, method, path string, body any
 			Error string `json:"error"`
 		}
 		_ = json.NewDecoder(respBody).Decode(&e)
-		return resp.StatusCode, fmt.Errorf("upstream %s %s: unexpected status %d: %q", method, logPath, resp.StatusCode, httpx.Truncate(e.Error, maxLoggedUpstreamMessage))
+		return resp.StatusCode, fmt.Errorf("upstream %s %s: unexpected status %d: %q", method, logPath, resp.StatusCode, logx.Truncate(e.Error, maxLoggedUpstreamMessage))
 	}
 
 	if out == nil {

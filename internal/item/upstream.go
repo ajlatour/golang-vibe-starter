@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
 // UpstreamError is a failed call to the upstream: a network error, timeout,
@@ -37,22 +38,22 @@ func (e *UpstreamError) HTTPStatus() int {
 	return http.StatusBadGateway
 }
 
-// LogAttrs implements httpx.LogAttrsError.
+// LogAttrs implements logx.AttrsError.
 func (e *UpstreamError) LogAttrs() []slog.Attr {
 	return upstreamAttrs(e.Call, e.Status, e.Duration)
 }
 
 var (
-	_ httpx.LogAttrsError = (*UpstreamError)(nil)
-	_ httpx.StatusError   = (*UpstreamError)(nil)
+	_ logx.AttrsError   = (*UpstreamError)(nil)
+	_ httpx.StatusError = (*UpstreamError)(nil)
 )
 
 // upstreamAttrs builds the fields describing one upstream call. The status is
 // left out when there was no response.
 func upstreamAttrs(call string, status int, d time.Duration) []slog.Attr {
-	attrs := []slog.Attr{slog.String(httpx.LogKeyUpstream, call)}
+	attrs := []slog.Attr{slog.String(logx.KeyUpstream, call)}
 	if status != 0 {
-		attrs = append(attrs, slog.Int(httpx.LogKeyUpstreamStatus, status))
+		attrs = append(attrs, slog.Int(logx.KeyUpstreamStatus, status))
 	}
-	return append(attrs, httpx.DurationAttr(httpx.LogKeyUpstreamDurationMS, d))
+	return append(attrs, logx.DurationAttr(logx.KeyUpstreamDurationMS, d))
 }

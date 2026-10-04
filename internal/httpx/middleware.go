@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"runtime/debug"
 	"time"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
 // Middleware wraps h with the standard stack: a correlation ID for every
 // request, then request logging around panic recovery, so a recovered panic
-// is still logged as a 500. Log through a handler from NewContextHandler to
+// is still logged as a 500. Log through a handler from logx.NewContextHandler to
 // get request_id on each line.
 func Middleware(logger *slog.Logger, h http.Handler) http.Handler {
 	return assignRequestID(logRequests(logger, recoverPanics(logger, h)))
@@ -51,9 +53,9 @@ func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 		// No route yet: ServeMux matches it inside next, so only the raw
 		// path identifies the request at this point.
 		logger.LogAttrs(r.Context(), receivedLevel(r), "request received",
-			slog.String(LogKeyMethod, r.Method),
-			slog.String(LogKeyPath, Truncate(r.URL.Path, MaxLoggedPath)),
-			slog.Int64(LogKeyContentLength, r.ContentLength),
+			slog.String(logx.KeyMethod, r.Method),
+			slog.String(logx.KeyPath, logx.Truncate(r.URL.Path, logx.MaxLoggedPath)),
+			slog.Int64(logx.KeyContentLength, r.ContentLength),
 		)
 
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
@@ -62,9 +64,9 @@ func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 		// route, so it's available once the handler has returned.
 		logger.LogAttrs(r.Context(), responseLevel(r, rec.status), "response sent",
 			append(requestAttrs(r),
-				slog.Int(LogKeyStatus, rec.status),
-				slog.Int(LogKeyBytes, rec.bytes),
-				DurationMS(time.Since(start)),
+				slog.Int(logx.KeyStatus, rec.status),
+				slog.Int(logx.KeyBytes, rec.bytes),
+				logx.DurationMS(time.Since(start)),
 			)...,
 		)
 	})
@@ -74,9 +76,9 @@ func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 // grouping, e.g. "GET /items/{id}"; empty if no route matched) and raw path.
 func requestAttrs(r *http.Request) []slog.Attr {
 	return []slog.Attr{
-		slog.String(LogKeyMethod, r.Method),
-		slog.String(LogKeyRoute, r.Pattern),
-		slog.String(LogKeyPath, Truncate(r.URL.Path, MaxLoggedPath)),
+		slog.String(logx.KeyMethod, r.Method),
+		slog.String(logx.KeyRoute, r.Pattern),
+		slog.String(logx.KeyPath, logx.Truncate(r.URL.Path, logx.MaxLoggedPath)),
 	}
 }
 
@@ -94,8 +96,8 @@ func recoverPanics(logger *slog.Logger, next http.Handler) http.Handler {
 			}
 			logger.LogAttrs(r.Context(), slog.LevelError, "panic serving request",
 				append(requestAttrs(r),
-					slog.Any(LogKeyPanic, v),
-					slog.String(LogKeyStack, string(debug.Stack())),
+					slog.Any(logx.KeyPanic, v),
+					slog.String(logx.KeyStack, string(debug.Stack())),
 				)...,
 			)
 			WriteError(w, http.StatusInternalServerError, "internal server error")

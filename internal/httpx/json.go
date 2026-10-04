@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
 // MaxBodyBytes is the largest request body DecodeJSON accepts.
@@ -48,20 +50,20 @@ type StatusError interface {
 
 // ServerError logs err and sends a 5xx so internals aren't leaked: a generic
 // 500, or the status of the first StatusError in err's chain.
-// If err (or an error it wraps) is a LogAttrsError, its fields are logged too.
+// If err (or an error it wraps) is a logx.AttrsError, its fields are logged too.
 // If err is only because the client went away (the request's context was
 // cancelled), that's not a server fault: it is logged at info as
 // "client disconnected" and answered with 499 instead.
 func ServerError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(r.Context().Err(), context.Canceled) && errors.Is(err, context.Canceled) {
 		logger.LogAttrs(r.Context(), slog.LevelInfo, "client disconnected",
-			append(requestAttrs(r), errorAttrs(err)...)...,
+			append(requestAttrs(r), logx.ErrorAttrs(err)...)...,
 		)
 		WriteError(w, StatusClientClosedRequest, "client closed request")
 		return
 	}
 	logger.LogAttrs(r.Context(), slog.LevelError, "internal error",
-		append(requestAttrs(r), errorAttrs(err)...)...,
+		append(requestAttrs(r), logx.ErrorAttrs(err)...)...,
 	)
 	status, msg := http.StatusInternalServerError, "internal server error"
 	var se StatusError

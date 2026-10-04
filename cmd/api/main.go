@@ -15,6 +15,7 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/flags"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
 func main() {
@@ -43,7 +44,7 @@ func buildVersion() string {
 	if version != "" {
 		return version
 	}
-	return httpx.BuildVersion()
+	return logx.BuildVersion()
 }
 
 // run wires up and runs the service until ctx is cancelled. With the single
@@ -63,7 +64,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	}
 
 	logger := cfg.NewLogger(stdout, "api", buildVersion())
-	logger.Info("using upstream", httpx.LogKeyURL, cfg.UpstreamURL.Redacted(), httpx.LogKeyTimeout, cfg.UpstreamTimeout.String())
+	logger.Info("using upstream", logx.KeyURL, cfg.UpstreamURL.Redacted(), logx.KeyTimeout, cfg.UpstreamTimeout.String())
 	store := item.NewHTTPStore(cfg.UpstreamURL.String(), &http.Client{Timeout: cfg.UpstreamTimeout}, item.WithStoreLogger(logger))
 
 	evaluator, err := newFlags(logger, cfg)
@@ -91,7 +92,7 @@ func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
 		logger.Info("feature flags: no FLAGS_URL, using default values only")
 		return defaults, nil
 	}
-	logger.Info("using feature flags", httpx.LogKeyURL, cfg.FlagsURL.Redacted(), httpx.LogKeyTimeout, cfg.FlagsTimeout.String())
+	logger.Info("using feature flags", logx.KeyURL, cfg.FlagsURL.Redacted(), logx.KeyTimeout, cfg.FlagsTimeout.String())
 	return flags.NewOFREP(cfg.FlagsURL.String(), &http.Client{Timeout: cfg.FlagsTimeout}, logger, defaults), nil
 }
 

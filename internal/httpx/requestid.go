@@ -1,9 +1,10 @@
 package httpx
 
 import (
-	"context"
 	"crypto/rand"
 	"net/http"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
 // RequestIDHeader carries the request's correlation ID. A caller may send one
@@ -16,19 +17,6 @@ const RequestIDHeader = "Client-Correlation-Id"
 // arbitrarily large values into every log line.
 const maxRequestIDLen = 128
 
-type requestIDKey struct{}
-
-// RequestID returns the request's correlation ID, or "" if ctx has none.
-func RequestID(ctx context.Context) string {
-	id, _ := ctx.Value(requestIDKey{}).(string)
-	return id
-}
-
-// WithRequestID returns a copy of ctx carrying id as the correlation ID.
-func WithRequestID(ctx context.Context, id string) context.Context {
-	return context.WithValue(ctx, requestIDKey{}, id)
-}
-
 // assignRequestID gives each request a correlation ID: the caller's, if it
 // sent a valid one, or a new random one. The ID goes into the request context
 // (where the log handler picks it up) and the response header.
@@ -39,7 +27,7 @@ func assignRequestID(next http.Handler) http.Handler {
 			id = rand.Text()
 		}
 		w.Header().Set(RequestIDHeader, id)
-		next.ServeHTTP(w, r.WithContext(WithRequestID(r.Context(), id)))
+		next.ServeHTTP(w, r.WithContext(logx.WithRequestID(r.Context(), id)))
 	})
 }
 

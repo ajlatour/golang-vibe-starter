@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
 // serveLogged runs one request through Middleware and a mux with handler on
@@ -19,7 +20,7 @@ import (
 func serveLogged(t *testing.T, handler http.HandlerFunc, req *http.Request) (*httptest.ResponseRecorder, []map[string]any) {
 	t.Helper()
 	var logs logtest.Buffer
-	logger := slog.New(NewContextHandler(logs.Handler(slog.LevelInfo)))
+	logger := slog.New(logx.NewContextHandler(logs.Handler(slog.LevelInfo)))
 	if handler == nil {
 		handler = func(w http.ResponseWriter, r *http.Request) {
 			ServerError(logger, w, r, errors.New("store down"))
@@ -34,7 +35,7 @@ func serveLogged(t *testing.T, handler http.HandlerFunc, req *http.Request) (*ht
 
 func TestRequestIDGenerated(t *testing.T) {
 	ok := func(w http.ResponseWriter, r *http.Request) {
-		if RequestID(r.Context()) == "" {
+		if logx.RequestID(r.Context()) == "" {
 			t.Error("handler context has no request ID")
 		}
 	}
@@ -44,7 +45,7 @@ func TestRequestIDGenerated(t *testing.T) {
 	if !validRequestID(id) {
 		t.Fatalf("response %s = %q, want a generated ID", RequestIDHeader, id)
 	}
-	if got := lines[len(lines)-1][LogKeyRequestID]; got != id {
+	if got := lines[len(lines)-1][logx.KeyRequestID]; got != id {
 		t.Errorf("request log request_id = %v, want %q", got, id)
 	}
 }
@@ -92,16 +93,16 @@ func TestLogSchema(t *testing.T) {
 	if recvLine["msg"] != "request received" || reqLine["msg"] != "response sent" {
 		t.Errorf("messages = %v, %v, want request received ... response sent", recvLine["msg"], reqLine["msg"])
 	}
-	if recvLine[LogKeyMethod] != "GET" || recvLine[LogKeyPath] != "/things/abc" || recvLine[LogKeyRequestID] != "corr-1" {
+	if recvLine[logx.KeyMethod] != "GET" || recvLine[logx.KeyPath] != "/things/abc" || recvLine[logx.KeyRequestID] != "corr-1" {
 		t.Errorf("request received line = %v, want method, path and request_id", recvLine)
 	}
-	if _, ok := recvLine[LogKeyContentLength].(float64); !ok {
-		t.Errorf("request received line content_length = %v, want a number", recvLine[LogKeyContentLength])
+	if _, ok := recvLine[logx.KeyContentLength].(float64); !ok {
+		t.Errorf("request received line content_length = %v, want a number", recvLine[logx.KeyContentLength])
 	}
-	if _, ok := recvLine[LogKeyRoute]; ok {
+	if _, ok := recvLine[logx.KeyRoute]; ok {
 		t.Error("request received line has a route; ServeMux hasn't matched one yet")
 	}
-	if errLine["msg"] != "internal error" || errLine[LogKeyError] != "store down" {
+	if errLine["msg"] != "internal error" || errLine[logx.KeyError] != "store down" {
 		t.Errorf("error line = %v, want msg=internal error, error=store down", errLine)
 	}
 	if _, ok := errLine["err"]; ok {
@@ -109,34 +110,21 @@ func TestLogSchema(t *testing.T) {
 	}
 	for _, line := range lines[1:] {
 		for key, want := range map[string]any{
-			LogKeyRequestID: "corr-1",
-			LogKeyMethod:    "GET",
-			LogKeyRoute:     "GET /things/{id}",
-			LogKeyPath:      "/things/abc",
+			logx.KeyRequestID: "corr-1",
+			logx.KeyMethod:    "GET",
+			logx.KeyRoute:     "GET /things/{id}",
+			logx.KeyPath:      "/things/abc",
 		} {
 			if line[key] != want {
 				t.Errorf("%q line: %s = %v, want %v", line["msg"], key, line[key], want)
 			}
 		}
 	}
-	if _, ok := reqLine[LogKeyDurationMS].(float64); !ok {
-		t.Errorf("request line duration_ms = %v (%T), want a number", reqLine[LogKeyDurationMS], reqLine[LogKeyDurationMS])
+	if _, ok := reqLine[logx.KeyDurationMS].(float64); !ok {
+		t.Errorf("request line duration_ms = %v (%T), want a number", reqLine[logx.KeyDurationMS], reqLine[logx.KeyDurationMS])
 	}
 	if _, ok := reqLine["duration"]; ok {
 		t.Error(`request line has "duration"; the schema key is "duration_ms"`)
-	}
-}
-
-func TestContextHandlerWithoutRequestID(t *testing.T) {
-	var logs logtest.Buffer
-	logger := slog.New(NewContextHandler(logs.Handler(slog.LevelInfo))).With("service", "test")
-	logger.InfoContext(t.Context(), "no request")
-	line := logs.Records(t)[0]
-	if _, ok := line[LogKeyRequestID]; ok {
-		t.Errorf("line has request_id without a request: %v", line)
-	}
-	if line["service"] != "test" {
-		t.Errorf("With attrs lost through the wrapper: %v", line)
 	}
 }
 
@@ -145,7 +133,7 @@ func TestNewLogger(t *testing.T) {
 		t.Run(format, func(t *testing.T) {
 			var logs logtest.Buffer
 			logger := ServerConfig{LogFormat: format}.NewLogger(&logs, "api", "abc123")
-			logger.InfoContext(WithRequestID(t.Context(), "r1"), "hello")
+			logger.InfoContext(logx.WithRequestID(t.Context(), "r1"), "hello")
 			out := logs.String()
 			for _, want := range []string{"service", "api", "version", "abc123", "request_id", "r1"} {
 				if !strings.Contains(out, want) {
@@ -156,18 +144,12 @@ func TestNewLogger(t *testing.T) {
 	}
 }
 
-func TestBuildVersion(t *testing.T) {
-	if BuildVersion() == "" {
-		t.Error("BuildVersion() is empty")
-	}
-}
-
 // serveAt runs a request for path through Middleware with a debug-level
 // logger and returns its "request received" and "response sent" lines.
 func serveAt(t *testing.T, path string, status int) (received, sent map[string]any) {
 	t.Helper()
 	var logs logtest.Buffer
-	logger := slog.New(NewContextHandler(logs.Handler(slog.LevelDebug)))
+	logger := slog.New(logx.NewContextHandler(logs.Handler(slog.LevelDebug)))
 	h := Middleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(status)
 	}))
@@ -278,51 +260,13 @@ func TestUpstreamTimeoutIsStillAnError(t *testing.T) {
 	}
 }
 
-func TestTruncate(t *testing.T) {
-	tests := []struct {
-		in   string
-		n    int
-		want string
-	}{
-		{"short", 10, "short"},
-		{"exact", 5, "exact"},
-		{"abcdef", 3, "abc…"},
-		{"héllo wörld", 5, "héllo…"}, // counts runes, never splits one
-		{"", 3, ""},
-	}
-	for _, tt := range tests {
-		if got := Truncate(tt.in, tt.n); got != tt.want {
-			t.Errorf("Truncate(%q, %d) = %q, want %q", tt.in, tt.n, got, tt.want)
-		}
-	}
-}
-
-func TestRedactURLError(t *testing.T) {
-	_, err := http.Get("http://alice:s3cret@127.0.0.1:1/v1/items")
-	if err == nil {
-		t.Fatal("expected a connection error")
-	}
-	got := RedactURLError(fmt.Errorf("upstream: %w", err)).Error()
-	if strings.Contains(got, "s3cret") || strings.Contains(got, "***") {
-		t.Errorf("error %q still shows the password", got)
-	}
-	if !strings.Contains(got, "xxxxx") {
-		t.Errorf("error %q, want the password shown as xxxxx like url.Redacted", got)
-	}
-
-	plain := errors.New("not a url error")
-	if RedactURLError(plain) != plain {
-		t.Error("RedactURLError changed an error that isn't a *url.Error")
-	}
-}
-
 func TestLongPathIsTruncatedInRequestLog(t *testing.T) {
 	long := "/items/" + strings.Repeat("a", 5000)
 	received, sent := serveAt(t, long, 200)
 	for _, line := range []map[string]any{received, sent} {
-		path, _ := line[LogKeyPath].(string)
-		if n := len([]rune(path)); n > MaxLoggedPath+1 {
-			t.Errorf("%v line path has %d runes, want at most %d", line["msg"], n, MaxLoggedPath+1)
+		path, _ := line[logx.KeyPath].(string)
+		if n := len([]rune(path)); n > logx.MaxLoggedPath+1 {
+			t.Errorf("%v line path has %d runes, want at most %d", line["msg"], n, logx.MaxLoggedPath+1)
 		}
 	}
 }

@@ -272,11 +272,11 @@ What is never logged:
 - Headers, except the correlation ID, which is validated first (see above). `Authorization`,
   `Cookie` and everything else are never read by the logging code.
 - URL credentials. A URL goes into a log only through `(*url.URL).Redacted()`, and any error that
-  can come from `http.Client.Do` goes through `httpx.RedactURLError` first, because net/http puts
+  can come from `http.Client.Do` goes through `logx.RedactURLError` first, because net/http puts
   the URL in the error text.
 
 Bounds: `path` and `upstream` paths are cut at 512 characters, and the upstream and flagd error
-messages at 200, with a trailing `…`. Use `httpx.Truncate` for any other logged value that comes
+messages at 200, with a trailing `…`. Use `logx.Truncate` for any other logged value that comes
 from outside the service.
 
 To add a log line:
@@ -284,8 +284,8 @@ To add a log line:
 1. Log with a `*Context` method (`InfoContext`, `LogAttrs(ctx, ...)`) so it gets `request_id`. A
    line without the request's context can't be correlated.
 2. Use the schema's field names (`error`, `duration_ms`, `route`, ...) through the `LogKey`
-   constants in `internal/httpx/log.go`, which are the one list of field names; a test fails the
-   build on a raw string key. Add a constant if the field is new. Use `httpx.DurationMS` for
+   constants in `internal/logx/keys.go`, which are the one list of field names; a test fails the
+   build on a raw string key. Add a constant if the field is new. Use `logx.DurationMS` for
    durations.
 3. Pick the level by who should act: `ERROR` for the service's own failures, `WARN` for a
    dependency misbehaving, `INFO` for normal events, `DEBUG` for per-call detail.
@@ -329,13 +329,18 @@ Errors are JSON, `{"error":"..."}`:
 
 ```
 cmd/api/                 API service: config, wiring, Dockerfile
-internal/httpx/          HTTP plumbing: env config, graceful Serve, middleware,
-                         JSON helpers, healthcheck probe
+internal/logx/           Logging toolkit: logger, the LogKey field names, request-ID
+                         context, redaction and truncation helpers. Imports nothing
+                         from this module.
+internal/httpx/          HTTP plumbing: env config, graceful Serve, middleware
+                         (correlation IDs, request logging), JSON helpers, probe
 internal/item/           Item model, Store interface, /items handlers,
-                         HTTPStore (the API's upstream client)
-internal/item/itemtest/  MemStore: in-memory Store, used only by tests
+                         HTTPStore and UpstreamError (the API's upstream client)
 internal/flags/          OFREP client for the flagd sidecar, flag declarations,
                          and fallback defaults derived from flagd/flags.json
+internal/item/itemtest/  MemStore: in-memory Store, used only by tests
+internal/logtest/        Capture and parse JSON logs in tests
+internal/nettest/        Dead, hanging, dropping and failing upstream stubs for tests
 flagd/                   Feature flag definitions: served by flagd, and embedded
                          in the API as its fallback values
 wiremock/mappings/       WireMock stubs (mounted)

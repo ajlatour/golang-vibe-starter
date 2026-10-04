@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
 func TestMiddleware(t *testing.T) {
@@ -35,7 +36,7 @@ func TestMiddleware(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var logs logtest.Buffer
-			h := Middleware(slog.New(NewContextHandler(logs.Handler(slog.LevelInfo))), tt.handler)
+			h := Middleware(slog.New(logx.NewContextHandler(logs.Handler(slog.LevelInfo))), tt.handler)
 
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))

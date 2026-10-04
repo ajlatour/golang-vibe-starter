@@ -50,7 +50,7 @@ func (b *Buffer) Reset() {
 }
 
 // Handler returns a JSON handler writing to b at the given level. Wrap it
-// (for example with httpx.NewContextHandler) to get more than the base fields.
+// (for example with logx.NewContextHandler) to get more than the base fields.
 func (b *Buffer) Handler(level slog.Level) slog.Handler {
 	return slog.NewJSONHandler(b, &slog.HandlerOptions{Level: level})
 }
