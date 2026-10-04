@@ -11,16 +11,15 @@ are easy to read and to query when debugging a deployed instance. What's left is
 
 ### Integration tests with Godog
 
-Phase 1 is done (see Unreleased). End-to-end Gherkin scenarios in `integration/`, a separate Go
+Phases 1 and 2 are done (see Unreleased). End-to-end Gherkin scenarios in `integration/`, a separate Go
 module so Godog stays a test-only dependency, run against the composed stack.
 
-- Phase 2, faults and flags: a scenario for each WireMock fault (unavailable and connection
-  reset give 502, malformed JSON gives 502, timeout gives 504, slow still gives 200). Flag
-  scenarios: `total` only when `items-list-total` is on, and the API carrying on with defaults
-  when flagd is down. Needs a test-owned flags file mounted into flagd by the compose override, so
-  scenarios can switch flags without editing `flagd/flags.json`.
-- Phase 3, correlation and logs: the `Client-Correlation-Id` echoed or generated end to end;
-  optionally, the request's `request_id` checked on its log lines via `docker compose logs`.
+Test code never calls Docker: the stack is started with `docker compose` before a run, and the
+tests only talk HTTP to it (and write the test-owned flags file).
+
+- Phase 3, correlation: the `Client-Correlation-Id` echoed when valid, and replaced by a
+  generated one when not, end to end. Checking that ID on log lines is left to the in-process
+  log contract test, since reading the container's logs would need Docker.
 - Phase 4, optional: a CI workflow that brings the stack up and runs the suite (the repo has no
   CI yet), and a step that checks response bodies against `docs/openapi.json`.
 
@@ -36,6 +35,11 @@ module so Godog stays a test-only dependency, run against the composed stack.
 
 ### Added
 
+- Integration tests, phase 2: scenarios for every WireMock fault (502 for an unavailable
+  upstream, a reset connection and truncated JSON, 504 for a timeout, 200 for a slow answer within
+  the timeout) and for the `items-list-total` flag. Flags are switched by editing the tests' own
+  copy of the definitions, `integration/flagd/flags.json`, which the compose override mounts into
+  flagd; the suite keeps it in step with `flagd/flags.json`. Test code never calls Docker.
 - Integration tests, phase 1: Gherkin scenarios run with Godog (v0.16.0) against the whole stack
   (API container, WireMock, flagd), in `integration/`, its own Go module so the service keeps no
   third-party dependencies. 21 scenarios cover health, listing and reading items, create, replace

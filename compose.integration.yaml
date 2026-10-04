@@ -11,3 +11,11 @@ services:
       UPSTREAM_TIMEOUT: 3s
       # JSON, so tests can read the API's log lines.
       LOG_FORMAT: json
+
+  flagd:
+    volumes:
+      # The tests' own copy of the flag definitions, which flag steps edit
+      # (and restore) so the real flagd/flags.json is never touched. This
+      # replaces the base file's mount of ./flagd at the same path. The suite
+      # resets it from flagd/flags.json at the start of every run.
+      - ./integration/flagd:/etc/flagd:ro

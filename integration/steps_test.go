@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -21,9 +23,12 @@ type world struct {
 	stack  stack
 	client *http.Client
 
-	status int
-	header http.Header
-	body   []byte
+	status  int
+	header  http.Header
+	body    []byte
+	elapsed time.Duration
+
+	flagsChanged bool // a step edited the flags, so restore them afterwards
 }
 
 func initScenario(sc *godog.ScenarioContext, s stack) {
@@ -34,6 +39,20 @@ func initScenario(sc *godog.ScenarioContext, s stack) {
 	sc.Before(func(ctx context.Context, _ *godog.Scenario) (context.Context, error) {
 		return ctx, w.resetUpstream()
 	})
+	// Put back any flag a scenario switched, so the next one starts from the
+	// shipped defaults.
+	// Godog already reports a failed step; returning its error from here
+	// would report it again as a hook failure, so only a failed reset is
+	// returned.
+	sc.After(func(ctx context.Context, _ *godog.Scenario, _ error) (context.Context, error) {
+		if !w.flagsChanged {
+			return ctx, nil
+		}
+		return ctx, resetFlags(w.stack)
+	})
+
+	sc.Step(`^the upstream fault "([^"]+)" is active$`, w.activateFault)
+	sc.Step(`^the feature flag "([^"]+)" is (on|off)$`, w.setFlag)
 
 	sc.Step(`^I (GET|DELETE) "([^"]*)"$`, w.send)
 	sc.Step(`^I (POST|PUT) "([^"]*)" with body:$`, w.sendBody)
@@ -47,6 +66,8 @@ func initScenario(sc *godog.ScenarioContext, s stack) {
 	sc.Step(`^the JSON field "([^"]*)" contains "([^"]*)"$`, w.fieldContains)
 	sc.Step(`^the JSON field "([^"]*)" is absent$`, w.fieldIsAbsent)
 	sc.Step(`^the JSON array "([^"]*)" has (\d+) elements?$`, w.arrayHasLength)
+	sc.Step(`^the response took less than (\d+(?:\.\d+)?) seconds?$`, w.tookLessThan)
+	sc.Step(`^the response took at least (\d+(?:\.\d+)?) seconds?$`, w.tookAtLeast)
 }
 
 // --- the stack -------------------------------------------------------------
@@ -63,6 +84,31 @@ func (w *world) resetUpstream() error {
 	return nil
 }
 
+// activateFault loads one of WireMock's fault stubs (wiremock/faults/<name>.json)
+// through its admin API. Each has a fixed ID and the top priority, so it
+// overrides the matching normal stub until the next scenario's reset.
+func (w *world) activateFault(name string) error {
+	stub, err := os.ReadFile(filepath.Join("..", "wiremock", "faults", name+".json"))
+	if err != nil {
+		return fmt.Errorf("no fault stub named %q: %w", name, err)
+	}
+	resp, err := w.client.Post(w.stack.wiremock+"/__admin/mappings", "application/json", bytes.NewReader(stub))
+	if err != nil {
+		return fmt.Errorf("load fault %q: %w", name, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("load fault %q: %s: %s", name, resp.Status, body)
+	}
+	return nil
+}
+
+func (w *world) setFlag(key, state string) error {
+	w.flagsChanged = true
+	return setFlag(w.stack, key, state == "on")
+}
+
 // --- requests ----------------------------------------------------------------
 
 func (w *world) do(method, path string, body io.Reader) error {
@@ -73,6 +119,7 @@ func (w *world) do(method, path string, body io.Reader) error {
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	start := time.Now()
 	resp, err := w.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", method, path, err)
@@ -80,6 +127,7 @@ func (w *world) do(method, path string, body io.Reader) error {
 	defer resp.Body.Close()
 	w.status, w.header = resp.StatusCode, resp.Header
 	w.body, err = io.ReadAll(resp.Body)
+	w.elapsed = time.Since(start)
 	return err
 }
 
@@ -170,6 +218,20 @@ func (w *world) arrayHasLength(path string, want int) error {
 	}
 	if len(arr) != want {
 		return fmt.Errorf("%s has %d elements, want %d", path, len(arr), want)
+	}
+	return nil
+}
+
+func (w *world) tookLessThan(seconds float64) error {
+	if limit := time.Duration(seconds * float64(time.Second)); w.elapsed >= limit {
+		return fmt.Errorf("response took %s, want less than %s", w.elapsed.Round(time.Millisecond), limit)
+	}
+	return nil
+}
+
+func (w *world) tookAtLeast(seconds float64) error {
+	if limit := time.Duration(seconds * float64(time.Second)); w.elapsed < limit {
+		return fmt.Errorf("response took %s, want at least %s", w.elapsed.Round(time.Millisecond), limit)
 	}
 	return nil
 }

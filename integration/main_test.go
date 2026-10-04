@@ -5,6 +5,10 @@
 // service itself, and so `go test ./...` at the repository root stays fast and
 // needs no Docker.
 //
+// Test code never calls Docker: the stack is started before a run, and the
+// tests talk HTTP to it, plus editing the flag definitions flagd reads (see
+// flags_test.go).
+//
 // Run it with:
 //
 //	docker compose -f compose.yaml -f compose.integration.yaml up -d --build --wait
@@ -51,6 +55,7 @@ func TestMain(m *testing.M) {
 type stack struct {
 	api      string // API_URL
 	wiremock string // WIREMOCK_URL: the upstream's admin API, for faults and resets
+	flagd    string // FLAGD_URL: to confirm a flag change has been picked up
 }
 
 func stackFromEnv() stack {
@@ -63,12 +68,16 @@ func stackFromEnv() stack {
 	return stack{
 		api:      get("API_URL", "http://localhost:8080"),
 		wiremock: get("WIREMOCK_URL", "http://localhost:8081"),
+		flagd:    get("FLAGD_URL", "http://localhost:8016"),
 	}
 }
 
 func TestFeatures(t *testing.T) {
 	s := stackFromEnv()
 	preflight(t, s)
+	if err := resetFlags(s); err != nil {
+		t.Fatalf("resetting the test flags: %v\nIs the stack running with compose.integration.yaml? flagd must read integration/flagd.", err)
+	}
 
 	o := opts
 	o.TestingT = t

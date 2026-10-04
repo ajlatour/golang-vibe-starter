@@ -15,3 +15,6 @@ coverage.*
 .DS_Store
 .idea/
 .vscode/
+
+# A temporary file the integration tests write and rename; left only if a run is killed mid-write
+integration/flagd/.flags-*.json

@@ -70,8 +70,19 @@ docker compose -f compose.yaml -f compose.integration.yaml down
 - `integration/` is its own Go module. Godog is a test-only dependency, so it stays out of the
   service: the root `go.mod` has no third-party dependencies, and `go test ./...` at the root
   doesn't run these tests or need Docker.
+- Test code never calls Docker: you start the stack, and the tests only talk HTTP to it and edit
+  the flag definitions flagd reads.
 - `compose.integration.yaml` adjusts the stack for testing: a 3s `UPSTREAM_TIMEOUT` (so the
-  timeout fault gives a 504 quickly) and JSON logs.
+  timeout fault gives a 504 quickly), JSON logs, and flagd reading the tests' own copy of the
+  flag definitions, `integration/flagd/flags.json`, instead of `flagd/flags.json`.
+- Faults: a step loads one of the `wiremock/faults/` stubs through WireMock's admin API. The
+  features cover each of them (502 for unavailable, connection reset and malformed JSON, 504 for
+  the timeout, 200 for the slow but in-time answer).
+- Flags: a step edits the tests' copy and waits until flagd serves the new value. The suite
+  resets the copy from `flagd/flags.json` when it starts, and after any scenario that changed
+  it, so the copy always mirrors what ships and an interrupted run can't leave a flag switched.
+  Because this edits a file, the tests must run on the same machine as the stack. flagd being
+  down isn't covered here (it would mean stopping a container); the unit tests cover it.
 - Godog's flags work with a `godog.` prefix, e.g. `-godog.tags=@smoke` for the quick checks, or
   `-godog.format=progress` for compact output.
 - The suite checks the stack is up before starting, and resets WireMock before every scenario,
@@ -79,7 +90,8 @@ docker compose -f compose.yaml -f compose.integration.yaml down
   faults and flag values are shared.
 - WireMock doesn't store anything (see below), so scenarios check each call on its own. A create
   followed by a read of the same item can't pass against this stack.
-- `API_URL` and `WIREMOCK_URL` point the suite elsewhere (defaults: `localhost:8080` and `:8081`).
+- `API_URL`, `WIREMOCK_URL` and `FLAGD_URL` point the suite elsewhere (defaults:
+  `localhost:8080`, `:8081` and `:8016`).
 
 To add a scenario, write it in a `.feature` file using the existing steps (listed in
 `integration/steps_test.go`). An undefined step fails the run, and Godog prints a snippet to
