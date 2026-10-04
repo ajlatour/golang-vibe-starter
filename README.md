@@ -55,6 +55,36 @@ docker compose up -d --wait mock
 LIVE_UPSTREAM_URL=http://localhost:8081 go test ./internal/item -run Live -v
 ```
 
+### Integration tests (Godog)
+
+End-to-end scenarios, written in Gherkin in `integration/features/`, run with
+[Godog](https://github.com/cucumber/godog) against the whole stack: the API container built from
+the Dockerfile, WireMock and flagd.
+
+```sh
+docker compose -f compose.yaml -f compose.integration.yaml up -d --build --wait
+go test -C integration ./... -v
+docker compose -f compose.yaml -f compose.integration.yaml down
+```
+
+- `integration/` is its own Go module. Godog is a test-only dependency, so it stays out of the
+  service: the root `go.mod` has no third-party dependencies, and `go test ./...` at the root
+  doesn't run these tests or need Docker.
+- `compose.integration.yaml` adjusts the stack for testing: a 3s `UPSTREAM_TIMEOUT` (so the
+  timeout fault gives a 504 quickly) and JSON logs.
+- Godog's flags work with a `godog.` prefix, e.g. `-godog.tags=@smoke` for the quick checks, or
+  `-godog.format=progress` for compact output.
+- The suite checks the stack is up before starting, and resets WireMock before every scenario,
+  so a fault left switched on can't affect a run. Scenarios run one at a time because WireMock
+  faults and flag values are shared.
+- WireMock doesn't store anything (see below), so scenarios check each call on its own. A create
+  followed by a read of the same item can't pass against this stack.
+- `API_URL` and `WIREMOCK_URL` point the suite elsewhere (defaults: `localhost:8080` and `:8081`).
+
+To add a scenario, write it in a `.feature` file using the existing steps (listed in
+`integration/steps_test.go`). An undefined step fails the run, and Godog prints a snippet to
+start its definition from.
+
 ## Mock upstream (WireMock)
 
 **Stubs** live in `wiremock/mappings/` and are mounted read-only. They serve the `/items` contract:
@@ -391,6 +421,8 @@ flagd/                   Feature flag definitions: served by flagd, and embedded
 wiremock/mappings/       WireMock stubs (mounted)
 wiremock/faults/         Opt-in fault stubs (loaded via the admin API)
 docs/openapi.json        OpenAPI spec of the API, checked against the handlers by tests
+integration/             Godog end-to-end tests against the composed stack (own Go module)
+compose.integration.yaml Compose overrides for the integration tests
 compose.yaml             Local stack: api + WireMock + flagd
 ```
 

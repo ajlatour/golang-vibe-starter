@@ -9,6 +9,21 @@ everything is under Unreleased.
 The structured logging plan (phases 1 to 4) is complete; see Unreleased. The goal was logs that
 are easy to read and to query when debugging a deployed instance. What's left is deferred:
 
+### Integration tests with Godog
+
+Phase 1 is done (see Unreleased). End-to-end Gherkin scenarios in `integration/`, a separate Go
+module so Godog stays a test-only dependency, run against the composed stack.
+
+- Phase 2, faults and flags: a scenario for each WireMock fault (unavailable and connection
+  reset give 502, malformed JSON gives 502, timeout gives 504, slow still gives 200). Flag
+  scenarios: `total` only when `items-list-total` is on, and the API carrying on with defaults
+  when flagd is down. Needs a test-owned flags file mounted into flagd by the compose override, so
+  scenarios can switch flags without editing `flagd/flags.json`.
+- Phase 3, correlation and logs: the `Client-Correlation-Id` echoed or generated end to end;
+  optionally, the request's `request_id` checked on its log lines via `docker compose logs`.
+- Phase 4, optional: a CI workflow that brings the stack up and runs the suite (the repo has no
+  CI yet), and a step that checks response bodies against `docs/openapi.json`.
+
 ### Deferred
 
 - OpenTelemetry tracing (`trace_id`/`span_id`): needs third-party dependencies. The
@@ -20,6 +35,13 @@ are easy to read and to query when debugging a deployed instance. What's left is
 ## Unreleased
 
 ### Added
+
+- Integration tests, phase 1: Gherkin scenarios run with Godog (v0.16.0) against the whole stack
+  (API container, WireMock, flagd), in `integration/`, its own Go module so the service keeps no
+  third-party dependencies. 21 scenarios cover health, listing and reading items, create, replace
+  and delete, unknown IDs, and request validation (400 and 422). `compose.integration.yaml` sets a
+  3s upstream timeout and JSON logs for testing. The suite checks the stack is up first and resets
+  WireMock before each scenario.
 
 - An OpenAPI 3.0 spec of the API, `docs/openapi.json`: the routes, request and response schemas,
   status codes (including 502 and 504 for upstream failures) and the `Client-Correlation-Id`

@@ -11,3 +11,5 @@ compose.yaml
 bin/
 wiremock/
 docs/
+integration/
+compose.integration.yaml
