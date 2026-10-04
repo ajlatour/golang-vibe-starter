@@ -98,7 +98,7 @@ func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
 // newHandler builds the API's root handler: routes plus middleware.
 func newHandler(logger *slog.Logger, items item.Store, opts ...item.Option) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", httpx.Healthz)
+	mux.HandleFunc("GET "+httpx.HealthzPath, httpx.Healthz)
 	item.RegisterRoutes(mux, logger, items, opts...)
 	return httpx.Middleware(logger, mux)
 }

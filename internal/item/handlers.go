@@ -49,7 +49,7 @@ func handleList(logger *slog.Logger, store Store, flags Flags) http.HandlerFunc 
 	return func(w http.ResponseWriter, r *http.Request) {
 		items, err := store.List(r.Context())
 		if err != nil {
-			httpx.ServerError(logger, w, r, err)
+			storeError(logger, w, r, err)
 			return
 		}
 		resp := map[string]any{"items": items}
@@ -73,18 +73,13 @@ func handleGet(logger *slog.Logger, store Store) http.HandlerFunc {
 
 func handleCreate(logger *slog.Logger, store Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var in input
-		if err := httpx.DecodeJSON(w, r, &in); err != nil {
-			httpx.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if msg := in.validate(); msg != "" {
-			httpx.WriteError(w, http.StatusUnprocessableEntity, msg)
+		in, ok := decodeInput(w, r)
+		if !ok {
 			return
 		}
 		it, err := store.Create(r.Context(), Item{Name: in.Name, Description: in.Description})
 		if err != nil {
-			httpx.ServerError(logger, w, r, err)
+			storeError(logger, w, r, err)
 			return
 		}
 		w.Header().Set("Location", "/items/"+it.ID)
@@ -94,13 +89,8 @@ func handleCreate(logger *slog.Logger, store Store) http.HandlerFunc {
 
 func handleUpdate(logger *slog.Logger, store Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var in input
-		if err := httpx.DecodeJSON(w, r, &in); err != nil {
-			httpx.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if msg := in.validate(); msg != "" {
-			httpx.WriteError(w, http.StatusUnprocessableEntity, msg)
+		in, ok := decodeInput(w, r)
+		if !ok {
 			return
 		}
 		it, err := store.Update(r.Context(), Item{ID: r.PathValue("id"), Name: in.Name, Description: in.Description})
@@ -122,7 +112,24 @@ func handleDelete(logger *slog.Logger, store Store) http.HandlerFunc {
 	}
 }
 
-// storeError maps ErrNotFound to 404 and anything else to 500.
+// decodeInput reads and validates the JSON request body shared by create and
+// update. If it can't, it has already written the 400 (unreadable body) or 422
+// (invalid fields) response and returns false.
+func decodeInput(w http.ResponseWriter, r *http.Request) (input, bool) {
+	var in input
+	if err := httpx.DecodeJSON(w, r, &in); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error())
+		return input{}, false
+	}
+	if msg := in.validate(); msg != "" {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, msg)
+		return input{}, false
+	}
+	return in, true
+}
+
+// storeError maps ErrNotFound to 404 and anything else to the status
+// httpx.ServerError picks: 500, or 502/504 for a failed upstream call.
 func storeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, ErrNotFound) {
 		httpx.WriteError(w, http.StatusNotFound, ErrNotFound.Error())
