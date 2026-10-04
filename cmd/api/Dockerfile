@@ -12,9 +12,12 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY flagd/ flagd/
 COPY internal/ internal/
 COPY cmd/api/ cmd/api/
+# Stamped into every log line. .git isn't in the build context, so pass the
+# commit in: docker build --build-arg VERSION=$(git rev-parse --short HEAD)
+ARG VERSION=devel
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
+    go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/api ./cmd/api
 
 # Static, no shell, runs as an unprivileged user. Healthchecks use the
 # binary's own "healthcheck" subcommand since there is no curl/wget.

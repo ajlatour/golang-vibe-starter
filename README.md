@@ -185,6 +185,41 @@ The API reads these environment variables:
 | `LOG_FORMAT`       | `json`     | `json` or `text`.                                          |
 | `SHUTDOWN_TIMEOUT` | `10s`      | How long in-flight requests get to finish on SIGTERM.      |
 
+## Logging
+
+Logs are structured and go to stdout, one record per line: JSON by default (`LOG_FORMAT=json`),
+`key=value` text with `LOG_FORMAT=text` for reading locally.
+
+Every request gets a correlation ID. A caller can send one in the `Client-Correlation-Id`
+header (1 to 128 characters of letters, digits and `-_.:`); otherwise the API generates one.
+The ID is returned in the `Client-Correlation-Id` response header and appears as `request_id`
+on every log line for that request, so a client can quote it in a bug report and every line from
+that request can be found with one query.
+
+| Field         | On                     | Meaning                                                      |
+| ------------- | ---------------------- | ------------------------------------------------------------ |
+| `time`        | every line             | RFC 3339 timestamp.                                          |
+| `level`       | every line             | `DEBUG`, `INFO`, `WARN`, `ERROR`.                            |
+| `msg`         | every line             | Fixed event name: `request`, `internal error`, ... |
+| `service`     | every line             | Always `api` for this binary.                                |
+| `version`     | every line             | Commit that built the binary (see below), or `devel`.        |
+| `request_id`  | lines within a request | Correlation ID (see above).                                  |
+| `method`      | request, error lines   | HTTP method.                                                 |
+| `route`       | request, error lines   | Matched route pattern, e.g. `GET /items/{id}`. Group by this, not `path`. Empty if no route matched. |
+| `path`        | request, error lines   | Raw URL path. The query string is never logged.              |
+| `status`      | `request`              | Response status code.                                        |
+| `bytes`       | `request`              | Response body size.                                          |
+| `duration_ms` | `request`              | Time to serve the request, in milliseconds (a decimal number). |
+| `error`       | error and warning lines | Error message. Always `error`, never `err`.                 |
+| `flag`        | flag lines             | Feature flag key.                                            |
+
+Request and response bodies, query strings and headers are not logged, and URLs logged at startup
+have credentials redacted.
+
+`version` comes from the commit Go stamps into the binary. The Docker build doesn't include
+`.git`, so pass it in: `VERSION=$(git rev-parse --short HEAD) docker compose up --build`. Without
+it, container logs show `version=devel`.
+
 ## Endpoints
 
 | Method | Path          | Success | Description                                   |

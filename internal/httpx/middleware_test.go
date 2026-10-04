@@ -35,7 +35,7 @@ func TestMiddleware(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var logs bytes.Buffer
-			h := Middleware(slog.New(slog.NewJSONHandler(&logs, nil)), tt.handler)
+			h := Middleware(slog.New(NewContextHandler(slog.NewJSONHandler(&logs, nil))), tt.handler)
 
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))

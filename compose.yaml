@@ -11,6 +11,10 @@ services:
     build:
       context: .
       dockerfile: cmd/api/Dockerfile
+      args:
+        # Shown as "version" in every log line, e.g.
+        #   VERSION=$(git rev-parse --short HEAD) docker compose up --build
+        VERSION: ${VERSION:-devel}
     ports:
       - "8080:8080"
     environment:

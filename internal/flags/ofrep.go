@@ -47,10 +47,10 @@ func (c *OFREP) Bool(ctx context.Context, key string) bool {
 	}
 	def, ok := c.defaults[key]
 	if !ok {
-		c.logger.Error("flag evaluation failed and no default is configured, using false", "flag", key, "error", err)
+		c.logger.ErrorContext(ctx, "flag evaluation failed and no default is configured, using false", "flag", key, "error", err)
 		return false
 	}
-	c.logger.Warn("flag evaluation failed, using default", "flag", key, "default", def, "error", err)
+	c.logger.WarnContext(ctx, "flag evaluation failed, using default", "flag", key, "default", def, "error", err)
 	return def
 }
 

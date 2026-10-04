@@ -33,6 +33,19 @@ func main() {
 	}
 }
 
+// version is the build's version, set at link time in container builds
+// (-ldflags "-X main.version=..."), where no VCS info is available.
+var version string
+
+// buildVersion returns version if it was set at link time, else the version
+// recorded in the binary's build info.
+func buildVersion() string {
+	if version != "" {
+		return version
+	}
+	return httpx.BuildVersion()
+}
+
 // run wires up and runs the service until ctx is cancelled. With the single
 // argument "healthcheck" it instead probes an already-running instance, for
 // use as a container healthcheck.
@@ -49,8 +62,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		return fmt.Errorf("unexpected arguments %q (want none, or \"healthcheck\")", args)
 	}
 
-	logger := cfg.NewLogger(stdout)
-	logger.Info("using upstream", "url", cfg.UpstreamURL.Redacted(), "timeout", cfg.UpstreamTimeout)
+	logger := cfg.NewLogger(stdout, "api", buildVersion())
+	logger.Info("using upstream", "url", cfg.UpstreamURL.Redacted(), "timeout", cfg.UpstreamTimeout.String())
 	store := item.NewHTTPStore(cfg.UpstreamURL.String(), &http.Client{Timeout: cfg.UpstreamTimeout})
 
 	evaluator, err := newFlags(logger, cfg)
@@ -78,7 +91,7 @@ func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
 		logger.Info("feature flags: no FLAGS_URL, using default values only")
 		return defaults, nil
 	}
-	logger.Info("using feature flags", "url", cfg.FlagsURL.Redacted(), "timeout", cfg.FlagsTimeout)
+	logger.Info("using feature flags", "url", cfg.FlagsURL.Redacted(), "timeout", cfg.FlagsTimeout.String())
 	return flags.NewOFREP(cfg.FlagsURL.String(), &http.Client{Timeout: cfg.FlagsTimeout}, logger, defaults), nil
 }
 

@@ -40,7 +40,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg ServerConfig, handler h
 	case <-ctx.Done():
 	}
 
-	logger.Info("shutting down", "timeout", cfg.ShutdownTimeout)
+	logger.Info("shutting down", "timeout", cfg.ShutdownTimeout.String())
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {

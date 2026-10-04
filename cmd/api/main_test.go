@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 )
@@ -58,6 +59,9 @@ func TestRun(t *testing.T) {
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		if resp.Header.Get(httpx.RequestIDHeader) == "" {
+			t.Errorf("response has no %s header", httpx.RequestIDHeader)
 		}
 		var got item.Item
 		if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {

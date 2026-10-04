@@ -34,10 +34,8 @@ func WriteError(w http.ResponseWriter, status int, msg string) {
 
 // ServerError logs err and sends a generic 500 so internals aren't leaked.
 func ServerError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err error) {
-	logger.ErrorContext(r.Context(), "internal error",
-		"method", r.Method,
-		"path", r.URL.Path,
-		"err", err,
+	logger.LogAttrs(r.Context(), slog.LevelError, "internal error",
+		append(requestAttrs(r), slog.Any(LogKeyError, err))...,
 	)
 	WriteError(w, http.StatusInternalServerError, "internal server error")
 }
