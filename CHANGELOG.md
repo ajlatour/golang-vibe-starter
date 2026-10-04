@@ -11,14 +11,15 @@ are easy to read and to query when debugging a deployed instance. What's left is
 
 ### Integration tests with Godog
 
-Phases 1 to 3 are done (see Unreleased). End-to-end Gherkin scenarios in `integration/`, a separate Go
+Phases 1 to 4 are done (see Unreleased). End-to-end Gherkin scenarios in `integration/`, a separate Go
 module so Godog stays a test-only dependency, run against the composed stack.
 
 Test code never calls Docker: the stack is started with `docker compose` before a run, and the
 tests only talk HTTP to it (and write the test-owned flags file).
 
-- Phase 4, optional: a CI workflow that brings the stack up and runs the suite (the repo has no
-  CI yet), and a step that checks response bodies against `docs/openapi.json`.
+- Optional, not planned: a step that checks response bodies against `docs/openapi.json`. The
+  in-process OpenAPI test already checks every documented response, so this adds little, and it
+  would mean sharing that test's schema validator with the integration module.
 
 ### Deferred
 
@@ -32,6 +33,10 @@ tests only talk HTTP to it (and write the test-owned flags file).
 
 ### Added
 
+- Continuous integration (`.github/workflows/ci.yml`), on pushes to `main` and on pull
+  requests: a fast job for `gofmt`, `go vet` and `go test -race ./...`, and a job that starts the
+  stack with docker compose and runs the Godog suite against it, printing the containers' logs on
+  failure.
 - Integration tests, phase 3: correlation ID scenarios. A valid `Client-Correlation-Id` is echoed
   back (including at the 128-character limit), a missing or invalid one (spaces, a slash,
   non-ASCII, a quote, 129 characters) is replaced by a generated one, generated IDs differ per

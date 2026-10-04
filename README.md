@@ -1,5 +1,7 @@
 # golang-vibe-starter
 
+[![CI](https://github.com/ajlatour/golang-vibe-starter/actions/workflows/ci.yml/badge.svg)](https://github.com/ajlatour/golang-vibe-starter/actions/workflows/ci.yml)
+
 A Go HTTP API built on the standard library only: no third-party dependencies. It serves `/items`
 and gets the data from an upstream service over HTTP. In local development that upstream is
 [WireMock](https://wiremock.org), serving stub responses.
@@ -100,6 +102,18 @@ docker compose -f compose.yaml -f compose.integration.yaml down
   followed by a read of the same item can't pass against this stack.
 - `API_URL`, `WIREMOCK_URL` and `FLAGD_URL` point the suite elsewhere (defaults:
   `localhost:8080`, `:8081` and `:8016`).
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request, in two jobs:
+
+- **test**: `gofmt`, `go vet` (both modules) and `go test -race ./...`. Fast, no Docker.
+- **integration**: starts the stack with `docker compose -f compose.yaml -f compose.integration.yaml
+  up -d --build --wait`, runs the Godog suite, prints the containers' logs if anything failed, and
+  always stops the stack. The commit SHA is passed as `VERSION`, so the API's log lines say which
+  build they came from.
+
+A newer push to the same branch cancels the run in progress.
 
 To add a scenario, write it in a `.feature` file using the existing steps (listed in
 `integration/steps_test.go`). An undefined step fails the run, and Godog prints a snippet to
@@ -443,6 +457,7 @@ wiremock/faults/         Opt-in fault stubs (loaded via the admin API)
 docs/openapi.json        OpenAPI spec of the API, checked against the handlers by tests
 integration/             Godog end-to-end tests against the composed stack (own Go module)
 compose.integration.yaml Compose overrides for the integration tests
+.github/workflows/       CI: unit tests, then the integration tests against the stack
 compose.yaml             Local stack: api + WireMock + flagd
 ```
 
