@@ -28,22 +28,16 @@ jobs:
           # go.sum is the only one to key the cache on.
           cache-dependency-path: integration/go.sum
 
+      # The same targets as `make check`, as separate steps so a failure
+      # shows which one.
       - name: gofmt
-        run: |
-          unformatted="$(gofmt -l .)"
-          if [ -n "$unformatted" ]; then
-            echo "These files need gofmt:"
-            echo "$unformatted"
-            exit 1
-          fi
+        run: make fmt-check
 
       - name: go vet
-        run: |
-          go vet ./...
-          go vet -C integration ./...
+        run: make vet
 
       - name: Unit tests
-        run: go test -race ./...
+        run: make test-race
 
   # The Godog feature tests against the whole stack, started with docker
   # compose here. The tests themselves only talk HTTP to it.
@@ -51,7 +45,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      COMPOSE: docker compose -f compose.yaml -f compose.integration.yaml
       # Stamped into the API's log lines as its version.
       VERSION: ${{ github.sha }}
     steps:
@@ -62,16 +55,18 @@ jobs:
           go-version-file: integration/go.mod
           cache-dependency-path: integration/go.sum
 
+      # `make integration` in steps, so the logs and teardown run as their
+      # own steps whatever happens.
       - name: Start the stack
-        run: $COMPOSE up -d --build --wait
+        run: make integration-up
 
       - name: Integration tests
-        run: go test -C integration ./... -v -count=1
+        run: make integration-test
 
       - name: Logs from the stack
         if: failure()
-        run: $COMPOSE logs --no-color
+        run: make integration-logs
 
       - name: Stop the stack
         if: always()
-        run: $COMPOSE down
+        run: make integration-down

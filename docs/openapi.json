@@ -5,6 +5,7 @@
     "version": "0.1.0",
     "description": "A small HTTP API over a placeholder `items` resource. Item data comes from an upstream service, so a failure to reach or understand the upstream is reported as 502 or 504, never as a 500. Every response carries a `Client-Correlation-Id` header; send one to tie the service's log lines to your own, or quote the one returned when reporting a problem.\n\nThis file is checked against the running handlers by tests (`cmd/api/openapi_test.go`): routes, status codes, response bodies, headers and the limits stated here must match what the service actually does."
   },
+  "security": [],
   "servers": [
     { "url": "http://localhost:8080", "description": "Local development (docker compose up)" }
   ],

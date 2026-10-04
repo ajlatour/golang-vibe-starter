@@ -24,35 +24,36 @@ contract, change that variable; no code changes are needed.
   the version pinned in `go.mod`.
 - Docker with Compose, to run the local stack and the integration tests. The unit tests don't
   need it.
+- `make` (GNU Make 3.81 or later, already on macOS and most Linux systems) for the shortcuts below.
+  Without it, each target in the `Makefile` is a few lines you can run by hand.
+
+Nothing else: the spec tools run in Docker, and the integration tests' Go dependencies download
+on first use.
 
 ## Run
 
 ```sh
-docker compose up --build
+make up                                    # API, WireMock and flagd, in the background
 curl localhost:8080/items                  # through the API
 curl localhost:8081/items                  # WireMock directly
-curl localhost:8081/__admin/mappings       # WireMock admin API
-docker compose down
+make fault FAULT=unavailable               # make the upstream fail; make fault-reset to undo
+make down
 ```
 
-[The local stack](docs/local-stack.md) covers running the API outside Docker, WireMock's stubs,
-switching on upstream faults, and load testing.
+`make help` lists every shortcut. [The local stack](docs/local-stack.md) covers running the API
+outside Docker, WireMock's stubs, upstream faults, and load testing.
 
 ## Test
 
 ```sh
-go test ./...                    # unit tests: fast, no Docker
+make test           # unit tests: fast, no Docker
+make check          # what CI's fast job runs: gofmt, vet and the race-enabled unit tests
+make integration    # starts the stack, runs the integration tests, stops the stack
 ```
 
-```sh
-# integration tests, against the whole stack
-docker compose -f compose.yaml -f compose.integration.yaml up -d --build --wait
-go test -C integration ./... -v
-docker compose -f compose.yaml -f compose.integration.yaml down
-```
-
-CI runs both on every push to `main` and every pull request. [Development](docs/development.md)
-explains the tests, and which documents they keep in step with the code.
+CI runs these same targets on every push to `main` and every pull request.
+[Development](docs/development.md) explains the tests, and which documents they keep in step with
+the code.
 
 ## API
 
@@ -84,10 +85,10 @@ Every response carries a `Client-Correlation-Id` header. Send your own to tie th
 lines to yours, or quote the one returned when reporting a problem.
 
 The full contract is in [`docs/openapi.json`](docs/openapi.json), an OpenAPI 3.0 spec: every route,
-request and response schema, status code and header. Open it in any OpenAPI viewer (for example
-Swagger Editor, or `npx @redocly/cli preview-docs docs/openapi.json`). It is JSON rather than YAML
-because the project is standard library only, and Go has no YAML parser. Tests run the real
-handlers against it, so it can't drift from the code.
+request and response schema, status code and header. `make spec` renders it as a web page,
+`bin/openapi.html`, or open it in any OpenAPI viewer. It is JSON rather than YAML because the
+project is standard library only, and Go has no YAML parser. Tests run the real handlers against
+it, so it can't drift from the code.
 
 ## Configuration
 
@@ -142,6 +143,7 @@ flagd/                   Feature flag definitions: served by flagd, and embedded
 wiremock/mappings/       WireMock stubs (mounted)
 wiremock/faults/         Opt-in fault stubs (loaded via the admin API)
 docs/                    The documents above, and the OpenAPI spec
+Makefile                 Shortcuts for running, testing and checking (make help)
 integration/             Godog end-to-end tests against the composed stack (own Go module)
 compose.yaml             Local stack: api + WireMock + flagd
 compose.integration.yaml Compose overrides for the integration tests

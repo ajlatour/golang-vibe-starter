@@ -20,6 +20,8 @@ How the code is put together, how to change it safely, and how it's tested.
   the flag definitions and the store contract each have tests that fail when the code and the
   description disagree. The next section lists them.
 - **Tests never call Docker.** The integration tests talk HTTP to a stack you start yourself.
+- **Commands live in the `Makefile`.** `make help` lists them, and CI runs the same targets, so
+  what passes locally passes in CI.
 
 ## Making a change
 
@@ -46,7 +48,8 @@ that `HTTPStore` and the test fake both pass.
 ## Tests
 
 ```sh
-go test ./...
+make test         # go test ./...
+make check        # gofmt check, go vet for both modules, and go test -race: what CI's fast job runs
 ```
 
 The tests don't need Docker. `HTTPStore` and the API are tested against an in-process upstream
@@ -59,8 +62,7 @@ One opt-in test checks `HTTPStore` against the running WireMock, to catch drift 
 and what the API's client expects. It's skipped unless `LIVE_UPSTREAM_URL` is set:
 
 ```sh
-docker compose up -d --wait mock
-LIVE_UPSTREAM_URL=http://localhost:8081 go test ./internal/item -run Live -v
+make live-test    # starts the WireMock container, then runs the Live test against it
 ```
 
 ## Integration tests
@@ -70,10 +72,19 @@ End-to-end scenarios, written in Gherkin in `integration/features/`, run with
 the Dockerfile, WireMock and flagd.
 
 ```sh
-docker compose -f compose.yaml -f compose.integration.yaml up -d --build --wait
-go test -C integration ./... -v
-docker compose -f compose.yaml -f compose.integration.yaml down
+make integration          # start the test stack, run the suite, always stop the stack
 ```
+
+Or step by step, which is quicker when running the suite repeatedly:
+
+```sh
+make integration-up       # docker compose -f compose.yaml -f compose.integration.yaml up -d --build --wait
+make integration-test     # go test -C integration ./... -v -count=1
+make integration-down
+```
+
+If the suite fails, `make integration` prints the stack's logs before stopping it;
+`make integration-logs` prints them for a stack you started with `integration-up`.
 
 What they cover, in `integration/features/`:
 
@@ -106,7 +117,8 @@ How the suite works:
 - WireMock doesn't store anything, so scenarios check each call on its own. A create followed by a
   read of the same item can't pass against this stack.
 - Godog's flags work with a `godog.` prefix, e.g. `-godog.tags=@smoke` for the quick checks, or
-  `-godog.format=progress` for compact output.
+  `-godog.format=progress` for compact output. Through make: `make integration-test TAGS=@smoke`,
+  or `ARGS=-godog.format=progress` for any other flag.
 - `API_URL`, `WIREMOCK_URL` and `FLAGD_URL` point the suite elsewhere (defaults:
   `localhost:8080`, `:8081` and `:8016`).
 
@@ -118,13 +130,14 @@ value with a double quote in it can't go inside a step's quoted argument; give i
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request, in two jobs:
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request, in two jobs, each
+step a `make` target:
 
-- **test**: `gofmt`, `go vet` (both modules) and `go test -race ./...`. Fast, no Docker.
-- **integration**: starts the stack with `docker compose -f compose.yaml -f compose.integration.yaml
-  up -d --build --wait`, runs the Godog suite, prints the containers' logs if anything failed, and
-  always stops the stack. The commit SHA is passed as `VERSION`, so the API's log lines say which
-  build they came from.
+- **test**: `make fmt-check`, `make vet` and `make test-race` (together, `make check`). Fast, no
+  Docker.
+- **integration**: `make integration-up`, `make integration-test`, `make integration-logs` if
+  anything failed, and always `make integration-down`. The commit SHA is passed as `VERSION`, so
+  the API's log lines say which build they came from.
 
 A newer push to the same branch cancels the run in progress.
 

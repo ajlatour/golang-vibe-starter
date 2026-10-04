@@ -11,6 +11,13 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- A `Makefile` with shortcuts for the commands that were long or easy to forget: running the
+  stack (`make up`, `make run`, `make fault FAULT=...`), the checks and tests (`make check`,
+  `make integration`, `make live-test`) and the API spec (`make spec`, `make spec-lint`, which run Redocly CLI in Docker, so there is
+  nothing extra to install). `make
+  help` lists them. It works with GNU Make 3.81, the version macOS ships. CI now runs these same
+  targets instead of its own copies of the commands.
+
 - Continuous integration (`.github/workflows/ci.yml`), on pushes to `main` and on pull
   requests: a fast job for `gofmt`, `go vet` and `go test -race ./...`, and a job that starts the
   stack with docker compose and runs the Godog suite against it, printing the containers' logs on
@@ -140,3 +147,7 @@ Ideas considered but not planned are listed under
   watches the file, sometimes failed to re-attach its watch to the new file ("error restoring
   watcher") and never reloaded again. The tests now edit the file in place. The note in
   `compose.yaml` that replacing the file is safe is corrected.
+- The README suggested `npx @redocly/cli preview-docs` to view the API spec, a command Redocly CLI
+  2 removed. `make spec` renders the spec with `build-docs` instead.
+- The API spec now states that the API has no authentication (`"security": []`), which Redocly's
+  linter flagged as missing.

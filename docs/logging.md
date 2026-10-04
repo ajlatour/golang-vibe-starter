@@ -21,9 +21,10 @@ The ID is returned in the `Client-Correlation-Id` response header and appears as
 on every log line for that request, so a client can quote it in a bug report and every line from
 that request can be found with one query.
 
-`version` comes from the commit Go stamps into the binary. The Docker build doesn't include
-`.git`, so pass it in: `VERSION=$(git rev-parse --short HEAD) docker compose up --build`. Without
-it, container logs show `version=devel`. CI passes the commit SHA.
+`version` names the build. `make up` and `make run` stamp the current commit automatically, and CI
+passes the commit SHA. With plain `docker compose`, pass it in yourself:
+`VERSION=$(git rev-parse --short HEAD) docker compose up --build`, because the Docker build doesn't
+include `.git`; without it, container logs show `version=devel`.
 
 ## Fields
 

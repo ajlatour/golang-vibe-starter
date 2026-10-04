@@ -1,6 +1,6 @@
 # The local stack
 
-`docker compose up --build` starts three containers:
+`make up` (or `docker compose up -d --build --wait`) starts three containers:
 
 | Service | Port (host) | What it is |
 | ------- | ----------- | ---------- |
@@ -11,12 +11,15 @@
 The API starts only after WireMock passes its healthcheck. The API image is distroless and static
 (about 16 MB). It has no shell or curl, so it checks its own health with `/api healthcheck`.
 
-To run the API outside Docker against the WireMock container:
+To run the API outside Docker, with `go run`, against the WireMock and flagd containers:
 
 ```sh
-docker compose up -d mock
-UPSTREAM_URL=http://localhost:8081 go run ./cmd/api
+make run
 ```
+
+That starts the two containers and runs
+`UPSTREAM_URL=http://localhost:8081 FLAGS_URL=http://localhost:8016 LOG_FORMAT=text go run ./cmd/api`,
+stamping the current commit as the version.
 
 `compose.integration.yaml` is an override for the integration tests; see
 [Development](development.md#integration-tests).
@@ -49,6 +52,13 @@ happy-path stub while it's loaded:
 | `unavailable.json`      | Every `/items` request returns 503              | 502, logs the upstream 503           |
 | `connection-reset.json` | Every `/items` connection is reset              | 502, logs the connection reset       |
 | `malformed-list.json`   | `GET /items` returns truncated JSON             | 502, logs the decode error           |
+
+```sh
+make fault FAULT=unavailable     # switch one on (with no FAULT, lists the names)
+make fault-reset                 # switch them all off
+```
+
+What those do, with curl:
 
 ```sh
 # turn a fault on

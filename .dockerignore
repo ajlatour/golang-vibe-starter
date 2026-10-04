@@ -13,3 +13,4 @@ wiremock/
 docs/
 integration/
 compose.integration.yaml
+Makefile
