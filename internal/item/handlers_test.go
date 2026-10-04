@@ -221,3 +221,20 @@ func TestListTotalFlag(t *testing.T) {
 		})
 	}
 }
+
+// TestPlainStoreErrorStaysA500 checks that only upstream failures are 5xx
+// other than 500: an unexpected error from anywhere else still is one.
+func TestPlainStoreErrorStaysA500(t *testing.T) {
+	mux := http.NewServeMux()
+	item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), failingStore{})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/items", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", rec.Code)
+	}
+}
+
+func sameItem(a, b item.Item) bool {
+	return a.ID == b.ID && a.Name == b.Name && a.Description == b.Description &&
+		a.CreatedAt.Equal(b.CreatedAt) && a.UpdatedAt.Equal(b.UpdatedAt)
+}

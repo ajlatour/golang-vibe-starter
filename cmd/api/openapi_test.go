@@ -21,6 +21,7 @@ import (
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
 )
@@ -226,11 +227,11 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 	case "internal":
 		return newHandler(logger, errStore{}), ""
 	case "badgw":
-		return newHandler(logger, item.NewHTTPStore(nettest.DeadURL(), &http.Client{Timeout: time.Second})), ""
+		return newHandler(logger, httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})), ""
 	case "timeout":
 		upstream := httptest.NewServer(http.HandlerFunc(nettest.Hang))
 		t.Cleanup(upstream.Close)
-		return newHandler(logger, item.NewHTTPStore(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})), ""
+		return newHandler(logger, httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})), ""
 	}
 	t.Fatalf("unknown environment %q", env)
 	return nil, ""

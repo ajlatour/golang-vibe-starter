@@ -54,8 +54,18 @@ func findLogCalls(t *testing.T) []logCall {
 	var calls []logCall
 	for _, root := range []string{"../../internal", "../../cmd"} {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			if err != nil {
 				return err
+			}
+			// Test-helper packages (itemtest, logtest, nettest: named like
+			// the standard library's httptest) are imported only by tests
+			// and never write service logs. Their t.Error calls would
+			// otherwise look like logger calls to this syntax-only scan.
+			if d.IsDir() && strings.HasSuffix(d.Name(), "test") {
+				return filepath.SkipDir
+			}
+			if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
 			}
 			file, err := parser.ParseFile(fset, path, nil, 0)
 			if err != nil {

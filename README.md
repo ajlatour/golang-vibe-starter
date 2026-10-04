@@ -9,7 +9,7 @@ and gets the data from an upstream service over HTTP. In local development that 
 
 ```
 client ──▶ api :8080 ──HTTP──▶ mock (WireMock) :8080, host :8081
-           HTTPStore  │         stubs in wiremock/mappings
+           httpstore  │         stubs in wiremock/mappings
                       │
                       └─OFREP─▶ flagd :8016 (OpenFeature sidecar)
                                 flags in flagd/flags.json
@@ -124,8 +124,9 @@ The API reads these environment variables:
 
 ```
 cmd/api/                 API service: config, wiring, Dockerfile
-internal/item/           Item model, Store interface, /items handlers,
-                         HTTPStore and UpstreamError (the API's upstream client)
+internal/item/           Item model, Store interface, /items handlers
+internal/item/httpstore/ The production Store: items on the upstream over HTTP,
+                         and UpstreamError (502/504) when the upstream fails
 internal/httpx/          HTTP plumbing: graceful Serve, middleware (correlation IDs,
                          request logging), JSON helpers, healthcheck probe
 internal/envconfig/      Reading configuration from environment variables, and the
@@ -136,8 +137,8 @@ internal/logx/           Logging toolkit: logger, the Key field names, request-I
 internal/featureflag/    OFREP client for the flagd sidecar, flag declarations,
                          and fallback defaults derived from flagd/flags.json
 internal/jsoncall/       One JSON-over-HTTP call: encode, send, redact, cap, decode, and
-                         classify failures. Used by HTTPStore and the flags client.
-internal/item/itemtest/  MemStore: in-memory Store, used only by tests
+                         classify failures. Used by httpstore and featureflag.
+internal/item/itemtest/  MemStore (an in-memory Store) and StoreContract, for tests
 internal/logtest/        Capture and parse JSON logs in tests; the log contract
 internal/nettest/        Dead, hanging, dropping and failing upstream stubs for tests
 flagd/                   Feature flag definitions: served by flagd, and embedded

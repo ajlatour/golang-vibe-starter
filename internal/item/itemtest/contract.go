@@ -1,45 +1,18 @@
-package item_test
+package itemtest
 
 import (
 	"errors"
-	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"sync"
 	"testing"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
-	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 )
 
-// TestMemStore checks the test fake itself, since TestHTTPStore relies on it.
-func TestMemStore(t *testing.T) {
-	testStore(t, func(t *testing.T) item.Store { return itemtest.NewMemStore() })
-}
-
-// TestHTTPStore runs the contract against an HTTPStore talking to an
-// in-process upstream (the item routes over a MemStore), so it needs no
-// container. TestHTTPStoreLive covers the real WireMock upstream.
-func TestHTTPStore(t *testing.T) {
-	testStore(t, func(t *testing.T) item.Store {
-		return item.NewHTTPStore(newUpstream(t).URL, &http.Client{})
-	})
-}
-
-// newUpstream starts an httptest server serving the item routes from a fresh
-// MemStore.
-func newUpstream(t *testing.T) *httptest.Server {
-	t.Helper()
-	mux := http.NewServeMux()
-	item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), itemtest.NewMemStore())
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	return srv
-}
-
-// testStore checks the behaviour every item.Store must have. Any new
-// implementation (e.g. a datastore-backed one) should run it too.
-func testStore(t *testing.T, newStore func(t *testing.T) item.Store) {
+// StoreContract checks the behaviour every item.Store must have: call it from
+// a test with a function that returns a fresh, empty store. MemStore and
+// httpstore.Store both pass it, and any new implementation (a database-backed
+// one, say) should run it too.
+func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 	t.Run("lifecycle", func(t *testing.T) {
 		ctx := t.Context()
 		s := newStore(t)
@@ -166,6 +139,8 @@ func testStore(t *testing.T, newStore func(t *testing.T) item.Store) {
 
 // sameItem compares items with time.Equal, since timestamps that went
 // through JSON lose their monotonic clock reading and location pointer.
+
+// sameItem compares the fields a store must round-trip.
 func sameItem(a, b item.Item) bool {
 	return a.ID == b.ID && a.Name == b.Name && a.Description == b.Description &&
 		a.CreatedAt.Equal(b.CreatedAt) && a.UpdatedAt.Equal(b.UpdatedAt)

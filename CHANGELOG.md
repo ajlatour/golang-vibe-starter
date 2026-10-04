@@ -106,6 +106,17 @@ Ideas considered but not planned are listed under
 
 ### Changed
 
+- Package structure, with no change in behavior:
+  - `internal/flags` is renamed `internal/featureflag`, so it no longer reads like the standard
+    library's `flag` (command-line flags), and so `flags` stops being shadowed by a variable of
+    the same name in the item handlers.
+  - The environment reader and the settings every service shares move from `internal/httpx` to
+    a new `internal/envconfig` (`httpx.ServerConfig` is now `envconfig.Service`), leaving `httpx`
+    purely about HTTP. `httpx.Serve` takes the listen address and shutdown timeout directly.
+  - The upstream client moves out of `internal/item` into `internal/item/httpstore`
+    (`item.NewHTTPStore` is now `httpstore.New`, `item.UpstreamError` is
+    `httpstore.UpstreamError`), so `item` holds just the model, the `Store` interface and the
+    handlers. The store contract every implementation must pass is now `itemtest.StoreContract`.
 - Documentation is reorganised. The README is now a short guide (what the service is,
   prerequisites, running, testing, the API, configuration and layout), and the detail moved to
   `docs/`: `local-stack.md` (WireMock, faults, load testing), `feature-flags.md`, `logging.md`

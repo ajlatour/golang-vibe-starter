@@ -1,4 +1,4 @@
-package item_test
+package httpstore_test
 
 import (
 	"bytes"
@@ -15,6 +15,7 @@ import (
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
 	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
@@ -35,10 +36,10 @@ const (
 	failed   = "upstream request failed"
 )
 
-// TestHTTPStoreCallLogging checks the lines an upstream call writes for each
+// TestStoreCallLogging checks the lines an upstream call writes for each
 // kind of outcome: a "sent" line before the call, a "received" line whenever
 // a response came back, and a "failed" line if the call didn't succeed.
-func TestHTTPStoreCallLogging(t *testing.T) {
+func TestStoreCallLogging(t *testing.T) {
 	tests := []struct {
 		name       string
 		handler    http.HandlerFunc
@@ -83,7 +84,7 @@ func TestHTTPStoreCallLogging(t *testing.T) {
 			defer upstream.Close()
 
 			var logs logtest.Buffer
-			store := item.NewHTTPStore(upstream.URL, upstream.Client(), item.WithStoreLogger(debugLogger(&logs)))
+			store := httpstore.New(upstream.URL, upstream.Client(), httpstore.WithLogger(debugLogger(&logs)))
 			_, _ = store.Get(t.Context(), "a")
 
 			lines := logs.Records(t)
@@ -119,11 +120,11 @@ func TestHTTPStoreCallLogging(t *testing.T) {
 	}
 }
 
-func TestHTTPStoreNoLoggerByDefault(t *testing.T) {
+func TestStoreNoLoggerByDefault(t *testing.T) {
 	upstream := httptest.NewServer(nettest.Status(http.StatusBadGateway, ""))
 	defer upstream.Close()
-	// Must not panic or write anywhere without WithStoreLogger.
-	_, _ = item.NewHTTPStore(upstream.URL, upstream.Client()).List(t.Context())
+	// Must not panic or write anywhere without WithLogger.
+	_, _ = httpstore.New(upstream.URL, upstream.Client()).List(t.Context())
 }
 
 func TestUpstreamErrorFields(t *testing.T) {
@@ -131,10 +132,10 @@ func TestUpstreamErrorFields(t *testing.T) {
 		upstream := httptest.NewServer(nettest.Status(http.StatusBadGateway, ""))
 		defer upstream.Close()
 
-		_, err := item.NewHTTPStore(upstream.URL, upstream.Client()).List(t.Context())
-		var ue *item.UpstreamError
+		_, err := httpstore.New(upstream.URL, upstream.Client()).List(t.Context())
+		var ue *httpstore.UpstreamError
 		if !errors.As(err, &ue) {
-			t.Fatalf("error = %v (%T), want *UpstreamError", err, err)
+			t.Fatalf("error = %v (%T), want *httpstore.UpstreamError", err, err)
 		}
 		if ue.Call != "GET /items" || ue.Status != http.StatusBadGateway || ue.Duration <= 0 {
 			t.Errorf("UpstreamError = %+v, want GET /items, status 502, positive duration", ue)
@@ -142,10 +143,10 @@ func TestUpstreamErrorFields(t *testing.T) {
 	})
 
 	t.Run("no response has no status", func(t *testing.T) {
-		_, err := item.NewHTTPStore(nettest.DeadURL(), &http.Client{Timeout: time.Second}).List(t.Context())
-		var ue *item.UpstreamError
+		_, err := httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second}).List(t.Context())
+		var ue *httpstore.UpstreamError
 		if !errors.As(err, &ue) || ue.Status != 0 {
-			t.Fatalf("error = %v, want *UpstreamError with status 0", err)
+			t.Fatalf("error = %v, want *httpstore.UpstreamError with status 0", err)
 		}
 		for _, a := range ue.LogAttrs() {
 			if a.Key == logx.KeyUpstreamStatus {
@@ -162,7 +163,7 @@ func TestUpstreamErrorFields(t *testing.T) {
 		}))
 		defer upstream.Close()
 
-		_, err := item.NewHTTPStore(upstream.URL, upstream.Client()).Get(t.Context(), "a")
+		_, err := httpstore.New(upstream.URL, upstream.Client()).Get(t.Context(), "a")
 		if err != item.ErrNotFound {
 			t.Errorf("error = %#v, want exactly ErrNotFound", err)
 		}
@@ -176,7 +177,7 @@ func TestUpstreamTimeoutLogged(t *testing.T) {
 	defer upstream.Close()
 
 	var logs logtest.Buffer
-	store := item.NewHTTPStore(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond}, item.WithStoreLogger(debugLogger(&logs)))
+	store := httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond}, httpstore.WithLogger(debugLogger(&logs)))
 	if _, err := store.List(t.Context()); err == nil {
 		t.Fatal("List() error = nil, want a timeout")
 	}
@@ -205,7 +206,7 @@ func TestUpstreamCancelledIsDebug(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	var logs logtest.Buffer
-	store := item.NewHTTPStore(upstream.URL, upstream.Client(), item.WithStoreLogger(debugLogger(&logs)))
+	store := httpstore.New(upstream.URL, upstream.Client(), httpstore.WithLogger(debugLogger(&logs)))
 	_, err := store.List(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want one wrapping context.Canceled", err)
@@ -226,7 +227,7 @@ func TestUpstreamFailureEndToEnd(t *testing.T) {
 
 	var logs logtest.Buffer
 	logger := debugLogger(&logs)
-	store := item.NewHTTPStore(upstream.URL, upstream.Client(), item.WithStoreLogger(logger))
+	store := httpstore.New(upstream.URL, upstream.Client(), httpstore.WithLogger(logger))
 	mux := http.NewServeMux()
 	item.RegisterRoutes(mux, logger, store)
 
@@ -271,7 +272,7 @@ func TestUpstreamErrorsAreRedactedAndBounded(t *testing.T) {
 	t.Run("credentials in the base URL", func(t *testing.T) {
 		base := "http://alice:s3cret@" + strings.TrimPrefix(nettest.DeadURL(), "http://")
 
-		_, err := item.NewHTTPStore(base, &http.Client{Timeout: time.Second}).List(t.Context())
+		_, err := httpstore.New(base, &http.Client{Timeout: time.Second}).List(t.Context())
 		if err == nil {
 			t.Fatal("expected an error")
 		}
@@ -288,7 +289,7 @@ func TestUpstreamErrorsAreRedactedAndBounded(t *testing.T) {
 		}))
 		defer upstream.Close()
 
-		_, err := item.NewHTTPStore(upstream.URL, upstream.Client()).List(t.Context())
+		_, err := httpstore.New(upstream.URL, upstream.Client()).List(t.Context())
 		if err == nil || len(err.Error()) > 400 {
 			t.Errorf("error is %d bytes, want it capped well under 400: %.120q", len(err.Error()), err)
 		}
@@ -299,7 +300,7 @@ func TestUpstreamErrorsAreRedactedAndBounded(t *testing.T) {
 		defer upstream.Close()
 
 		var logs logtest.Buffer
-		store := item.NewHTTPStore(upstream.URL, upstream.Client(), item.WithStoreLogger(debugLogger(&logs)))
+		store := httpstore.New(upstream.URL, upstream.Client(), httpstore.WithLogger(debugLogger(&logs)))
 		_, err := store.Get(t.Context(), strings.Repeat("a", 5000))
 		if err == nil || len(err.Error()) > 1000 {
 			t.Errorf("error is %d bytes, want it capped", len(err.Error()))
@@ -365,7 +366,7 @@ func TestUpstreamFailureStatuses(t *testing.T) {
 			}
 
 			mux := http.NewServeMux()
-			item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), item.NewHTTPStore(base, client))
+			item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), httpstore.New(base, client))
 			for _, path := range []string{"/items", "/items/a"} {
 				rec := httptest.NewRecorder()
 				mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
@@ -386,14 +387,12 @@ func TestUpstreamFailureStatuses(t *testing.T) {
 	}
 }
 
-// TestPlainStoreErrorStaysA500 checks that only upstream failures are 5xx
-// other than 500: an unexpected error from anywhere else still is one.
-func TestPlainStoreErrorStaysA500(t *testing.T) {
-	mux := http.NewServeMux()
-	item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), failingStore{})
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/items", nil))
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500", rec.Code)
+func decodeBody(t *testing.T, rec *httptest.ResponseRecorder, v any) {
+	t.Helper()
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	if err := json.NewDecoder(rec.Body).Decode(v); err != nil {
+		t.Fatalf("decode body: %v", err)
 	}
 }

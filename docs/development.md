@@ -35,15 +35,16 @@ don't, and its message says what to fix.
 | A log message (new, renamed, or a level or field changed) | `logtest.Contract` (`internal/logtest/contract.go`) and the Messages table in `docs/logging.md` | `internal/logx/schema_test.go`, and `cmd/api/logcontract_test.go`, which runs the whole service |
 | A log field name | A `Key` constant in `internal/logx/keys.go` and the Fields table in `docs/logging.md` | `internal/logx/schema_test.go`; a raw string key fails the build |
 | A feature flag | `flagd/flags.json`, and `featureflag.Declare` in code | The service won't start if a declared flag is missing; `cmd/api/main_test.go` |
-| A store implementation | Nothing: run it through `testStore` in `internal/item/store_test.go` | The same contract `HTTPStore` and the in-memory fake pass |
+| A store implementation | Nothing: run it through `itemtest.StoreContract` | The same contract `httpstore.Store` and the in-memory fake pass |
 | An environment variable | The Configuration table in the README | Not checked: keep it in step by hand |
 
 Recipes: [adding a log line](logging.md#rules-for-log-lines),
 [adding a flag](feature-flags.md#adding-a-flag), and [adding a scenario](#adding-a-scenario).
 
 The handlers in `internal/item` depend only on the `Store` interface. To add a new backing store,
-implement `Store` and run it through `testStore` in `internal/item/store_test.go`, the contract
-that `HTTPStore` and the test fake both pass.
+implement `Store` (in its own package, like `internal/item/httpstore`) and call
+`itemtest.StoreContract` from its tests: the contract that `httpstore.Store` and the in-memory
+`itemtest.MemStore` both pass.
 
 ## Tests
 
@@ -52,13 +53,13 @@ make test         # go test ./...
 make check        # gofmt check, go vet for both modules, and go test -race: what CI's fast job runs
 ```
 
-The tests don't need Docker. `HTTPStore` and the API are tested against an in-process upstream
+The tests don't need Docker. `httpstore.Store` and the API are tested against an in-process upstream
 (`net/http/httptest` serving the item routes over `itemtest.MemStore`, an in-memory test fake).
 Beyond the unit tests, this includes the checks in the table above: the OpenAPI drift test, the
 log contract test (the whole service, with secrets planted to prove they never reach a log line),
 and the log schema tests.
 
-One opt-in test checks `HTTPStore` against the running WireMock, to catch drift between the stubs
+One opt-in test checks `httpstore.Store` against the running WireMock, to catch drift between the stubs
 and what the API's client expects. It's skipped unless `LIVE_UPSTREAM_URL` is set:
 
 ```sh

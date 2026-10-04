@@ -1,4 +1,4 @@
-package item_test
+package httpstore_test
 
 import (
 	"errors"
@@ -10,13 +10,14 @@ import (
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
 )
 
-// TestHTTPStoreUpstreamResponses checks how HTTPStore handles upstream
+// TestStoreUpstreamResponses checks how Store handles upstream
 // responses the contract test can't produce: failures, junk, and
 // misconfiguration.
-func TestHTTPStoreUpstreamResponses(t *testing.T) {
+func TestStoreUpstreamResponses(t *testing.T) {
 	tests := []struct {
 		name         string
 		status       int
@@ -44,7 +45,7 @@ func TestHTTPStoreUpstreamResponses(t *testing.T) {
 			}))
 			defer upstream.Close()
 
-			_, err := item.NewHTTPStore(upstream.URL, upstream.Client()).Get(t.Context(), "a")
+			_, err := httpstore.New(upstream.URL, upstream.Client()).Get(t.Context(), "a")
 
 			switch {
 			case tt.wantNotFound:
@@ -64,7 +65,7 @@ func TestHTTPStoreUpstreamResponses(t *testing.T) {
 	}
 }
 
-func TestHTTPStoreRequests(t *testing.T) {
+func TestStoreRequests(t *testing.T) {
 	tests := []struct {
 		name     string
 		baseURL  string // appended to the upstream URL
@@ -87,7 +88,7 @@ func TestHTTPStoreRequests(t *testing.T) {
 			}))
 			defer upstream.Close()
 
-			store := item.NewHTTPStore(upstream.URL+tt.baseURL, upstream.Client())
+			store := httpstore.New(upstream.URL+tt.baseURL, upstream.Client())
 			if _, err := store.Get(t.Context(), tt.id); err != nil {
 				t.Fatalf("Get: %v", err)
 			}
@@ -98,8 +99,8 @@ func TestHTTPStoreRequests(t *testing.T) {
 	}
 }
 
-// TestHTTPStoreLive checks HTTPStore against a running upstream, to catch
-// drift between the WireMock stubs and what HTTPStore expects. It is skipped
+// TestStoreLive checks Store against a running upstream, to catch
+// drift between the WireMock stubs and what Store expects. It is skipped
 // unless LIVE_UPSTREAM_URL is set, e.g.:
 //
 //	docker compose up -d --wait mock
@@ -107,13 +108,13 @@ func TestHTTPStoreRequests(t *testing.T) {
 //
 // Assertions hold for a stateless stub server and a real backend alike: the
 // only item it updates or deletes is the one it created.
-func TestHTTPStoreLive(t *testing.T) {
+func TestStoreLive(t *testing.T) {
 	base := os.Getenv("LIVE_UPSTREAM_URL")
 	if base == "" {
 		t.Skip("LIVE_UPSTREAM_URL not set")
 	}
 	ctx := t.Context()
-	store := item.NewHTTPStore(base, &http.Client{Timeout: 5 * time.Second})
+	store := httpstore.New(base, &http.Client{Timeout: 5 * time.Second})
 
 	list, err := store.List(ctx)
 	if err != nil {
@@ -164,18 +165,18 @@ func TestHTTPStoreLive(t *testing.T) {
 	}
 }
 
-func TestHTTPStoreUnreachable(t *testing.T) {
-	store := item.NewHTTPStore(nettest.DeadURL(), &http.Client{Timeout: time.Second})
+func TestStoreUnreachable(t *testing.T) {
+	store := httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})
 	if _, err := store.List(t.Context()); err == nil || errors.Is(err, item.ErrNotFound) {
 		t.Errorf("List error = %v, want connection error", err)
 	}
 }
 
-func TestHTTPStoreTimeout(t *testing.T) {
+func TestStoreTimeout(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(nettest.Hang))
 	defer upstream.Close()
 
-	store := item.NewHTTPStore(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})
+	store := httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})
 	if _, err := store.List(t.Context()); err == nil {
 		t.Error("List error = nil, want timeout")
 	}

@@ -91,9 +91,9 @@ test-race: ## Unit tests with the race detector
 
 check: fmt-check vet test-race ## Everything CI's fast job runs
 
-live-test: ## The opt-in HTTPStore test against the running WireMock
+live-test: ## The opt-in httpstore test against the running WireMock
 	$(COMPOSE) up -d --wait mock
-	LIVE_UPSTREAM_URL=$(WIREMOCK_URL) go test ./internal/item -run Live -v -count=1
+	LIVE_UPSTREAM_URL=$(WIREMOCK_URL) go test ./internal/item/httpstore -run Live -v -count=1
 
 ##@ Integration tests (Godog, against the whole stack)
 

@@ -1,6 +1,8 @@
-// Package item is the placeholder resource the API serves. The API's routes
-// are backed by an HTTPStore that reads and writes items on an upstream
-// speaking the same /items contract (WireMock in local development).
+// Package item is the placeholder resource the API serves: the Item model,
+// the Store interface its handlers depend on, and the /items handlers. The
+// production store is in the httpstore subpackage, which reads and writes
+// items on an upstream speaking the same /items contract (WireMock in local
+// development); itemtest has an in-memory one for tests.
 package item
 
 import (
@@ -42,7 +44,7 @@ type Store interface {
 // MaxNameLen is the longest allowed item name, in characters.
 const MaxNameLen = 200
 
-// input is the request body for creating or replacing an item. HTTPStore
+// input is the request body for creating or replacing an item. httpstore
 // sends the same shape upstream.
 type input struct {
 	Name        string `json:"name"`

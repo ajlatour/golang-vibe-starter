@@ -15,6 +15,7 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/featureflag"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
@@ -65,7 +66,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 
 	logger := cfg.NewLogger(stdout, "api", buildVersion())
 	logger.Info("using upstream", logx.KeyURL, cfg.UpstreamURL.Redacted(), logx.KeyTimeout, cfg.UpstreamTimeout.String())
-	store := item.NewHTTPStore(cfg.UpstreamURL.String(), &http.Client{Timeout: cfg.UpstreamTimeout}, item.WithStoreLogger(logger))
+	store := httpstore.New(cfg.UpstreamURL.String(), &http.Client{Timeout: cfg.UpstreamTimeout}, httpstore.WithLogger(logger))
 
 	evaluator, err := newFlags(logger, cfg)
 	if err != nil {

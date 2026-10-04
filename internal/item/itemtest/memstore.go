@@ -15,7 +15,7 @@ import (
 
 // MemStore is an in-memory item.Store. Tests use it on its own, or behind
 // item.RegisterRoutes on an httptest server as a stand-in upstream for
-// item.HTTPStore, so no container is needed.
+// httpstore.Store, so no container is needed.
 type MemStore struct {
 	mu    sync.RWMutex
 	items map[string]item.Item
