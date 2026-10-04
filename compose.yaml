@@ -79,8 +79,11 @@ services:
     ports:
       - "8016:8016"
     volumes:
-      # The directory is mounted, not the file, so edits made by replacing
-      # the file are still picked up. flagd watches it and reloads on change.
+      # The directory is mounted, not the file, so an editor that saves by
+      # replacing the file still works. flagd watches the file and reloads on
+      # change, but it can lose its watch if a replaced file isn't visible yet
+      # when it re-attaches (it then stops reloading until restarted), so tools
+      # should edit the file in place; integration/flags_test.go explains.
       - ./flagd:/etc/flagd:ro
     command:
       - start

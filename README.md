@@ -82,7 +82,15 @@ docker compose -f compose.yaml -f compose.integration.yaml down
   resets the copy from `flagd/flags.json` when it starts, and after any scenario that changed
   it, so the copy always mirrors what ships and an interrupted run can't leave a flag switched.
   Because this edits a file, the tests must run on the same machine as the stack. flagd being
-  down isn't covered here (it would mean stopping a container); the unit tests cover it.
+  down isn't covered here (it would mean stopping a container); the unit tests cover it. The file
+  is edited in place, never replaced: flagd can lose its watch on a replaced file and stop
+  reloading (see `integration/flags_test.go`).
+- Correlation IDs: scenarios check that a valid `Client-Correlation-Id` is echoed back (up to
+  the 128-character limit), that a missing or invalid one is replaced by a generated one, that
+  generated IDs differ per request, and that error responses (404, 422, 502) carry the ID too.
+  The header's name and format are read from `docs/openapi.json`, so the scenarios hold the spec
+  and the service to each other. Checking the ID on log lines is left to the in-process log
+  contract test, since reading the container's logs would need Docker.
 - Godog's flags work with a `godog.` prefix, e.g. `-godog.tags=@smoke` for the quick checks, or
   `-godog.format=progress` for compact output.
 - The suite checks the stack is up before starting, and resets WireMock before every scenario,

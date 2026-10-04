@@ -23,16 +23,20 @@ type world struct {
 	stack  stack
 	client *http.Client
 
-	status  int
-	header  http.Header
-	body    []byte
-	elapsed time.Duration
+	reqHeader http.Header // sent with every request in the scenario
+	sentID    string      // the correlation ID the scenario sent, if any
+
+	status     int
+	header     http.Header
+	prevHeader http.Header // the response before the last one
+	body       []byte
+	elapsed    time.Duration
 
 	flagsChanged bool // a step edited the flags, so restore them afterwards
 }
 
 func initScenario(sc *godog.ScenarioContext, s stack) {
-	w := &world{stack: s, client: &http.Client{Timeout: 15 * time.Second}}
+	w := &world{stack: s, client: &http.Client{Timeout: 15 * time.Second}, reqHeader: http.Header{}}
 
 	// Start every scenario from the mounted WireMock stubs, dropping any
 	// fault a previous scenario (or a person) switched on.
@@ -54,6 +58,10 @@ func initScenario(sc *godog.ScenarioContext, s stack) {
 	sc.Step(`^the upstream fault "([^"]+)" is active$`, w.activateFault)
 	sc.Step(`^the feature flag "([^"]+)" is (on|off)$`, w.setFlag)
 
+	sc.Step(`^I send the correlation ID "([^"]*)"$`, w.sendCorrelationID)
+	sc.Step(`^I send a correlation ID of (\d+) characters$`, w.sendCorrelationIDOfLength)
+	// A quote can't go inside the quoted argument of the step above.
+	sc.Step(`^I send a correlation ID with a quote in it$`, func() error { return w.sendCorrelationID(`quote"inside`) })
 	sc.Step(`^I (GET|DELETE) "([^"]*)"$`, w.send)
 	sc.Step(`^I (POST|PUT) "([^"]*)" with body:$`, w.sendBody)
 	sc.Step(`^I (POST|PUT) "([^"]*)" with a name of (\d+) characters$`, w.sendNameOfLength)
@@ -66,6 +74,9 @@ func initScenario(sc *godog.ScenarioContext, s stack) {
 	sc.Step(`^the JSON field "([^"]*)" contains "([^"]*)"$`, w.fieldContains)
 	sc.Step(`^the JSON field "([^"]*)" is absent$`, w.fieldIsAbsent)
 	sc.Step(`^the JSON array "([^"]*)" has (\d+) elements?$`, w.arrayHasLength)
+	sc.Step(`^the correlation ID I sent is echoed back$`, w.correlationIDEchoed)
+	sc.Step(`^the response has a generated correlation ID$`, w.correlationIDGenerated)
+	sc.Step(`^the last two responses have different correlation IDs$`, w.correlationIDsDiffer)
 	sc.Step(`^the response took less than (\d+(?:\.\d+)?) seconds?$`, w.tookLessThan)
 	sc.Step(`^the response took at least (\d+(?:\.\d+)?) seconds?$`, w.tookAtLeast)
 }
@@ -116,6 +127,9 @@ func (w *world) do(method, path string, body io.Reader) error {
 	if err != nil {
 		return err
 	}
+	for k, v := range w.reqHeader {
+		req.Header[k] = v
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -125,6 +139,7 @@ func (w *world) do(method, path string, body io.Reader) error {
 		return fmt.Errorf("%s %s: %w", method, path, err)
 	}
 	defer resp.Body.Close()
+	w.prevHeader = w.header
 	w.status, w.header = resp.StatusCode, resp.Header
 	w.body, err = io.ReadAll(resp.Body)
 	w.elapsed = time.Since(start)

@@ -11,15 +11,12 @@ are easy to read and to query when debugging a deployed instance. What's left is
 
 ### Integration tests with Godog
 
-Phases 1 and 2 are done (see Unreleased). End-to-end Gherkin scenarios in `integration/`, a separate Go
+Phases 1 to 3 are done (see Unreleased). End-to-end Gherkin scenarios in `integration/`, a separate Go
 module so Godog stays a test-only dependency, run against the composed stack.
 
 Test code never calls Docker: the stack is started with `docker compose` before a run, and the
 tests only talk HTTP to it (and write the test-owned flags file).
 
-- Phase 3, correlation: the `Client-Correlation-Id` echoed when valid, and replaced by a
-  generated one when not, end to end. Checking that ID on log lines is left to the in-process
-  log contract test, since reading the container's logs would need Docker.
 - Phase 4, optional: a CI workflow that brings the stack up and runs the suite (the repo has no
   CI yet), and a step that checks response bodies against `docs/openapi.json`.
 
@@ -35,6 +32,11 @@ tests only talk HTTP to it (and write the test-owned flags file).
 
 ### Added
 
+- Integration tests, phase 3: correlation ID scenarios. A valid `Client-Correlation-Id` is echoed
+  back (including at the 128-character limit), a missing or invalid one (spaces, a slash,
+  non-ASCII, a quote, 129 characters) is replaced by a generated one, generated IDs differ per
+  request, and 404, 422 and 502 responses carry the ID too. The header's name and format are read
+  from `docs/openapi.json`.
 - Integration tests, phase 2: scenarios for every WireMock fault (502 for an unavailable
   upstream, a reset connection and truncated JSON, 504 for a timeout, 200 for a slow answer within
   the timeout) and for the `items-list-total` flag. Flags are switched by editing the tests' own
@@ -141,3 +143,11 @@ tests only talk HTTP to it (and write the test-owned flags file).
   - Timeouts on startup and shutdown lines are strings such as `5s` instead of nanoseconds.
 - Flag evaluation no longer logs a warning on every failed evaluation (see phase 2 above).
 - Feature-flag warnings are logged with the request context, so they carry `request_id`.
+
+### Fixed
+
+- The integration tests could leave flagd serving a stale flag value for the rest of the run.
+  They replaced the flags file by writing a temporary file and renaming it, and flagd, which
+  watches the file, sometimes failed to re-attach its watch to the new file ("error restoring
+  watcher") and never reloaded again. The tests now edit the file in place. The note in
+  `compose.yaml` that replacing the file is safe is corrected.

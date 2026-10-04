@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -35,7 +34,7 @@ func resetFlags(s stack) error {
 		return err
 	}
 	if current, err := os.ReadFile(testFlagsFile); err != nil || !bytes.Equal(current, shipped) {
-		if err := writeFileAtomic(testFlagsFile, shipped); err != nil {
+		if err := writeFlagsFile(testFlagsFile, shipped); err != nil {
 			return err
 		}
 	}
@@ -83,7 +82,7 @@ func setFlag(s stack, key string, on bool) error {
 	if err != nil {
 		return err
 	}
-	if err := writeFileAtomic(testFlagsFile, append(out, '\n')); err != nil {
+	if err := writeFlagsFile(testFlagsFile, append(out, '\n')); err != nil {
 		return err
 	}
 	return waitForFlag(s, key, on)
@@ -109,25 +108,16 @@ func flagDefaults(b []byte) (map[string]bool, error) {
 	return out, nil
 }
 
-// writeFileAtomic replaces path in one step, through a temporary file and a
-// rename, so flagd never reads a half-written file.
-func writeFileAtomic(path string, b []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".flags-*.json")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name()) // a no-op once renamed
-	if _, err := tmp.Write(b); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+// writeFlagsFile rewrites path in place. It deliberately doesn't write a
+// temporary file and rename it over path: flagd watches the file itself, and
+// on the "removed" event a rename causes it re-attaches its watch straight
+// away. Through Docker Desktop's file sharing the new file is sometimes not
+// visible yet at that instant, and flagd then logs "error restoring watcher"
+// and never reloads again. Writing in place never removes the file, so the
+// watch is never lost. flagd may briefly read a half-written file, which is
+// harmless: every caller waits until flagd serves the expected value.
+func writeFlagsFile(path string, b []byte) error {
+	return os.WriteFile(path, b, 0o644)
 }
 
 // waitForFlag polls flagd's OFREP endpoint until it serves want for key.
