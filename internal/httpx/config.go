@@ -4,7 +4,6 @@
 package httpx
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -23,46 +22,39 @@ type ServerConfig struct {
 // SHUTDOWN_TIMEOUT, applying defaults. All invalid values are reported
 // together.
 func LoadServerConfig(getenv func(string) string) (ServerConfig, error) {
+	env := NewEnv(getenv)
 	cfg := ServerConfig{
-		Addr:            ":8080",
-		LogLevel:        slog.LevelInfo,
-		LogFormat:       "json",
-		ShutdownTimeout: 10 * time.Second,
+		Addr:            serverAddr(env),
+		LogLevel:        Optional(env, "LOG_LEVEL", slog.LevelInfo, parseLogLevel),
+		LogFormat:       Optional(env, "LOG_FORMAT", "json", parseLogFormat),
+		ShutdownTimeout: Optional(env, "SHUTDOWN_TIMEOUT", 10*time.Second, ParsePositiveDuration),
 	}
-	var errs []error
+	return cfg, env.Err()
+}
 
-	// ADDR takes precedence; PORT is honoured for platforms that set it.
-	if v := getenv("ADDR"); v != "" {
-		cfg.Addr = v
-	} else if v := getenv("PORT"); v != "" {
-		cfg.Addr = ":" + v
+// serverAddr returns ADDR, else ":"+PORT for platforms that set only that,
+// else ":8080". ADDR takes precedence.
+func serverAddr(env *Env) string {
+	if v := env.String("ADDR"); v != "" {
+		return v
 	}
-
-	if v := getenv("LOG_LEVEL"); v != "" {
-		if err := cfg.LogLevel.UnmarshalText([]byte(v)); err != nil {
-			errs = append(errs, fmt.Errorf("LOG_LEVEL: %w", err))
-		}
+	if v := env.String("PORT"); v != "" {
+		return ":" + v
 	}
+	return ":8080"
+}
 
-	if v := getenv("LOG_FORMAT"); v != "" {
-		switch v {
-		case "json", "text":
-			cfg.LogFormat = v
-		default:
-			errs = append(errs, fmt.Errorf("LOG_FORMAT: must be json or text, got %q", v))
-		}
+func parseLogLevel(s string) (slog.Level, error) {
+	var l slog.Level
+	err := l.UnmarshalText([]byte(s))
+	return l, err
+}
+
+func parseLogFormat(s string) (string, error) {
+	if s != "json" && s != "text" {
+		return "", fmt.Errorf("must be json or text, got %q", s)
 	}
-
-	if v := getenv("SHUTDOWN_TIMEOUT"); v != "" {
-		d, err := ParsePositiveDuration(v)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("SHUTDOWN_TIMEOUT: %w", err))
-		} else {
-			cfg.ShutdownTimeout = d
-		}
-	}
-
-	return cfg, errors.Join(errs...)
+	return s, nil
 }
 
 // ParsePositiveDuration parses a time.Duration and rejects zero or negative

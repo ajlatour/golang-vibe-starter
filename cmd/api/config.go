@@ -28,52 +28,24 @@ type config struct {
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
-	srv, err := httpx.LoadServerConfig(getenv)
-	cfg := config{ServerConfig: srv, UpstreamTimeout: 5 * time.Second, FlagsTimeout: 500 * time.Millisecond}
-	errs := []error{err}
+	srv, srvErr := httpx.LoadServerConfig(getenv)
+	env := httpx.NewEnv(getenv)
+	cfg := config{
+		ServerConfig: srv,
 
-	// Required: there is no sensible default upstream, and silently
-	// talking to the wrong one is worse than failing at startup.
-	if v := getenv("UPSTREAM_URL"); v == "" {
-		errs = append(errs, errors.New("UPSTREAM_URL: required"))
-	} else if u, err := parseHTTPURL(v); err != nil {
-		errs = append(errs, fmt.Errorf("UPSTREAM_URL: %w", err))
-	} else {
-		cfg.UpstreamURL = u
+		// Required: there is no sensible default upstream, and silently
+		// talking to the wrong one is worse than failing at startup.
+		UpstreamURL:     httpx.Required(env, "UPSTREAM_URL", parseHTTPURL),
+		UpstreamTimeout: httpx.Optional(env, "UPSTREAM_TIMEOUT", 5*time.Second, httpx.ParsePositiveDuration),
+
+		// Optional: flags are an add-on, and without a sidecar the service
+		// runs with every flag at its default. The timeout is short by
+		// default because flag evaluation sits on the request path.
+		FlagsURL:          httpx.Optional(env, "FLAGS_URL", nil, parseHTTPURL),
+		FlagsTimeout:      httpx.Optional(env, "FLAGS_TIMEOUT", 500*time.Millisecond, httpx.ParsePositiveDuration),
+		FlagsFallbackFile: env.String("FLAGS_FALLBACK_FILE"),
 	}
-
-	// Optional: flags are an add-on, and without a sidecar the service
-	// runs with every flag at its default.
-	if v := getenv("FLAGS_URL"); v != "" {
-		if u, err := parseHTTPURL(v); err != nil {
-			errs = append(errs, fmt.Errorf("FLAGS_URL: %w", err))
-		} else {
-			cfg.FlagsURL = u
-		}
-	}
-
-	cfg.FlagsFallbackFile = getenv("FLAGS_FALLBACK_FILE")
-
-	// Short by default: flag evaluation sits on the request path.
-	if v := getenv("FLAGS_TIMEOUT"); v != "" {
-		d, err := httpx.ParsePositiveDuration(v)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("FLAGS_TIMEOUT: %w", err))
-		} else {
-			cfg.FlagsTimeout = d
-		}
-	}
-
-	if v := getenv("UPSTREAM_TIMEOUT"); v != "" {
-		d, err := httpx.ParsePositiveDuration(v)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("UPSTREAM_TIMEOUT: %w", err))
-		} else {
-			cfg.UpstreamTimeout = d
-		}
-	}
-
-	return cfg, errors.Join(errs...)
+	return cfg, errors.Join(srvErr, env.Err())
 }
 
 // parseHTTPURL parses v as an absolute http(s) base URL, without a query
