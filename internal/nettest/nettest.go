@@ -5,6 +5,7 @@
 package nettest
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 )
@@ -20,7 +21,12 @@ func DeadURL() string {
 // Hang never answers: it blocks until the client gives up. Use it to provoke
 // client timeouts and cancellation. httptest.Server.Close waits for handlers
 // to return, so the client must hang up, which its timeout does.
+//
+// It reads the request body first: net/http only notices a client hanging up
+// (and cancels the request context) once the handler has consumed the body,
+// so a POST that wasn't read would leave Hang, and Server.Close, stuck.
 func Hang(_ http.ResponseWriter, r *http.Request) {
+	_, _ = io.Copy(io.Discard, r.Body)
 	<-r.Context().Done()
 }
 

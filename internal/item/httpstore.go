@@ -1,7 +1,6 @@
 package item
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ajlatour/golang-vibe-starter/internal/jsoncall"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
@@ -136,58 +136,40 @@ func (s *HTTPStore) do(ctx context.Context, method, path string, body any, want 
 // roundTrip performs one call. It returns the response status (0 if no
 // response arrived) alongside any error.
 func (s *HTTPStore) roundTrip(ctx context.Context, method, path string, body any, want int, out any) (status int, err error) {
-	// Everything below that reaches an error message, and so a log line, uses
-	// logPath, not path.
-	logPath := logx.Truncate(path, logx.MaxLoggedPath)
-	var reqBody io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			return 0, fmt.Errorf("upstream %s %s: encode request: %w", method, logPath, err)
-		}
-		reqBody = bytes.NewReader(b)
-	}
+	return jsoncall.Call{
+		Client: s.client,
+		Method: method,
+		URL:    s.baseURL + path,
+		// Everything that reaches an error message, and so a log line, uses
+		// the truncated path.
+		Label:            fmt.Sprintf("upstream %s %s", method, logx.Truncate(path, logx.MaxLoggedPath)),
+		In:               body,
+		Out:              out,
+		Want:             want,
+		MaxResponseBytes: maxResponseBytes,
+		OnStatus:         notFoundIsErrNotFound,
+		ErrorDetail:      upstreamErrorDetail,
+	}.Do(ctx)
+}
 
-	req, err := http.NewRequestWithContext(ctx, method, s.baseURL+path, reqBody)
-	if err != nil {
-		return 0, fmt.Errorf("upstream %s %s: %w", method, logPath, err)
+// notFoundIsErrNotFound gives a JSON 404 its meaning, "no such item". A
+// plain-text 404 means the route itself is missing, i.e. the base URL is
+// misconfigured, and stays a generic error.
+func notFoundIsErrNotFound(resp *http.Response) error {
+	if resp.StatusCode == http.StatusNotFound && isJSON(resp.Header) {
+		return ErrNotFound
 	}
-	req.Header.Set("Accept", "application/json")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
+	return nil
+}
 
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("upstream %s %s: %w", method, logPath, logx.RedactURLError(err))
+// upstreamErrorDetail quotes the upstream's own {"error": "..."} message, the
+// one piece of an upstream response body that appears in errors and logs.
+func upstreamErrorDetail(body io.Reader) string {
+	var e struct {
+		Error string `json:"error"`
 	}
-	respBody := io.LimitReader(resp.Body, maxResponseBytes)
-	defer func() {
-		// Drain so the connection can be reused.
-		_, _ = io.Copy(io.Discard, respBody)
-		resp.Body.Close()
-	}()
-
-	if resp.StatusCode != want {
-		// Only a JSON 404 means "no such item"; a plain-text 404 means the
-		// route itself is missing, i.e. the base URL is misconfigured.
-		if resp.StatusCode == http.StatusNotFound && isJSON(resp.Header) {
-			return resp.StatusCode, ErrNotFound
-		}
-		var e struct {
-			Error string `json:"error"`
-		}
-		_ = json.NewDecoder(respBody).Decode(&e)
-		return resp.StatusCode, fmt.Errorf("upstream %s %s: unexpected status %d: %q", method, logPath, resp.StatusCode, logx.Truncate(e.Error, maxLoggedUpstreamMessage))
-	}
-
-	if out == nil {
-		return resp.StatusCode, nil
-	}
-	if err := json.NewDecoder(respBody).Decode(out); err != nil {
-		return resp.StatusCode, fmt.Errorf("upstream %s %s: decode response: %w", method, logPath, err)
-	}
-	return resp.StatusCode, nil
+	_ = json.NewDecoder(body).Decode(&e)
+	return fmt.Sprintf("%q", logx.Truncate(e.Error, maxLoggedUpstreamMessage))
 }
 
 func isJSON(h http.Header) bool {

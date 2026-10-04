@@ -1,0 +1,275 @@
+package jsoncall_test
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/jsoncall"
+	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
+)
+
+func newCall(url string) jsoncall.Call {
+	return jsoncall.Call{
+		Client: &http.Client{Timeout: 2 * time.Second},
+		Method: http.MethodGet,
+		URL:    url,
+		Label:  "svc GET /x",
+		Want:   http.StatusOK,
+	}
+}
+
+func TestDoSuccess(t *testing.T) {
+	var gotMethod, gotAccept, gotType string
+	var gotBody map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotAccept, gotType = r.Method, r.Header.Get("Accept"), r.Header.Get("Content-Type")
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"id":"7"}`))
+	}))
+	defer srv.Close()
+
+	var out struct{ ID string }
+	c := newCall(srv.URL)
+	c.Method, c.Want = http.MethodPost, http.StatusCreated
+	c.In, c.Out = map[string]string{"name": "n"}, &out
+	status, err := c.Do(t.Context())
+	if err != nil || status != http.StatusCreated {
+		t.Fatalf("Do() = %d, %v, want 201, nil", status, err)
+	}
+	if out.ID != "7" {
+		t.Errorf("decoded %+v, want ID 7", out)
+	}
+	if gotMethod != "POST" || gotAccept != "application/json" || gotType != "application/json" || gotBody["name"] != "n" {
+		t.Errorf("server saw %s accept=%q type=%q body=%v", gotMethod, gotAccept, gotType, gotBody)
+	}
+}
+
+func TestDoNoBodyNoContentType(t *testing.T) {
+	var gotType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotType = r.Header.Get("Content-Type")
+	}))
+	defer srv.Close()
+	if _, err := newCall(srv.URL).Do(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if gotType != "" {
+		t.Errorf("Content-Type = %q on a request with no body, want none", gotType)
+	}
+}
+
+func TestDoFailureKinds(t *testing.T) {
+	tests := []struct {
+		name       string
+		call       func() jsoncall.Call
+		wantKind   jsoncall.Kind
+		wantStatus int
+		wantNoAns  bool
+		wantMsg    string
+	}{
+		{
+			name:     "connection refused",
+			call:     func() jsoncall.Call { return newCall(nettest.DeadURL()) },
+			wantKind: jsoncall.KindTransport, wantNoAns: true, wantMsg: "svc GET /x: ",
+		},
+		{
+			name: "dropped",
+			call: func() jsoncall.Call {
+				srv := httptest.NewServer(http.HandlerFunc(nettest.Drop))
+				t.Cleanup(srv.Close)
+				return newCall(srv.URL)
+			},
+			wantKind: jsoncall.KindTransport, wantNoAns: true, wantMsg: "EOF",
+		},
+		{
+			name: "4xx is not an outage",
+			call: func() jsoncall.Call {
+				srv := httptest.NewServer(nettest.Status(http.StatusNotFound, ""))
+				t.Cleanup(srv.Close)
+				return newCall(srv.URL)
+			},
+			wantKind: jsoncall.KindStatus, wantStatus: 404, wantMsg: "svc GET /x: unexpected status 404",
+		},
+		{
+			name: "5xx counts as no answer",
+			call: func() jsoncall.Call {
+				srv := httptest.NewServer(nettest.Status(http.StatusServiceUnavailable, ""))
+				t.Cleanup(srv.Close)
+				return newCall(srv.URL)
+			},
+			wantKind: jsoncall.KindStatus, wantStatus: 503, wantNoAns: true, wantMsg: "unexpected status 503",
+		},
+		{
+			name: "undecodable body",
+			call: func() jsoncall.Call {
+				srv := httptest.NewServer(nettest.Status(http.StatusOK, `{"a":`))
+				t.Cleanup(srv.Close)
+				c := newCall(srv.URL)
+				c.Out = &struct{}{}
+				return c
+			},
+			wantKind: jsoncall.KindDecode, wantStatus: 200, wantMsg: "svc GET /x: decode response: ",
+		},
+		{
+			name: "unbuildable request",
+			call: func() jsoncall.Call {
+				c := newCall("http://[::1")
+				return c
+			},
+			wantKind: jsoncall.KindRequest, wantMsg: "svc GET /x: ",
+		},
+		{
+			name: "unencodable body",
+			call: func() jsoncall.Call {
+				c := newCall("http://example.invalid")
+				c.In = make(chan int)
+				return c
+			},
+			wantKind: jsoncall.KindRequest, wantMsg: "encode request",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status, err := tt.call().Do(t.Context())
+			var je *jsoncall.Error
+			if !errors.As(err, &je) {
+				t.Fatalf("Do() error = %v (%T), want *jsoncall.Error", err, err)
+			}
+			if je.Kind != tt.wantKind || je.Status != tt.wantStatus || status != tt.wantStatus {
+				t.Errorf("Kind=%v Status=%d returned=%d, want Kind=%v Status=%d", je.Kind, je.Status, status, tt.wantKind, tt.wantStatus)
+			}
+			if je.NoAnswer() != tt.wantNoAns {
+				t.Errorf("NoAnswer() = %v, want %v", je.NoAnswer(), tt.wantNoAns)
+			}
+			if !strings.Contains(err.Error(), tt.wantMsg) {
+				t.Errorf("message %q, want it to contain %q", err, tt.wantMsg)
+			}
+		})
+	}
+}
+
+func TestDoTimeoutUnwrapsToNetError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(nettest.Hang))
+	defer srv.Close()
+	c := newCall(srv.URL)
+	c.Client = &http.Client{Timeout: 50 * time.Millisecond}
+	_, err := c.Do(t.Context())
+
+	var ne net.Error
+	if !errors.As(err, &ne) || !ne.Timeout() {
+		t.Errorf("error %v: want errors.As to find a net.Error that reports a timeout", err)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("error %v: want errors.Is(DeadlineExceeded)", err)
+	}
+}
+
+func TestDoRedactsCredentials(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(nettest.Drop))
+	defer srv.Close()
+	c := newCall(strings.Replace(srv.URL, "http://", "http://alice:s3cret@", 1))
+	_, err := c.Do(t.Context())
+	if err == nil || strings.Contains(err.Error(), "s3cret") || strings.Contains(err.Error(), "***") || !strings.Contains(err.Error(), "xxxxx") {
+		t.Errorf("error %v: want the password shown as xxxxx", err)
+	}
+}
+
+var errSentinel = errors.New("sentinel")
+
+func TestDoOnStatus(t *testing.T) {
+	srv := httptest.NewServer(nettest.Status(http.StatusNotFound, ""))
+	defer srv.Close()
+
+	t.Run("its error is returned as is", func(t *testing.T) {
+		c := newCall(srv.URL)
+		c.OnStatus = func(resp *http.Response) error { return errSentinel }
+		status, err := c.Do(t.Context())
+		if err != errSentinel || status != 404 {
+			t.Errorf("Do() = %d, %v, want 404 and exactly the sentinel", status, err)
+		}
+	})
+	t.Run("nil falls through to the generic error", func(t *testing.T) {
+		c := newCall(srv.URL)
+		c.OnStatus = func(resp *http.Response) error { return nil }
+		_, err := c.Do(t.Context())
+		var je *jsoncall.Error
+		if !errors.As(err, &je) || je.Kind != jsoncall.KindStatus {
+			t.Errorf("Do() error = %v, want a KindStatus error", err)
+		}
+	})
+	t.Run("not called for the wanted status", func(t *testing.T) {
+		ok := httptest.NewServer(nettest.Status(http.StatusOK, ""))
+		defer ok.Close()
+		c := newCall(ok.URL)
+		c.OnStatus = func(resp *http.Response) error { t.Error("OnStatus called for the success status"); return nil }
+		if _, err := c.Do(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestDoErrorDetail(t *testing.T) {
+	srv := httptest.NewServer(nettest.Status(http.StatusBadRequest, `{"why":"nope"}`))
+	defer srv.Close()
+	c := newCall(srv.URL)
+	c.ErrorDetail = func(body io.Reader) string {
+		var e struct{ Why string }
+		json.NewDecoder(body).Decode(&e)
+		return "why=" + e.Why
+	}
+	_, err := c.Do(t.Context())
+	if err == nil || err.Error() != "svc GET /x: unexpected status 400: why=nope" {
+		t.Errorf("error = %v, want the detail appended", err)
+	}
+}
+
+// TestDoLabelWithPercent guards against building the message by putting the
+// label into a format string: an escaped path such as /items/a%2Fb contains a
+// "%" that would be read as a formatting verb.
+func TestDoLabelWithPercent(t *testing.T) {
+	srv := httptest.NewServer(nettest.Status(http.StatusTeapot, ""))
+	defer srv.Close()
+	c := newCall(srv.URL)
+	c.Label = "upstream GET /items/a%2Fb%d%s"
+	_, err := c.Do(t.Context())
+	if err == nil || err.Error() != "upstream GET /items/a%2Fb%d%s: unexpected status 418" {
+		t.Errorf("error = %q, want the label verbatim", err)
+	}
+}
+
+func TestDoCapsResponse(t *testing.T) {
+	big := `{"s":"` + strings.Repeat("a", 1000) + `"}`
+	srv := httptest.NewServer(nettest.Status(http.StatusOK, big))
+	defer srv.Close()
+
+	c := newCall(srv.URL)
+	c.Out = &struct{ S string }{}
+	c.MaxResponseBytes = 100
+	_, err := c.Do(t.Context())
+	var je *jsoncall.Error
+	if !errors.As(err, &je) || je.Kind != jsoncall.KindDecode {
+		t.Errorf("Do() error = %v, want a decode error from the capped body", err)
+	}
+
+	c.MaxResponseBytes = 0 // the default is plenty
+	if _, err := c.Do(t.Context()); err != nil {
+		t.Errorf("Do() with the default cap: %v", err)
+	}
+}
+
+func TestDoIgnoresBodyWhenOutNil(t *testing.T) {
+	srv := httptest.NewServer(nettest.Status(http.StatusOK, `not json at all`))
+	defer srv.Close()
+	if _, err := newCall(srv.URL).Do(t.Context()); err != nil {
+		t.Errorf("Do() error = %v, want nil when Out is nil", err)
+	}
+}

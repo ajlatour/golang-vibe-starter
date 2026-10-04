@@ -5,7 +5,6 @@
 package flags
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,6 +15,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/ajlatour/golang-vibe-starter/internal/jsoncall"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
@@ -69,8 +69,7 @@ func (c *OFREP) Bool(ctx context.Context, key string) bool {
 	}
 
 	def, hasDefault := c.defaults[key]
-	var unavailable *unavailableError
-	if errors.As(err, &unavailable) {
+	if serviceDown(err) {
 		if c.outage.failed() {
 			c.logger.WarnContext(ctx, "flag service unavailable, using default flag values",
 				logx.KeyFlag, key, logx.KeyError, err)
@@ -109,55 +108,54 @@ func (c *OFREP) answered(ctx context.Context) {
 	}
 }
 
-// unavailableError marks a failure to get an answer from flagd at all, as
-// opposed to flagd answering that this flag can't be evaluated.
-type unavailableError struct{ err error }
-
-func (e *unavailableError) Error() string { return e.err.Error() }
-func (e *unavailableError) Unwrap() error { return e.err }
+// ofrepRequest is the OFREP evaluation request. The evaluation context is
+// empty for now: flagd's targeting rules have nothing to match on yet.
+type ofrepRequest struct {
+	Context map[string]any `json:"context"`
+}
 
 func (c *OFREP) evalBool(ctx context.Context, key string) (bool, error) {
 	path := "/ofrep/v1/evaluate/flags/" + url.PathEscape(key)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader([]byte(`{"context":{}}`)))
-	if err != nil {
-		return false, fmt.Errorf("ofrep %s: %w", path, err)
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return false, &unavailableError{fmt.Errorf("ofrep %s: %w", path, logx.RedactURLError(err))}
-	}
-	body := io.LimitReader(resp.Body, maxResponseBytes)
-	defer func() {
-		// Drain so the connection can be reused.
-		_, _ = io.Copy(io.Discard, body)
-		resp.Body.Close()
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		var e struct {
-			ErrorCode    string `json:"errorCode"`
-			ErrorDetails string `json:"errorDetails"`
-		}
-		_ = json.NewDecoder(body).Decode(&e)
-		err := fmt.Errorf("ofrep %s: unexpected status %d: %s %q", path, resp.StatusCode, logx.Truncate(e.ErrorCode, 64), logx.Truncate(e.ErrorDetails, 200))
-		if resp.StatusCode >= 500 {
-			return false, &unavailableError{err}
-		}
-		return false, err
-	}
-
 	var out struct {
 		Value any `json:"value"`
 	}
-	if err := json.NewDecoder(body).Decode(&out); err != nil {
-		return false, fmt.Errorf("ofrep %s: decode response: %w", path, err)
+	_, err := jsoncall.Call{
+		Client:           c.client,
+		Method:           http.MethodPost,
+		URL:              c.baseURL + path,
+		Label:            "ofrep " + path,
+		In:               ofrepRequest{Context: map[string]any{}},
+		Out:              &out,
+		Want:             http.StatusOK,
+		MaxResponseBytes: maxResponseBytes,
+		ErrorDetail:      ofrepErrorDetail,
+	}.Do(ctx)
+	if err != nil {
+		return false, err
 	}
+
 	v, ok := out.Value.(bool)
 	if !ok {
 		return false, fmt.Errorf("ofrep %s: value is %T, want bool", path, out.Value)
 	}
 	return v, nil
+}
+
+// ofrepErrorDetail describes an OFREP error response: flagd's error code and
+// details, each bounded.
+func ofrepErrorDetail(body io.Reader) string {
+	var e struct {
+		ErrorCode    string `json:"errorCode"`
+		ErrorDetails string `json:"errorDetails"`
+	}
+	_ = json.NewDecoder(body).Decode(&e)
+	return fmt.Sprintf("%s %q", logx.Truncate(e.ErrorCode, 64), logx.Truncate(e.ErrorDetails, 200))
+}
+
+// serviceDown reports whether err means flagd gave no answer at all (it
+// couldn't be reached, or it failed with a 5xx), as opposed to answering that
+// this one flag can't be evaluated.
+func serviceDown(err error) bool {
+	var ce *jsoncall.Error
+	return errors.As(err, &ce) && ce.NoAnswer()
 }

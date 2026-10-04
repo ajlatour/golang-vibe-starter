@@ -338,6 +338,8 @@ internal/item/           Item model, Store interface, /items handlers,
                          HTTPStore and UpstreamError (the API's upstream client)
 internal/flags/          OFREP client for the flagd sidecar, flag declarations,
                          and fallback defaults derived from flagd/flags.json
+internal/jsoncall/        One JSON-over-HTTP call: encode, send, redact, cap, decode, and
+                         classify failures. Used by HTTPStore and the flags client.
 internal/item/itemtest/  MemStore: in-memory Store, used only by tests
 internal/logtest/        Capture and parse JSON logs in tests
 internal/nettest/        Dead, hanging, dropping and failing upstream stubs for tests
