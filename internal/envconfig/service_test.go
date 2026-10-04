@@ -1,19 +1,23 @@
-package httpx
+package envconfig
 
 import (
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
-func TestLoadServerConfig(t *testing.T) {
-	defaults := ServerConfig{
+func TestLoadService(t *testing.T) {
+	defaults := Service{
 		Addr:            ":8080",
 		LogLevel:        slog.LevelInfo,
 		LogFormat:       "json",
 		ShutdownTimeout: 10 * time.Second,
 	}
-	withAddr := func(addr string) ServerConfig {
+	withAddr := func(addr string) Service {
 		c := defaults
 		c.Addr = addr
 		return c
@@ -22,7 +26,7 @@ func TestLoadServerConfig(t *testing.T) {
 	tests := []struct {
 		name    string
 		env     map[string]string
-		want    ServerConfig
+		want    Service
 		wantErr bool
 	}{
 		{name: "defaults", env: nil, want: defaults},
@@ -34,7 +38,7 @@ func TestLoadServerConfig(t *testing.T) {
 				"LOG_FORMAT":       "text",
 				"SHUTDOWN_TIMEOUT": "30s",
 			},
-			want: ServerConfig{
+			want: Service{
 				Addr:            "127.0.0.1:9000",
 				LogLevel:        slog.LevelDebug,
 				LogFormat:       "text",
@@ -52,18 +56,34 @@ func TestLoadServerConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := LoadServerConfig(func(k string) string { return tt.env[k] })
+			got, err := LoadService(func(k string) string { return tt.env[k] })
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("LoadServerConfig() error = nil, want error")
+					t.Fatalf("LoadService() error = nil, want error")
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("LoadServerConfig() error = %v", err)
+				t.Fatalf("LoadService() error = %v", err)
 			}
 			if got != tt.want {
-				t.Errorf("LoadServerConfig() = %+v, want %+v", got, tt.want)
+				t.Errorf("LoadService() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewLogger(t *testing.T) {
+	for _, format := range []string{"json", "text"} {
+		t.Run(format, func(t *testing.T) {
+			var logs logtest.Buffer
+			logger := Service{LogFormat: format}.NewLogger(&logs, "api", "abc123")
+			logger.InfoContext(logx.WithRequestID(t.Context(), "r1"), "hello")
+			out := logs.String()
+			for _, want := range []string{"service", "api", "version", "abc123", "request_id", "r1"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("log %q missing %q", out, want)
+				}
 			}
 		})
 	}

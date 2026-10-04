@@ -18,11 +18,11 @@ func TestServe(t *testing.T) {
 
 	pr, pw := io.Pipe()
 	logger := slog.New(slog.NewJSONHandler(pw, nil))
-	cfg := ServerConfig{Addr: "127.0.0.1:0", ShutdownTimeout: 5 * time.Second}
+	addr, shutdownTimeout := "127.0.0.1:0", 5*time.Second
 
 	errc := make(chan error, 1)
 	go func() {
-		errc <- Serve(ctx, logger, cfg, http.HandlerFunc(Healthz))
+		errc <- Serve(ctx, logger, addr, shutdownTimeout, http.HandlerFunc(Healthz))
 		pw.Close()
 	}()
 
@@ -59,8 +59,8 @@ func TestServe(t *testing.T) {
 }
 
 func TestServeListenError(t *testing.T) {
-	cfg := ServerConfig{Addr: "not-an-address", ShutdownTimeout: time.Second}
-	err := Serve(t.Context(), slog.New(slog.DiscardHandler), cfg, http.NotFoundHandler())
+	addr, shutdownTimeout := "not-an-address", time.Second
+	err := Serve(t.Context(), slog.New(slog.DiscardHandler), addr, shutdownTimeout, http.NotFoundHandler())
 	if err == nil {
 		t.Fatal("Serve() error = nil, want listen error")
 	}

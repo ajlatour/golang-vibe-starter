@@ -1,8 +1,8 @@
-// Package httpx is the HTTP service plumbing shared by every binary in this
-// repo: env config, graceful serving, middleware (correlation IDs, request
-// logging, panic recovery), JSON helpers, and the container healthcheck probe.
-// The logging toolkit it builds on lives in internal/logx.
-package httpx
+// Package envconfig reads a service's configuration from environment
+// variables: a reader that collects every problem so a bad start reports them
+// all at once (Env, Optional, Required), and the settings every service
+// shares (Service).
+package envconfig
 
 import (
 	"fmt"
@@ -13,20 +13,22 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
-// ServerConfig holds the settings every service reads from the environment.
-type ServerConfig struct {
+// Service holds the settings every service reads from the environment: where
+// to listen, how to log, and how long to wait for in-flight requests on
+// shutdown.
+type Service struct {
 	Addr            string
 	LogLevel        slog.Level
 	LogFormat       string // "json" or "text"
 	ShutdownTimeout time.Duration
 }
 
-// LoadServerConfig reads ADDR (or PORT), LOG_LEVEL, LOG_FORMAT and
+// LoadService reads ADDR (or PORT), LOG_LEVEL, LOG_FORMAT and
 // SHUTDOWN_TIMEOUT, applying defaults. All invalid values are reported
 // together.
-func LoadServerConfig(getenv func(string) string) (ServerConfig, error) {
+func LoadService(getenv func(string) string) (Service, error) {
 	env := NewEnv(getenv)
-	cfg := ServerConfig{
+	cfg := Service{
 		Addr:            serverAddr(env),
 		LogLevel:        Optional(env, "LOG_LEVEL", slog.LevelInfo, parseLogLevel),
 		LogFormat:       Optional(env, "LOG_FORMAT", "json", parseLogFormat),
@@ -76,6 +78,6 @@ func ParsePositiveDuration(s string) (time.Duration, error) {
 // NewLogger returns a logger writing to w in the configured format and level.
 // Every line carries service and version, and lines logged with a request's
 // context carry its request_id.
-func (c ServerConfig) NewLogger(w io.Writer, service, version string) *slog.Logger {
+func (c Service) NewLogger(w io.Writer, service, version string) *slog.Logger {
 	return logx.New(w, c.LogLevel, c.LogFormat, service, version)
 }

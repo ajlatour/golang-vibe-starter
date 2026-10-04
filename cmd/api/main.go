@@ -72,7 +72,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		return err
 	}
 
-	return httpx.Serve(ctx, logger, cfg.ServerConfig, newHandler(logger, store, item.WithFlags(evaluator)))
+	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, newHandler(logger, store, item.WithFlags(evaluator)))
 }
 
 // newFlags returns the feature flag evaluator: flagd when FLAGS_URL is set,

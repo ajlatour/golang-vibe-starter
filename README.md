@@ -126,8 +126,10 @@ The API reads these environment variables:
 cmd/api/                 API service: config, wiring, Dockerfile
 internal/item/           Item model, Store interface, /items handlers,
                          HTTPStore and UpstreamError (the API's upstream client)
-internal/httpx/          HTTP plumbing: env config, graceful Serve, middleware
-                         (correlation IDs, request logging), JSON helpers, probe
+internal/httpx/          HTTP plumbing: graceful Serve, middleware (correlation IDs,
+                         request logging), JSON helpers, healthcheck probe
+internal/envconfig/      Reading configuration from environment variables, and the
+                         settings every service shares (address, logging, shutdown)
 internal/logx/           Logging toolkit: logger, the Key field names, request-ID
                          context, redaction and truncation helpers. Imports nothing
                          from this module.

@@ -128,22 +128,6 @@ func TestLogSchema(t *testing.T) {
 	}
 }
 
-func TestNewLogger(t *testing.T) {
-	for _, format := range []string{"json", "text"} {
-		t.Run(format, func(t *testing.T) {
-			var logs logtest.Buffer
-			logger := ServerConfig{LogFormat: format}.NewLogger(&logs, "api", "abc123")
-			logger.InfoContext(logx.WithRequestID(t.Context(), "r1"), "hello")
-			out := logs.String()
-			for _, want := range []string{"service", "api", "version", "abc123", "request_id", "r1"} {
-				if !strings.Contains(out, want) {
-					t.Errorf("log %q missing %q", out, want)
-				}
-			}
-		})
-	}
-}
-
 // serveAt runs a request for path through Middleware with a debug-level
 // logger and returns its "request received" and "response sent" lines.
 func serveAt(t *testing.T, path string, status int) (received, sent map[string]any) {

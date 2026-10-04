@@ -6,13 +6,13 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
+	"github.com/ajlatour/golang-vibe-starter/internal/envconfig"
 )
 
 // config is the API's environment configuration: the shared server settings
 // plus where to reach the upstream items service.
 type config struct {
-	httpx.ServerConfig
+	envconfig.Service
 	UpstreamURL     *url.URL
 	UpstreamTimeout time.Duration
 
@@ -28,21 +28,21 @@ type config struct {
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
-	srv, srvErr := httpx.LoadServerConfig(getenv)
-	env := httpx.NewEnv(getenv)
+	srv, srvErr := envconfig.LoadService(getenv)
+	env := envconfig.NewEnv(getenv)
 	cfg := config{
-		ServerConfig: srv,
+		Service: srv,
 
 		// Required: there is no sensible default upstream, and silently
 		// talking to the wrong one is worse than failing at startup.
-		UpstreamURL:     httpx.Required(env, "UPSTREAM_URL", parseHTTPURL),
-		UpstreamTimeout: httpx.Optional(env, "UPSTREAM_TIMEOUT", 5*time.Second, httpx.ParsePositiveDuration),
+		UpstreamURL:     envconfig.Required(env, "UPSTREAM_URL", parseHTTPURL),
+		UpstreamTimeout: envconfig.Optional(env, "UPSTREAM_TIMEOUT", 5*time.Second, envconfig.ParsePositiveDuration),
 
 		// Optional: flags are an add-on, and without a sidecar the service
 		// runs with every flag at its default. The timeout is short by
 		// default because flag evaluation sits on the request path.
-		FlagsURL:          httpx.Optional(env, "FLAGS_URL", nil, parseHTTPURL),
-		FlagsTimeout:      httpx.Optional(env, "FLAGS_TIMEOUT", 500*time.Millisecond, httpx.ParsePositiveDuration),
+		FlagsURL:          envconfig.Optional(env, "FLAGS_URL", nil, parseHTTPURL),
+		FlagsTimeout:      envconfig.Optional(env, "FLAGS_TIMEOUT", 500*time.Millisecond, envconfig.ParsePositiveDuration),
 		FlagsFallbackFile: env.String("FLAGS_FALLBACK_FILE"),
 	}
 	return cfg, errors.Join(srvErr, env.Err())

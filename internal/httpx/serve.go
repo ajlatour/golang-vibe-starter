@@ -12,10 +12,10 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
-// Serve runs handler on cfg.Addr until ctx is cancelled, then shuts down
-// gracefully, giving in-flight requests up to cfg.ShutdownTimeout to finish.
+// Serve runs handler on addr until ctx is cancelled, then shuts down
+// gracefully, giving in-flight requests up to shutdownTimeout to finish.
 // It returns nil after a clean shutdown.
-func Serve(ctx context.Context, logger *slog.Logger, cfg ServerConfig, handler http.Handler) error {
+func Serve(ctx context.Context, logger *slog.Logger, addr string, shutdownTimeout time.Duration, handler http.Handler) error {
 	srv := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
@@ -27,7 +27,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg ServerConfig, handler h
 
 	// Listen separately from Serve so bind errors surface immediately and
 	// the real address is known when Addr uses port 0.
-	ln, err := net.Listen("tcp", cfg.Addr)
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
@@ -42,8 +42,8 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg ServerConfig, handler h
 	case <-ctx.Done():
 	}
 
-	logger.Info("shutting down", logx.KeyTimeout, cfg.ShutdownTimeout.String())
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownTimeout)
+	logger.Info("shutting down", logx.KeyTimeout, shutdownTimeout.String())
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown: %w", err)
