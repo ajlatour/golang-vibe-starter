@@ -6,16 +6,9 @@ everything is under Unreleased.
 
 ## Roadmap
 
-Planned work for structured logging. Phases 1 and 2 are done (see Unreleased); the rest is not
+Planned work for structured logging. Phases 1 to 3 are done (see Unreleased); the rest is not
 started.
 The goal is logs that are easy to read and to query when debugging a deployed instance.
-
-### Phase 3: upstream visibility
-
-- `HTTPStore` logs each upstream call at `DEBUG` (method, path, status, duration), and failures at
-  `WARN` with `error`.
-- Upstream errors carry `upstream_status` and `upstream_duration_ms`, which the handler's
-  `internal error` line includes, so one line is enough to debug an upstream failure.
 
 ### Phase 4: safety and tests
 
@@ -56,6 +49,16 @@ The goal is logs that are easy to read and to query when debugging a deployed in
     they end; failed evaluations in between log at `DEBUG`. A problem with a single flag (unknown,
     wrong type) logs one `WARN` for that flag until it evaluates again, and a flag with no
     configured default logs one `ERROR`.
+- Structured logging, phase 3:
+  - Every upstream call is logged by `HTTPStore`: `upstream request` at `DEBUG` when the upstream
+    answered (including a JSON 404, which means "no such item"), `upstream request failed` at
+    `WARN` with `error` when it didn't. A call abandoned because the client disconnected is
+    `DEBUG`, not a failure.
+  - New fields on those lines: `upstream` (`METHOD /path`), `upstream_status` (absent when there
+    was no response, e.g. a timeout or connection error) and `upstream_duration_ms`.
+  - A failed call returns an `*item.UpstreamError`, and the handler's `internal error` line
+    includes the same three fields, so one line shows what the upstream did. Error messages are
+    unchanged.
 - Feature flags with a flagd (OpenFeature) sidecar, evaluated over OFREP. The demo flag
   `items-list-total` adds `"total"` to `GET /items`.
 - Flag fallbacks: when flagd can't answer, the API uses each flag's `defaultVariant` from

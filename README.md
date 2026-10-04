@@ -210,6 +210,9 @@ that request can be found with one query.
 | `status`      | `request`              | Response status code.                                        |
 | `bytes`       | `request`              | Response body size.                                          |
 | `duration_ms` | `request`, `flag service recovered` | Time to serve the request, or the length of a flagd outage, in milliseconds (a decimal number). |
+| `upstream`    | upstream call lines, `internal error` | The upstream call, `METHOD /path`, e.g. `GET /items`. |
+| `upstream_status` | same               | Upstream response status. Absent if no response arrived (timeout, connection error). |
+| `upstream_duration_ms` | same          | Time spent on the upstream call, in milliseconds.            |
 | `error`       | error and warning lines | Error message. Always `error`, never `err`.                 |
 | `flag`        | flag lines             | Feature flag key.                                            |
 | `fallbacks`   | `flag service recovered` | Evaluations served from defaults during the outage.        |
@@ -219,6 +222,15 @@ client's mistake, not an incident), so alerting on `level=ERROR` finds server fa
 `/healthz` requests are `DEBUG`, so the container's probe doesn't appear unless
 `LOG_LEVEL=debug`; a failing healthcheck is still `ERROR`. A client that disconnects mid-request
 logs `client disconnected` at `INFO` and a `request` line with status 499, not an error.
+
+**Upstream calls.** Every call to the upstream logs one line: `upstream request` at `DEBUG` when
+it answered (a JSON 404, meaning "no such item", counts as an answer), `upstream request failed`
+at `WARN` with `error` when it didn't. The `internal error` line a failure produces carries the
+same `upstream`, `upstream_status` and `upstream_duration_ms` fields, so one line is enough to see
+what the upstream did and how long it took: a 503 with a 2 ms duration is the upstream refusing,
+a missing `upstream_status` with a duration near `UPSTREAM_TIMEOUT` is a timeout. The inbound
+request's `method`, `path` and `status` never share a name with these, so the two can't be
+confused. A client disconnecting mid-call is logged at `DEBUG`, not as an upstream failure.
 
 **Feature flags** log without flooding: when flagd stops answering the API logs one `WARN`
 (`flag service unavailable, using default flag values`) and keeps serving defaults, then one

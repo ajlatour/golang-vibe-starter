@@ -4,12 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 )
 
 // HTTPStore is a Store backed by an upstream service that speaks the same
@@ -18,6 +23,7 @@ import (
 type HTTPStore struct {
 	baseURL string
 	client  *http.Client
+	logger  *slog.Logger
 }
 
 var _ Store = (*HTTPStore)(nil)
@@ -25,11 +31,63 @@ var _ Store = (*HTTPStore)(nil)
 // maxResponseBytes caps how much of an upstream response is read.
 const maxResponseBytes = 4 << 20 // 4 MiB
 
+// HTTPStoreOption customizes NewHTTPStore.
+type HTTPStoreOption func(*HTTPStore)
+
+// WithStoreLogger makes the store log every upstream call: at debug when the
+// upstream answered, at warn when the call failed. The default is no logging.
+func WithStoreLogger(logger *slog.Logger) HTTPStoreOption {
+	return func(s *HTTPStore) { s.logger = logger }
+}
+
 // NewHTTPStore returns a store that sends requests to baseURL (for example
 // "http://mock:8080", optionally with a path prefix) using client. The
 // client should have a timeout set.
-func NewHTTPStore(baseURL string, client *http.Client) *HTTPStore {
-	return &HTTPStore{baseURL: strings.TrimRight(baseURL, "/"), client: client}
+func NewHTTPStore(baseURL string, client *http.Client, opts ...HTTPStoreOption) *HTTPStore {
+	s := &HTTPStore{baseURL: strings.TrimRight(baseURL, "/"), client: client, logger: slog.New(slog.DiscardHandler)}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// Log field names for upstream calls. They're prefixed "upstream_" so they
+// can't be confused with the inbound request's method, path and status.
+const (
+	LogKeyUpstream           = "upstream" // "METHOD /path" of the call
+	LogKeyUpstreamStatus     = "upstream_status"
+	LogKeyUpstreamDurationMS = "upstream_duration_ms"
+)
+
+// UpstreamError is a failed call to the upstream: a network error, timeout,
+// unexpected status, or unreadable response. It keeps the original error
+// message and chain (errors.Is and errors.As see through it) and adds what
+// ServerError logs to make the failure debuggable from one line.
+type UpstreamError struct {
+	Call     string        // "METHOD /path"
+	Status   int           // response status; 0 if there was no response
+	Duration time.Duration // time spent on the call, including reading the response
+	Err      error
+}
+
+func (e *UpstreamError) Error() string { return e.Err.Error() }
+func (e *UpstreamError) Unwrap() error { return e.Err }
+
+// LogAttrs implements httpx.LogAttrsError.
+func (e *UpstreamError) LogAttrs() []slog.Attr {
+	return upstreamAttrs(e.Call, e.Status, e.Duration)
+}
+
+var _ httpx.LogAttrsError = (*UpstreamError)(nil)
+
+// upstreamAttrs builds the fields describing one upstream call. The status is
+// left out when there was no response.
+func upstreamAttrs(call string, status int, d time.Duration) []slog.Attr {
+	attrs := []slog.Attr{slog.String(LogKeyUpstream, call)}
+	if status != 0 {
+		attrs = append(attrs, slog.Int(LogKeyUpstreamStatus, status))
+	}
+	return append(attrs, httpx.DurationAttr(LogKeyUpstreamDurationMS, d))
 }
 
 func (s *HTTPStore) List(ctx context.Context) ([]Item, error) {
@@ -73,20 +131,48 @@ func itemPath(id string) string {
 
 // do sends a request with an optional JSON body and decodes a JSON response
 // into out (if non-nil). A JSON 404 becomes ErrNotFound; any other status
-// than want is an error that includes the upstream's error message.
+// than want is an *UpstreamError that includes the upstream's error message.
+// Every call is logged: see WithStoreLogger.
 func (s *HTTPStore) do(ctx context.Context, method, path string, body any, want int, out any) error {
+	call := method + " " + path
+	start := time.Now()
+	status, err := s.roundTrip(ctx, method, path, body, want, out)
+	elapsed := time.Since(start)
+	attrs := upstreamAttrs(call, status, elapsed)
+
+	switch {
+	case err == nil, errors.Is(err, ErrNotFound):
+		// The upstream answered as the contract allows; "no such item" is
+		// not a failure.
+		s.logger.LogAttrs(ctx, slog.LevelDebug, "upstream request", attrs...)
+		return err
+	case errors.Is(ctx.Err(), context.Canceled):
+		// The caller went away, which isn't the upstream's fault. Keep the
+		// error typed so the handler can tell this was a disconnect.
+		s.logger.LogAttrs(ctx, slog.LevelDebug, "upstream request cancelled",
+			append(attrs, slog.Any(httpx.LogKeyError, err))...)
+	default:
+		s.logger.LogAttrs(ctx, slog.LevelWarn, "upstream request failed",
+			append(attrs, slog.Any(httpx.LogKeyError, err))...)
+	}
+	return &UpstreamError{Call: call, Status: status, Duration: elapsed, Err: err}
+}
+
+// roundTrip performs one call. It returns the response status (0 if no
+// response arrived) alongside any error.
+func (s *HTTPStore) roundTrip(ctx context.Context, method, path string, body any, want int, out any) (status int, err error) {
 	var reqBody io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			return fmt.Errorf("upstream %s %s: encode request: %w", method, path, err)
+			return 0, fmt.Errorf("upstream %s %s: encode request: %w", method, path, err)
 		}
 		reqBody = bytes.NewReader(b)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, s.baseURL+path, reqBody)
 	if err != nil {
-		return fmt.Errorf("upstream %s %s: %w", method, path, err)
+		return 0, fmt.Errorf("upstream %s %s: %w", method, path, err)
 	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
@@ -95,7 +181,7 @@ func (s *HTTPStore) do(ctx context.Context, method, path string, body any, want 
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("upstream %s %s: %w", method, path, err)
+		return 0, fmt.Errorf("upstream %s %s: %w", method, path, err)
 	}
 	respBody := io.LimitReader(resp.Body, maxResponseBytes)
 	defer func() {
@@ -108,22 +194,22 @@ func (s *HTTPStore) do(ctx context.Context, method, path string, body any, want 
 		// Only a JSON 404 means "no such item"; a plain-text 404 means the
 		// route itself is missing, i.e. the base URL is misconfigured.
 		if resp.StatusCode == http.StatusNotFound && isJSON(resp.Header) {
-			return ErrNotFound
+			return resp.StatusCode, ErrNotFound
 		}
 		var e struct {
 			Error string `json:"error"`
 		}
 		_ = json.NewDecoder(respBody).Decode(&e)
-		return fmt.Errorf("upstream %s %s: unexpected status %d: %q", method, path, resp.StatusCode, e.Error)
+		return resp.StatusCode, fmt.Errorf("upstream %s %s: unexpected status %d: %q", method, path, resp.StatusCode, e.Error)
 	}
 
 	if out == nil {
-		return nil
+		return resp.StatusCode, nil
 	}
 	if err := json.NewDecoder(respBody).Decode(out); err != nil {
-		return fmt.Errorf("upstream %s %s: decode response: %w", method, path, err)
+		return resp.StatusCode, fmt.Errorf("upstream %s %s: decode response: %w", method, path, err)
 	}
-	return nil
+	return resp.StatusCode, nil
 }
 
 func isJSON(h http.Header) bool {

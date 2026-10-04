@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"runtime/debug"
 	"time"
@@ -46,7 +47,32 @@ func (h contextHandler) WithGroup(name string) slog.Handler {
 // DurationMS returns d as a duration_ms attribute: milliseconds as a decimal
 // number, which reads and aggregates better than slog's nanosecond integers.
 func DurationMS(d time.Duration) slog.Attr {
-	return slog.Float64(LogKeyDurationMS, float64(d.Microseconds())/1000)
+	return DurationAttr(LogKeyDurationMS, d)
+}
+
+// DurationAttr is DurationMS under a different key, such as
+// "upstream_duration_ms". Keys should end in _ms.
+func DurationAttr(key string, d time.Duration) slog.Attr {
+	return slog.Float64(key, float64(d.Microseconds())/1000)
+}
+
+// LogAttrsError is implemented by errors that know extra fields worth
+// logging, such as the status of a failed upstream call. ServerError adds
+// them to its "internal error" line.
+type LogAttrsError interface {
+	error
+	LogAttrs() []slog.Attr
+}
+
+// errorAttrs returns the error attribute for err, followed by the fields of
+// the first LogAttrsError in its chain, if any.
+func errorAttrs(err error) []slog.Attr {
+	attrs := []slog.Attr{slog.Any(LogKeyError, err)}
+	var la LogAttrsError
+	if errors.As(err, &la) {
+		attrs = append(attrs, la.LogAttrs()...)
+	}
+	return attrs
 }
 
 // BuildVersion describes the running binary from its build info: the VCS

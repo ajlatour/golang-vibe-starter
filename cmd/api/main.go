@@ -64,7 +64,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 
 	logger := cfg.NewLogger(stdout, "api", buildVersion())
 	logger.Info("using upstream", "url", cfg.UpstreamURL.Redacted(), "timeout", cfg.UpstreamTimeout.String())
-	store := item.NewHTTPStore(cfg.UpstreamURL.String(), &http.Client{Timeout: cfg.UpstreamTimeout})
+	store := item.NewHTTPStore(cfg.UpstreamURL.String(), &http.Client{Timeout: cfg.UpstreamTimeout}, item.WithStoreLogger(logger))
 
 	evaluator, err := newFlags(logger, cfg)
 	if err != nil {
