@@ -10,19 +10,46 @@ import (
 	"unicode/utf8"
 )
 
-// Log field names shared across the service. Every log line uses these
-// names for these values, so one query finds them all; the README lists the
-// full schema.
+// Log field names. This is the one list: every log line uses these names for
+// these values, so a single query finds them all, and a test fails the build
+// if code passes a raw string as a key instead. The README documents each.
 const (
-	LogKeyRequestID  = "request_id"
-	LogKeyError      = "error"
-	LogKeyMethod     = "method"
-	LogKeyRoute      = "route"
-	LogKeyPath       = "path"
-	LogKeyDurationMS = "duration_ms"
+	// On every line.
+	LogKeyService   = "service"
+	LogKeyVersion   = "version"
+	LogKeyRequestID = "request_id" // within a request, added from its context
+
+	// The request and response (see logRequests).
+	LogKeyMethod = "method"
+	LogKeyRoute  = "route" // matched pattern, e.g. "GET /items/{id}"
+	LogKeyPath   = "path"  // URL path only, never the query string
 	// LogKeyContentLength is the request body size the client declared, or -1
 	// if unknown (e.g. chunked). Only the number is logged, never the body.
 	LogKeyContentLength = "content_length"
+	LogKeyStatus        = "status"
+	LogKeyBytes         = "bytes"
+	LogKeyDurationMS    = "duration_ms"
+
+	// Failures.
+	LogKeyError = "error"
+	LogKeyPanic = "panic"
+	LogKeyStack = "stack"
+
+	// Upstream calls. Prefixed "upstream_" so they can't be confused with the
+	// inbound request's method, path and status.
+	LogKeyUpstream           = "upstream" // "METHOD /path" of the call
+	LogKeyUpstreamStatus     = "upstream_status"
+	LogKeyUpstreamDurationMS = "upstream_duration_ms"
+
+	// Feature flags.
+	LogKeyFlag      = "flag"
+	LogKeyDefault   = "default"
+	LogKeyFallbacks = "fallbacks"
+
+	// Startup and shutdown.
+	LogKeyURL     = "url"
+	LogKeyTimeout = "timeout"
+	LogKeyAddr    = "addr"
 )
 
 // NewContextHandler wraps h so that every record logged with a context

@@ -62,8 +62,8 @@ func logRequests(logger *slog.Logger, next http.Handler) http.Handler {
 		// route, so it's available once the handler has returned.
 		logger.LogAttrs(r.Context(), responseLevel(r, rec.status), "response sent",
 			append(requestAttrs(r),
-				slog.Int("status", rec.status),
-				slog.Int("bytes", rec.bytes),
+				slog.Int(LogKeyStatus, rec.status),
+				slog.Int(LogKeyBytes, rec.bytes),
 				DurationMS(time.Since(start)),
 			)...,
 		)
@@ -94,8 +94,8 @@ func recoverPanics(logger *slog.Logger, next http.Handler) http.Handler {
 			}
 			logger.LogAttrs(r.Context(), slog.LevelError, "panic serving request",
 				append(requestAttrs(r),
-					slog.Any("panic", v),
-					slog.String("stack", string(debug.Stack())),
+					slog.Any(LogKeyPanic, v),
+					slog.String(LogKeyStack, string(debug.Stack())),
 				)...,
 			)
 			WriteError(w, http.StatusInternalServerError, "internal server error")

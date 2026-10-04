@@ -32,7 +32,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg ServerConfig, handler h
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
-	logger.Info("server started", "addr", ln.Addr().String())
+	logger.Info("server started", LogKeyAddr, ln.Addr().String())
 
 	select {
 	case err := <-serveErr:
@@ -40,7 +40,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg ServerConfig, handler h
 	case <-ctx.Done():
 	}
 
-	logger.Info("shutting down", "timeout", cfg.ShutdownTimeout.String())
+	logger.Info("shutting down", LogKeyTimeout, cfg.ShutdownTimeout.String())
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {

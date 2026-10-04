@@ -105,7 +105,7 @@ func itemPath(id string) string {
 // WithStoreLogger). Never headers or bodies.
 func (s *HTTPStore) do(ctx context.Context, method, path string, body any, want int, out any) error {
 	call := method + " " + httpx.Truncate(path, httpx.MaxLoggedPath)
-	s.logger.LogAttrs(ctx, slog.LevelInfo, "upstream request sent", slog.String(LogKeyUpstream, call))
+	s.logger.LogAttrs(ctx, slog.LevelInfo, "upstream request sent", slog.String(httpx.LogKeyUpstream, call))
 
 	start := time.Now()
 	status, err := s.roundTrip(ctx, method, path, body, want, out)

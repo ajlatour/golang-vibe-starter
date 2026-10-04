@@ -73,7 +73,7 @@ func (c *OFREP) Bool(ctx context.Context, key string) bool {
 	if errors.As(err, &unavailable) {
 		if c.outage.failed() {
 			c.logger.WarnContext(ctx, "flag service unavailable, using default flag values",
-				"flag", key, httpx.LogKeyError, err)
+				httpx.LogKeyFlag, key, httpx.LogKeyError, err)
 		} else {
 			c.logFallback(ctx, slog.LevelDebug, key, def, err)
 		}
@@ -87,7 +87,7 @@ func (c *OFREP) Bool(ctx context.Context, key string) bool {
 	}
 
 	if !hasDefault && c.noDefault.first(key) {
-		c.logger.ErrorContext(ctx, "flag has no configured default, using false", "flag", key)
+		c.logger.ErrorContext(ctx, "flag has no configured default, using false", httpx.LogKeyFlag, key)
 	}
 	return def
 }
@@ -95,7 +95,7 @@ func (c *OFREP) Bool(ctx context.Context, key string) bool {
 // logFallback logs that a flag couldn't be evaluated and def was used.
 func (c *OFREP) logFallback(ctx context.Context, level slog.Level, key string, def bool, err error) {
 	c.logger.Log(ctx, level, "flag evaluation failed, using default",
-		"flag", key, "default", def, httpx.LogKeyError, err)
+		httpx.LogKeyFlag, key, httpx.LogKeyDefault, def, httpx.LogKeyError, err)
 }
 
 // answered notes that flagd replied, and logs the end of an outage if one was
@@ -103,7 +103,7 @@ func (c *OFREP) logFallback(ctx context.Context, level slog.Level, key string, d
 func (c *OFREP) answered(ctx context.Context) {
 	if ended, fallbacks, took := c.outage.answered(); ended {
 		c.logger.InfoContext(ctx, "flag service recovered",
-			"fallbacks", fallbacks,
+			httpx.LogKeyFallbacks, fallbacks,
 			httpx.DurationMS(took),
 		)
 	}

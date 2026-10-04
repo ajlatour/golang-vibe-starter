@@ -11,14 +11,6 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 )
 
-// Log field names for upstream calls. They're prefixed "upstream_" so they
-// can't be confused with the inbound request's method, path and status.
-const (
-	LogKeyUpstream           = "upstream" // "METHOD /path" of the call
-	LogKeyUpstreamStatus     = "upstream_status"
-	LogKeyUpstreamDurationMS = "upstream_duration_ms"
-)
-
 // UpstreamError is a failed call to the upstream: a network error, timeout,
 // unexpected status, or unreadable response. It keeps the original error
 // message and chain (errors.Is and errors.As see through it) and adds what
@@ -58,9 +50,9 @@ var (
 // upstreamAttrs builds the fields describing one upstream call. The status is
 // left out when there was no response.
 func upstreamAttrs(call string, status int, d time.Duration) []slog.Attr {
-	attrs := []slog.Attr{slog.String(LogKeyUpstream, call)}
+	attrs := []slog.Attr{slog.String(httpx.LogKeyUpstream, call)}
 	if status != 0 {
-		attrs = append(attrs, slog.Int(LogKeyUpstreamStatus, status))
+		attrs = append(attrs, slog.Int(httpx.LogKeyUpstreamStatus, status))
 	}
-	return append(attrs, httpx.DurationAttr(LogKeyUpstreamDurationMS, d))
+	return append(attrs, httpx.DurationAttr(httpx.LogKeyUpstreamDurationMS, d))
 }

@@ -63,7 +63,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	}
 
 	logger := cfg.NewLogger(stdout, "api", buildVersion())
-	logger.Info("using upstream", "url", cfg.UpstreamURL.Redacted(), "timeout", cfg.UpstreamTimeout.String())
+	logger.Info("using upstream", httpx.LogKeyURL, cfg.UpstreamURL.Redacted(), httpx.LogKeyTimeout, cfg.UpstreamTimeout.String())
 	store := item.NewHTTPStore(cfg.UpstreamURL.String(), &http.Client{Timeout: cfg.UpstreamTimeout}, item.WithStoreLogger(logger))
 
 	evaluator, err := newFlags(logger, cfg)
@@ -91,7 +91,7 @@ func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
 		logger.Info("feature flags: no FLAGS_URL, using default values only")
 		return defaults, nil
 	}
-	logger.Info("using feature flags", "url", cfg.FlagsURL.Redacted(), "timeout", cfg.FlagsTimeout.String())
+	logger.Info("using feature flags", httpx.LogKeyURL, cfg.FlagsURL.Redacted(), httpx.LogKeyTimeout, cfg.FlagsTimeout.String())
 	return flags.NewOFREP(cfg.FlagsURL.String(), &http.Client{Timeout: cfg.FlagsTimeout}, logger, defaults), nil
 }
 

@@ -283,8 +283,10 @@ To add a log line:
 
 1. Log with a `*Context` method (`InfoContext`, `LogAttrs(ctx, ...)`) so it gets `request_id`. A
    line without the request's context can't be correlated.
-2. Use the schema's field names (`error`, `duration_ms`, `route`, ...), the constants in
-   `internal/httpx/log.go`, and `httpx.DurationMS` for durations.
+2. Use the schema's field names (`error`, `duration_ms`, `route`, ...) through the `LogKey`
+   constants in `internal/httpx/log.go`, which are the one list of field names; a test fails the
+   build on a raw string key. Add a constant if the field is new. Use `httpx.DurationMS` for
+   durations.
 3. Pick the level by who should act: `ERROR` for the service's own failures, `WARN` for a
    dependency misbehaving, `INFO` for normal events, `DEBUG` for per-call detail.
 4. Add the message to `logContract` in `cmd/api/logcontract_test.go` with its level and required

@@ -79,5 +79,5 @@ func (c ServerConfig) NewLogger(w io.Writer, service, version string) *slog.Logg
 	if c.LogFormat == "text" {
 		h = slog.NewTextHandler(w, opts)
 	}
-	return slog.New(NewContextHandler(h)).With("service", service, "version", version)
+	return slog.New(NewContextHandler(h)).With(LogKeyService, service, LogKeyVersion, version)
 }
