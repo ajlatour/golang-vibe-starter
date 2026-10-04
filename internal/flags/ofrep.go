@@ -15,8 +15,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 )
@@ -31,11 +29,9 @@ type OFREP struct {
 	logger   *slog.Logger
 	defaults Defaults
 
-	mu       sync.Mutex
-	outage   bool      // flagd is currently failing to answer
-	since    time.Time // when the current outage was first seen
-	fallback int       // evaluations answered from defaults during the outage
-	reported map[string]bool
+	outage    *outageTracker // is flagd answering?
+	problems  onceSet        // flags that failed, reported once until they recover
+	noDefault onceSet        // flags with no configured default, reported once
 }
 
 // NewOFREP returns an evaluator that sends requests to baseURL (for example
@@ -43,7 +39,13 @@ type OFREP struct {
 // because evaluation happens on the request path. defaults supplies the value
 // for any flag flagd can't evaluate.
 func NewOFREP(baseURL string, client *http.Client, logger *slog.Logger, defaults Defaults) *OFREP {
-	return &OFREP{baseURL: strings.TrimRight(baseURL, "/"), client: client, logger: logger, defaults: defaults}
+	return &OFREP{
+		baseURL:  strings.TrimRight(baseURL, "/"),
+		client:   client,
+		logger:   logger,
+		defaults: defaults,
+		outage:   newOutageTracker(),
+	}
 }
 
 // Bool returns the value of the boolean flag key. If the flag can't be
@@ -60,28 +62,51 @@ func NewOFREP(baseURL string, client *http.Client, logger *slog.Logger, defaults
 //     warning for that flag until it evaluates successfully again.
 func (c *OFREP) Bool(ctx context.Context, key string) bool {
 	v, err := c.evalBool(ctx, key)
-	var unavailable *unavailableError
-	switch {
-	case err == nil:
-		c.reachable(ctx)
-		c.clearReported("flag:" + key)
+	if err == nil {
+		c.answered(ctx)
+		c.problems.clear(key)
 		return v
-	case errors.As(err, &unavailable):
-		c.unavailable(ctx, key, err)
-	default:
-		c.reachable(ctx) // flagd answered; only this flag is the problem
-		if c.firstReport("flag:" + key) {
-			c.logger.WarnContext(ctx, "flag evaluation failed, using default", "flag", key, "default", c.defaults[key], httpx.LogKeyError, err)
-		} else {
-			c.logger.DebugContext(ctx, "flag evaluation failed, using default", "flag", key, "default", c.defaults[key], httpx.LogKeyError, err)
-		}
 	}
 
-	def, ok := c.defaults[key]
-	if !ok && c.firstReport("nodefault:"+key) {
+	def, hasDefault := c.defaults[key]
+	var unavailable *unavailableError
+	if errors.As(err, &unavailable) {
+		if c.outage.failed() {
+			c.logger.WarnContext(ctx, "flag service unavailable, using default flag values",
+				"flag", key, httpx.LogKeyError, err)
+		} else {
+			c.logFallback(ctx, slog.LevelDebug, key, def, err)
+		}
+	} else {
+		c.answered(ctx) // flagd answered; only this flag is the problem
+		level := slog.LevelDebug
+		if c.problems.first(key) {
+			level = slog.LevelWarn
+		}
+		c.logFallback(ctx, level, key, def, err)
+	}
+
+	if !hasDefault && c.noDefault.first(key) {
 		c.logger.ErrorContext(ctx, "flag has no configured default, using false", "flag", key)
 	}
 	return def
+}
+
+// logFallback logs that a flag couldn't be evaluated and def was used.
+func (c *OFREP) logFallback(ctx context.Context, level slog.Level, key string, def bool, err error) {
+	c.logger.Log(ctx, level, "flag evaluation failed, using default",
+		"flag", key, "default", def, httpx.LogKeyError, err)
+}
+
+// answered notes that flagd replied, and logs the end of an outage if one was
+// in progress.
+func (c *OFREP) answered(ctx context.Context) {
+	if ended, fallbacks, took := c.outage.answered(); ended {
+		c.logger.InfoContext(ctx, "flag service recovered",
+			"fallbacks", fallbacks,
+			httpx.DurationMS(took),
+		)
+	}
 }
 
 // unavailableError marks a failure to get an answer from flagd at all, as
@@ -90,61 +115,6 @@ type unavailableError struct{ err error }
 
 func (e *unavailableError) Error() string { return e.err.Error() }
 func (e *unavailableError) Unwrap() error { return e.err }
-
-// unavailable records a failed evaluation caused by flagd not answering.
-func (c *OFREP) unavailable(ctx context.Context, key string, err error) {
-	c.mu.Lock()
-	first := !c.outage
-	if first {
-		c.outage, c.since, c.fallback = true, time.Now(), 0
-	}
-	c.fallback++
-	c.mu.Unlock()
-
-	if first {
-		c.logger.WarnContext(ctx, "flag service unavailable, using default flag values", "flag", key, httpx.LogKeyError, err)
-		return
-	}
-	c.logger.DebugContext(ctx, "flag evaluation failed, using default", "flag", key, httpx.LogKeyError, err)
-}
-
-// reachable records that flagd answered, ending any outage.
-func (c *OFREP) reachable(ctx context.Context) {
-	c.mu.Lock()
-	if !c.outage {
-		c.mu.Unlock()
-		return
-	}
-	since, fallbacks := c.since, c.fallback
-	c.outage, c.fallback = false, 0
-	c.mu.Unlock()
-
-	c.logger.InfoContext(ctx, "flag service recovered",
-		"fallbacks", fallbacks,
-		httpx.DurationMS(time.Since(since)),
-	)
-}
-
-// firstReport reports whether this is the first time id has been reported
-// since it was last cleared, and marks it reported.
-func (c *OFREP) firstReport(id string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.reported[id] {
-		return false
-	}
-	if c.reported == nil {
-		c.reported = map[string]bool{}
-	}
-	c.reported[id] = true
-	return true
-}
-
-func (c *OFREP) clearReported(id string) {
-	c.mu.Lock()
-	delete(c.reported, id)
-	c.mu.Unlock()
-}
 
 func (c *OFREP) evalBool(ctx context.Context, key string) (bool, error) {
 	path := "/ofrep/v1/evaluate/flags/" + url.PathEscape(key)
