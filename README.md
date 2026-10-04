@@ -215,18 +215,45 @@ that request can be found with one query.
 | `upstream_status` | `upstream response received`, failure lines, `internal error` | Upstream response status. Absent if no response arrived (timeout, connection error). |
 | `upstream_duration_ms` | same, not `upstream request sent` | Time spent on the upstream call, in milliseconds. |
 | `error`       | error and warning lines | Error message. Always `error`, never `err`.                 |
+| `panic`       | `panic serving request` | The recovered panic value.                                  |
+| `stack`       | `panic serving request` | The goroutine stack at the panic.                           |
+| `default`     | `flag evaluation failed, using default` | The default value that was used instead.     |
+| `url`         | `using upstream`, `using feature flags` | A configured base URL, credentials redacted.  |
+| `timeout`     | startup and shutdown lines | A configured timeout, e.g. `5s`.                          |
+| `addr`        | `server started`       | The address the server is listening on.                      |
 | `flag`        | flag lines             | Feature flag key.                                            |
 | `fallbacks`   | `flag service recovered` | Evaluations served from defaults during the outage.        |
 
-**The four ends of a request.** Each request is logged where it enters and leaves the API, and
-where it enters and leaves the upstream, in this order:
+**Messages.** Every message the service logs, with the levels it uses and the fields it always
+carries beyond the common ones (`time`, `level`, `msg`, `service`, `version`, and `request_id`
+within a request). The first four are the four ends of a request, in order: it enters the API,
+goes out to the upstream, comes back, and leaves the API.
 
-| Event                    | `msg`                        | Fields beyond the common ones                                  |
-| ------------------------ | ---------------------------- | -------------------------------------------------------------- |
-| Request arrives          | `request received`           | `method`, `path`, `content_length`                             |
-| Request goes upstream    | `upstream request sent`      | `upstream`                                                     |
-| Response from upstream   | `upstream response received` | `upstream`, `upstream_status`, `upstream_duration_ms`          |
-| Response goes to client  | `response sent`              | `method`, `route`, `path`, `status`, `bytes`, `duration_ms`    |
+| Message | Level | Fields | When |
+| ------- | ----- | ------ | ---- |
+| `request received` | INFO; DEBUG for `/healthz` | `method`, `path`, `content_length` | A request arrives. |
+| `upstream request sent` | INFO | `upstream` | Before each call to the upstream. |
+| `upstream response received` | INFO | `upstream`, `upstream_status`, `upstream_duration_ms` | The upstream answered, with any status. |
+| `response sent` | INFO; DEBUG for `/healthz`; ERROR for 5xx | `method`, `route`, `path`, `status`, `bytes`, `duration_ms` | The reply goes to the client. |
+| `internal error` | ERROR | `method`, `route`, `path`, `error` | A request failed with a 5xx. When an upstream call caused it, the `upstream*` fields are on this line too. |
+| `client disconnected` | INFO | `method`, `route`, `path`, `error` | The client left mid-request; it is answered with 499, not an error. |
+| `panic serving request` | ERROR | `method`, `route`, `path`, `panic`, `stack` | A handler panicked; the client gets a 500. |
+| `upstream request failed` | WARN | `upstream`, `upstream_duration_ms`, `error` | An upstream call failed: no response, an unexpected status, or a body that won't decode. `upstream_status` is also present if a response arrived. |
+| `upstream request cancelled` | DEBUG | `upstream`, `upstream_duration_ms`, `error` | The client left during an upstream call, so it isn't the upstream's failure. |
+| `flag service unavailable, using default flag values` | WARN | `flag`, `error` | flagd stopped answering. Logged once per outage. |
+| `flag service recovered` | INFO | `fallbacks`, `duration_ms` | flagd answers again; `fallbacks` evaluations were served from defaults. |
+| `flag evaluation failed, using default` | WARN the first time a flag has a problem, then DEBUG | `flag`, `default`, `error` | A flag couldn't be evaluated and its default was used. Also DEBUG for each failed evaluation during an outage. |
+| `flag has no configured default, using false` | ERROR | `flag` | A flag the code reads has no default in the definitions. Logged once per flag. |
+| `using upstream` | INFO | `url`, `timeout` | Startup. |
+| `using feature flags` | INFO | `url`, `timeout` | Startup, with `FLAGS_URL` set. |
+| `feature flags: no FLAGS_URL, using default values only` | INFO | none | Startup, with `FLAGS_URL` unset. |
+| `server started` | INFO | `addr` | The server is listening. |
+| `shutting down` | INFO | `timeout` | A shutdown signal arrived. |
+| `server stopped` | INFO | none | Shutdown finished cleanly. |
+
+A test fails the build if this table disagrees with the code or with `logtest.Contract`, in
+either direction: a message missing here, a level or field that differs, or a message the code
+no longer logs. The field table above is checked against the `Key` constants the same way.
 
 All four carry the same `request_id`, so filtering on it shows the whole exchange. The two
 "received/sent" pairs bracket the work, so a request that hangs shows as a `request received`
@@ -283,17 +310,19 @@ To add a log line:
 
 1. Log with a `*Context` method (`InfoContext`, `LogAttrs(ctx, ...)`) so it gets `request_id`. A
    line without the request's context can't be correlated.
-2. Use the schema's field names (`error`, `duration_ms`, `route`, ...) through the `LogKey`
+2. Use the schema's field names (`error`, `duration_ms`, `route`, ...) through the `Key`
    constants in `internal/logx/keys.go`, which are the one list of field names; a test fails the
    build on a raw string key. Add a constant if the field is new. Use `logx.DurationMS` for
    durations.
 3. Pick the level by who should act: `ERROR` for the service's own failures, `WARN` for a
    dependency misbehaving, `INFO` for normal events, `DEBUG` for per-call detail.
-4. Add the message to `logContract` in `cmd/api/logcontract_test.go` with its level and required
-   fields. The test runs the whole service and fails on any message it doesn't know, on missing
-   fields, wrong levels, a missing `request_id`, forbidden field names (`err`, `duration`), planted
-   secrets (in bodies, query strings, headers and URL credentials), unredacted URLs, and
-   unbounded lines. Update the table above to match.
+4. Add the message to `logtest.Contract` (`internal/logtest/contract.go`) with its levels and
+   required fields, and to the Messages table above. Tests run the whole service and check every
+   line against the contract, and check the code and this README against it: they fail on a
+   message the contract doesn't know, a stale entry, missing fields, a wrong level, a missing
+   `request_id`, forbidden field names (`err`, `duration`), planted secrets (in bodies, query
+   strings, headers and URL credentials), unredacted URLs, unbounded lines, or a README that has
+   drifted.
 
 `version` comes from the commit Go stamps into the binary. The Docker build doesn't include
 `.git`, so pass it in: `VERSION=$(git rev-parse --short HEAD) docker compose up --build`. Without

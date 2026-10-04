@@ -20,44 +20,6 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
 )
 
-// logContract is the schema every log message must follow: its level and the
-// fields it must carry. A message that isn't listed here fails the test, so
-// adding a log line means deciding, and recording, what it promises.
-// Keep it in step with the Logging section of the README.
-//
-// "request received" and "response sent" are special-cased: the healthcheck
-// logs them at DEBUG, and "response sent" is ERROR for a 5xx.
-var logContract = map[string]struct {
-	level string
-	keys  []string
-}{
-	// Lifecycle: logged outside any request, so no request_id.
-	"using upstream":      {"INFO", []string{"url", "timeout"}},
-	"using feature flags": {"INFO", []string{"url", "timeout"}},
-	"server started":      {"INFO", []string{"addr"}},
-	"shutting down":       {"INFO", []string{"timeout"}},
-	"server stopped":      {"INFO", nil},
-
-	// Logged while handling a request, so each carries request_id.
-	//
-	// The four ends of a request, in order:
-	"request received":           {"", []string{"method", "path", "content_length"}},
-	"upstream request sent":      {"INFO", []string{"upstream"}},
-	"upstream response received": {"INFO", []string{"upstream", "upstream_status", "upstream_duration_ms"}},
-	"response sent":              {"", []string{"method", "route", "path", "status", "bytes", "duration_ms"}},
-	// And what can go wrong in between:
-	"internal error":                                      {"ERROR", []string{"method", "route", "path", "error"}},
-	"upstream request failed":                             {"WARN", []string{"upstream", "upstream_duration_ms", "error"}},
-	"upstream request cancelled":                          {"DEBUG", []string{"upstream", "upstream_duration_ms", "error"}},
-	"flag service unavailable, using default flag values": {"WARN", []string{"flag", "error"}},
-	"flag evaluation failed, using default":               {"DEBUG", []string{"flag", "error"}},
-}
-
-// outsideRequests lists the messages that legitimately have no request_id.
-var outsideRequests = []string{
-	"using upstream", "using feature flags", "server started", "shutting down", "server stopped",
-}
-
 // secrets are planted in request bodies, query strings, headers and URLs
 // below. None may ever appear in a log line.
 var secrets = []string{
@@ -241,42 +203,47 @@ func checkLine(t *testing.T, m map[string]any, raw string) {
 		}
 	}
 
-	c, ok := logContract[msg]
+	c, ok := logtest.Contract[msg]
 	if !ok {
-		t.Errorf("log message %q is not in logContract; add it with its level and required fields: %.200s", msg, raw)
+		t.Errorf("log message %q is not in logtest.Contract; add it with its levels and required fields: %.200s", msg, raw)
 		return
 	}
-	for _, k := range c.keys {
+	for _, k := range c.Keys {
 		if _, ok := m[k]; !ok {
 			t.Errorf("%q line is missing %q: %.300s", msg, k, raw)
 		}
 	}
 
 	level, _ := m["level"].(string)
-	want := c.level
+	if !slices.Contains(c.Levels, level) {
+		t.Errorf("%q line level = %s, want one of %v: %.200s", msg, level, c.Levels, raw)
+	}
+	// Two messages have a precise level rule, beyond the set the contract allows.
 	switch msg {
 	case "request received":
-		want = "INFO"
+		want := "INFO"
 		if m["path"] == httpx.HealthzPath {
 			want = "DEBUG"
 		}
+		if level != want {
+			t.Errorf("%q line level = %s, want %s", msg, level, want)
+		}
 	case "response sent":
 		status, _ := m["status"].(float64)
+		want := "INFO"
 		switch {
 		case status >= 500:
 			want = "ERROR"
 		case m["path"] == httpx.HealthzPath:
 			want = "DEBUG"
-		default:
-			want = "INFO"
 		}
-	}
-	if level != want {
-		t.Errorf("%q line level = %s, want %s: %.200s", msg, level, want, raw)
+		if level != want {
+			t.Errorf("%q line level = %s, want %s (status %v)", msg, level, want, status)
+		}
 	}
 
 	id, _ := m[logx.KeyRequestID].(string)
-	if slices.Contains(outsideRequests, msg) {
+	if slices.Contains(logtest.OutsideRequests, msg) {
 		if id != "" {
 			t.Errorf("%q line has request_id %q but isn't logged within a request", msg, id)
 		}
