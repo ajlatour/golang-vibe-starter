@@ -84,7 +84,9 @@ func TestStoreRequests(t *testing.T) {
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				gotPath = r.URL.EscapedPath()
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`{"id":"x"}`))
+				// A valid item: this test is about the request's path, and
+				// the store refuses an upstream item that breaks the rules.
+				w.Write([]byte(`{"id":"x","name":"x"}`))
 			}))
 			defer upstream.Close()
 
@@ -124,7 +126,7 @@ func TestStoreLive(t *testing.T) {
 		t.Fatal("List returned no items; want seeded data")
 	}
 	for _, it := range list {
-		if it.ID == "" || it.Name == "" || it.CreatedAt.IsZero() || it.UpdatedAt.IsZero() {
+		if it.ID == "" || it.Name.IsZero() || it.CreatedAt.IsZero() || it.UpdatedAt.IsZero() {
 			t.Errorf("List item missing fields: %+v", it)
 		}
 	}
@@ -136,18 +138,18 @@ func TestStoreLive(t *testing.T) {
 		t.Errorf("Get = %+v, want %+v (as listed)", got, list[0])
 	}
 
-	created, err := store.Create(ctx, item.Item{Name: "live test", Description: `say "hi"`})
+	created, err := store.Create(ctx, item.Item{Name: item.MustNewName("live test"), Description: `say "hi"`})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if created.ID == "" || created.Name != "live test" || created.Description != `say "hi"` || created.CreatedAt.IsZero() {
+	if created.ID == "" || created.Name.String() != "live test" || created.Description != `say "hi"` || created.CreatedAt.IsZero() {
 		t.Errorf("Create = %+v, want ID, timestamps and echoed fields", created)
 	}
-	updated, err := store.Update(ctx, item.Item{ID: created.ID, Name: "live renamed"})
+	updated, err := store.Update(ctx, item.Item{ID: created.ID, Name: item.MustNewName("live renamed")})
 	if err != nil {
 		t.Fatalf("Update(%q): %v", created.ID, err)
 	}
-	if updated.ID != created.ID || updated.Name != "live renamed" || updated.Description != "" {
+	if updated.ID != created.ID || updated.Name.String() != "live renamed" || updated.Description != "" {
 		t.Errorf("Update = %+v, want ID %q with replaced fields", updated, created.ID)
 	}
 	if err := store.Delete(ctx, created.ID); err != nil {
@@ -157,7 +159,7 @@ func TestStoreLive(t *testing.T) {
 	if _, err := store.Get(ctx, "does-not-exist"); !errors.Is(err, item.ErrNotFound) {
 		t.Errorf("Get unknown error = %v, want ErrNotFound", err)
 	}
-	if _, err := store.Update(ctx, item.Item{ID: "does-not-exist", Name: "x"}); !errors.Is(err, item.ErrNotFound) {
+	if _, err := store.Update(ctx, item.Item{ID: "does-not-exist", Name: item.MustNewName("x")}); !errors.Is(err, item.ErrNotFound) {
 		t.Errorf("Update unknown error = %v, want ErrNotFound", err)
 	}
 	if err := store.Delete(ctx, "does-not-exist"); !errors.Is(err, item.ErrNotFound) {

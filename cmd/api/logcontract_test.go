@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
-	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/httpapi"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
@@ -36,7 +36,7 @@ func TestLogContract(t *testing.T) {
 	// huge error message, and /items/dropme, which drops the connection.
 	store := itemtest.NewMemStore()
 	mux := http.NewServeMux()
-	item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), store)
+	httpapi.RegisterRoutes(mux, slog.New(slog.DiscardHandler), store)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/items/boom" {
 			w.Header().Set("Content-Type", "application/json")

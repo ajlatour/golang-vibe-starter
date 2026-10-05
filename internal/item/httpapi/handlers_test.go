@@ -1,4 +1,4 @@
-package item_test
+package httpapi_test
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/httpapi"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 )
 
@@ -27,7 +28,7 @@ func TestHandlers(t *testing.T) {
 		{
 			name: "list", method: http.MethodGet, path: "/items", wantStatus: http.StatusOK,
 			check: func(t *testing.T, rec *httptest.ResponseRecorder, _ item.Store, seeded item.Item) {
-				var got struct{ Items []item.Item }
+				var got struct{ Items []httpapi.ItemResponse }
 				decodeBody(t, rec, &got)
 				if len(got.Items) != 1 || got.Items[0].ID != seeded.ID {
 					t.Errorf("items = %+v, want [%s]", got.Items, seeded.ID)
@@ -37,9 +38,9 @@ func TestHandlers(t *testing.T) {
 		{
 			name: "get", method: http.MethodGet, path: "/items/{id}", wantStatus: http.StatusOK,
 			check: func(t *testing.T, rec *httptest.ResponseRecorder, _ item.Store, seeded item.Item) {
-				var got item.Item
+				var got httpapi.ItemResponse
 				decodeBody(t, rec, &got)
-				if !sameItem(got, seeded) {
+				if !matches(got, seeded) {
 					t.Errorf("item = %+v, want %+v", got, seeded)
 				}
 			},
@@ -50,7 +51,7 @@ func TestHandlers(t *testing.T) {
 			body:       `{"name":"  new thing  ","description":"desc"}`,
 			wantStatus: http.StatusCreated,
 			check: func(t *testing.T, rec *httptest.ResponseRecorder, store item.Store, _ item.Item) {
-				var got item.Item
+				var got httpapi.ItemResponse
 				decodeBody(t, rec, &got)
 				if got.ID == "" || got.Name != "new thing" || got.Description != "desc" {
 					t.Errorf("item = %+v, want trimmed name and description", got)
@@ -75,7 +76,7 @@ func TestHandlers(t *testing.T) {
 			body:       `{"name":"renamed"}`,
 			wantStatus: http.StatusOK,
 			check: func(t *testing.T, rec *httptest.ResponseRecorder, _ item.Store, seeded item.Item) {
-				var got item.Item
+				var got httpapi.ItemResponse
 				decodeBody(t, rec, &got)
 				if got.ID != seeded.ID || got.Name != "renamed" || !got.CreatedAt.Equal(seeded.CreatedAt) {
 					t.Errorf("item = %+v, want renamed seed with original CreatedAt", got)
@@ -99,12 +100,12 @@ func TestHandlers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := itemtest.NewMemStore()
-			seeded, err := store.Create(t.Context(), item.Item{Name: "seeded"})
+			seeded, err := store.Create(t.Context(), item.Item{Name: item.MustNewName("seeded")})
 			if err != nil {
 				t.Fatalf("seed: %v", err)
 			}
 			mux := http.NewServeMux()
-			item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), store)
+			httpapi.RegisterRoutes(mux, slog.New(slog.DiscardHandler), store)
 
 			path := strings.ReplaceAll(tt.path, "{id}", seeded.ID)
 			rec := httptest.NewRecorder()
@@ -138,7 +139,7 @@ func (failingStore) Delete(context.Context, string) error { return errStoreDown 
 
 func TestHandlersStoreError(t *testing.T) {
 	mux := http.NewServeMux()
-	item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), failingStore{})
+	httpapi.RegisterRoutes(mux, slog.New(slog.DiscardHandler), failingStore{})
 
 	tests := []struct {
 		method, path, body string
@@ -181,30 +182,30 @@ func (f fakeFlags) Bool(_ context.Context, key string) bool { return f[key] }
 func TestListTotalFlag(t *testing.T) {
 	tests := []struct {
 		name      string
-		opts      []item.Option
+		opts      []httpapi.Option
 		wantTotal bool
 	}{
 		{name: "no flags configured"},
-		{name: "flag off", opts: []item.Option{item.WithFlags(fakeFlags{item.FlagListTotal: false})}},
-		{name: "flag absent", opts: []item.Option{item.WithFlags(fakeFlags{})}},
-		{name: "flag on", opts: []item.Option{item.WithFlags(fakeFlags{item.FlagListTotal: true})}, wantTotal: true},
+		{name: "flag off", opts: []httpapi.Option{httpapi.WithFlags(fakeFlags{httpapi.FlagListTotal: false})}},
+		{name: "flag absent", opts: []httpapi.Option{httpapi.WithFlags(fakeFlags{})}},
+		{name: "flag on", opts: []httpapi.Option{httpapi.WithFlags(fakeFlags{httpapi.FlagListTotal: true})}, wantTotal: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := itemtest.NewMemStore()
 			for _, name := range []string{"a", "b"} {
-				if _, err := store.Create(t.Context(), item.Item{Name: name}); err != nil {
+				if _, err := store.Create(t.Context(), item.Item{Name: item.MustNewName(name)}); err != nil {
 					t.Fatalf("seed: %v", err)
 				}
 			}
 			mux := http.NewServeMux()
-			item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), store, tt.opts...)
+			httpapi.RegisterRoutes(mux, slog.New(slog.DiscardHandler), store, tt.opts...)
 
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/items", nil))
 
 			var got struct {
-				Items []item.Item
+				Items []httpapi.ItemResponse
 				Total *int
 			}
 			decodeBody(t, rec, &got)
@@ -226,7 +227,7 @@ func TestListTotalFlag(t *testing.T) {
 // other than 500: an unexpected error from anywhere else still is one.
 func TestPlainStoreErrorStaysA500(t *testing.T) {
 	mux := http.NewServeMux()
-	item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), failingStore{})
+	httpapi.RegisterRoutes(mux, slog.New(slog.DiscardHandler), failingStore{})
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/items", nil))
 	if rec.Code != http.StatusInternalServerError {
@@ -234,7 +235,29 @@ func TestPlainStoreErrorStaysA500(t *testing.T) {
 	}
 }
 
-func sameItem(a, b item.Item) bool {
-	return a.ID == b.ID && a.Name == b.Name && a.Description == b.Description &&
-		a.CreatedAt.Equal(b.CreatedAt) && a.UpdatedAt.Equal(b.UpdatedAt)
+// matches reports whether the API's representation of an item says the same
+// as the domain item.
+func matches(got httpapi.ItemResponse, want item.Item) bool {
+	return got.ID == want.ID && got.Name == want.Name.String() && got.Description == want.Description &&
+		got.CreatedAt.Equal(want.CreatedAt) && got.UpdatedAt.Equal(want.UpdatedAt)
+}
+
+// rulesStore refuses every item with a domain ValidationError, as a store
+// does for an item that breaks the rules.
+type rulesStore struct{ failingStore }
+
+func (rulesStore) Create(context.Context, item.Item) (item.Item, error) {
+	return item.Item{}, &item.ValidationError{Field: "name", Message: "name is required"}
+}
+
+// TestDomainRuleBecomes422 checks that a broken domain rule reported by the
+// store reaches the client as 422 with the rule's message, not as a 500.
+func TestDomainRuleBecomes422(t *testing.T) {
+	mux := http.NewServeMux()
+	httpapi.RegisterRoutes(mux, slog.New(slog.DiscardHandler), rulesStore{})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/items", strings.NewReader(`{"name":"ok"}`)))
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "name is required") {
+		t.Errorf("got %d %s, want 422 with the rule's message", rec.Code, rec.Body)
+	}
 }

@@ -17,14 +17,14 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 		ctx := t.Context()
 		s := newStore(t)
 
-		created, err := s.Create(ctx, item.Item{Name: "widget", Description: "a widget"})
+		created, err := s.Create(ctx, item.Item{Name: item.MustNewName("widget"), Description: "a widget"})
 		if err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 		if created.ID == "" || created.CreatedAt.IsZero() || !created.UpdatedAt.Equal(created.CreatedAt) {
 			t.Fatalf("Create returned %+v, want ID and equal non-zero timestamps", created)
 		}
-		if created.Name != "widget" || created.Description != "a widget" {
+		if created.Name.String() != "widget" || created.Description != "a widget" {
 			t.Errorf("Create returned %+v, want input fields preserved", created)
 		}
 
@@ -36,11 +36,11 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 			t.Errorf("Get = %+v, want %+v", got, created)
 		}
 
-		updated, err := s.Update(ctx, item.Item{ID: created.ID, Name: "gadget"})
+		updated, err := s.Update(ctx, item.Item{ID: created.ID, Name: item.MustNewName("gadget")})
 		if err != nil {
 			t.Fatalf("Update: %v", err)
 		}
-		if updated.Name != "gadget" || updated.Description != "" {
+		if updated.Name.String() != "gadget" || updated.Description != "" {
 			t.Errorf("Update did not replace fields: %+v", updated)
 		}
 		if !updated.CreatedAt.Equal(created.CreatedAt) || updated.UpdatedAt.Before(created.UpdatedAt) {
@@ -63,12 +63,34 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 		}
 	})
 
+	t.Run("refuses an item with no name", func(t *testing.T) {
+		// The only way to get a Name is item.NewName, which enforces the
+		// rules; an Item built without one has the zero Name, and no store
+		// may persist it, whichever path it came from.
+		ctx := t.Context()
+		s := newStore(t)
+		var invalid *item.ValidationError
+		if _, err := s.Create(ctx, item.Item{Description: "no name"}); !errors.As(err, &invalid) {
+			t.Errorf("Create with no name: error = %v, want an *item.ValidationError", err)
+		}
+		created, err := s.Create(ctx, item.Item{Name: item.MustNewName("named")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Update(ctx, item.Item{ID: created.ID}); !errors.As(err, &invalid) {
+			t.Errorf("Update with no name: error = %v, want an *item.ValidationError", err)
+		}
+		if got, _ := s.Get(ctx, created.ID); got.Name.String() != "named" {
+			t.Errorf("after a refused update the name is %q, want it unchanged", got.Name)
+		}
+	})
+
 	t.Run("list order", func(t *testing.T) {
 		ctx := t.Context()
 		s := newStore(t)
 		var want []string
 		for _, name := range []string{"a", "b", "c"} {
-			it, err := s.Create(ctx, item.Item{Name: name})
+			it, err := s.Create(ctx, item.Item{Name: item.MustNewName(name)})
 			if err != nil {
 				t.Fatalf("Create: %v", err)
 			}
@@ -96,7 +118,7 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 		if _, err := s.Get(ctx, "nope"); !errors.Is(err, item.ErrNotFound) {
 			t.Errorf("Get error = %v, want ErrNotFound", err)
 		}
-		if _, err := s.Update(ctx, item.Item{ID: "nope", Name: "x"}); !errors.Is(err, item.ErrNotFound) {
+		if _, err := s.Update(ctx, item.Item{ID: "nope", Name: item.MustNewName("x")}); !errors.Is(err, item.ErrNotFound) {
 			t.Errorf("Update error = %v, want ErrNotFound", err)
 		}
 		if err := s.Delete(ctx, "nope"); !errors.Is(err, item.ErrNotFound) {
@@ -121,7 +143,7 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 		var wg sync.WaitGroup
 		for range n {
 			wg.Go(func() {
-				if _, err := s.Create(ctx, item.Item{Name: "x"}); err != nil {
+				if _, err := s.Create(ctx, item.Item{Name: item.MustNewName("x")}); err != nil {
 					t.Errorf("Create: %v", err)
 				}
 			})

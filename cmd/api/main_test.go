@@ -16,6 +16,7 @@ import (
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/httpapi"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
 )
@@ -26,12 +27,12 @@ import (
 // cancels the context and checks for a clean shutdown.
 func TestRun(t *testing.T) {
 	upstreamStore := itemtest.NewMemStore()
-	seeded, err := upstreamStore.Create(t.Context(), item.Item{Name: "from upstream"})
+	seeded, err := upstreamStore.Create(t.Context(), item.Item{Name: item.MustNewName("from upstream")})
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	mux := http.NewServeMux()
-	item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), upstreamStore)
+	httpapi.RegisterRoutes(mux, slog.New(slog.DiscardHandler), upstreamStore)
 	upstream := httptest.NewServer(mux)
 	defer upstream.Close()
 
@@ -64,11 +65,11 @@ func TestRun(t *testing.T) {
 		if resp.Header.Get(httpx.RequestIDHeader) == "" {
 			t.Errorf("response has no %s header", httpx.RequestIDHeader)
 		}
-		var got item.Item
+		var got httpapi.ItemResponse
 		if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		if got.ID != seeded.ID || got.Name != seeded.Name {
+		if got.ID != seeded.ID || got.Name != seeded.Name.String() {
 			t.Errorf("item = %+v, want %+v", got, seeded)
 		}
 	})
@@ -117,8 +118,8 @@ func TestNewFlags(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, err := newFlags(logger, config{FlagsFallbackFile: path})
-		if err == nil || !strings.Contains(err.Error(), item.FlagListTotal) {
-			t.Errorf("newFlags() error = %v, want one naming %q", err, item.FlagListTotal)
+		if err == nil || !strings.Contains(err.Error(), httpapi.FlagListTotal) {
+			t.Errorf("newFlags() error = %v, want one naming %q", err, httpapi.FlagListTotal)
 		}
 	})
 	t.Run("unreadable definitions file is rejected", func(t *testing.T) {
@@ -128,7 +129,7 @@ func TestNewFlags(t *testing.T) {
 	})
 	t.Run("flagd down falls back to the definitions file", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "flags.json")
-		if err := os.WriteFile(path, []byte(`{"flags":{"`+item.FlagListTotal+`":{"variants":{"on":true,"off":false},"defaultVariant":"on"}}}`), 0o600); err != nil {
+		if err := os.WriteFile(path, []byte(`{"flags":{"`+httpapi.FlagListTotal+`":{"variants":{"on":true,"off":false},"defaultVariant":"on"}}}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		u, _ := url.Parse(nettest.DeadURL())
@@ -137,7 +138,7 @@ func TestNewFlags(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !f.Bool(t.Context(), item.FlagListTotal) {
+		if !f.Bool(t.Context(), httpapi.FlagListTotal) {
 			t.Error("Bool() = false, want the definitions-file default (true) when flagd is unreachable")
 		}
 	})

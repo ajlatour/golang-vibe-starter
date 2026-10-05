@@ -137,6 +137,13 @@ Ideas considered but not planned are listed under
 
 ### Changed
 
+- The item code is split along domain-driven lines; the API is unchanged. `internal/item` is now
+  the pure domain (a test keeps HTTP, JSON and logging out of it), with an `item.Name` value
+  object that carries the name rules (trimmed, required, at most 200 characters). The handlers
+  and the API's JSON types moved to `internal/item/httpapi`, and `httpstore` maps the upstream's
+  JSON to domain items through its own wire types. Every Store now refuses an item without a name
+  (`item.CheckStorable`), and upstream data that breaks a domain rule is reported as a 502
+  instead of being passed on.
 - A request with a body sent as anything but `application/json`, or with no `Content-Type`, is now
   refused with 415; before, any body was parsed as JSON whatever its declared type. Clients that
   omit `Content-Type` need to send it.

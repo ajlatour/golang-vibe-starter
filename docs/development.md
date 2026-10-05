@@ -41,16 +41,27 @@ don't, and its message says what to fix.
 | A log field name | A `Key` constant in `internal/logx/keys.go` and the Fields table in `docs/logging.md` | `internal/logx/schema_test.go`; a raw string key fails the build |
 | A feature flag | `flagd/flags.json`, and `featureflag.Declare` in code | The service won't start if a declared flag is missing; `cmd/api/main_test.go` |
 | A header rule or default limit (`headerguard.DefaultPolicy`) | `docs/openapi.json` (the 400, 415 and 431 responses) and the Request headers section of the README | `cmd/api/openapi_test.go` produces each status on every operation; `integration/features/headers.feature` |
+| A domain rule (in `internal/item`, such as what makes a valid `Name`) | `docs/openapi.json` if a limit or message changes | `internal/item/item_test.go`; `internal/item/domain_test.go` fails if the domain imports HTTP, JSON, logging or anything outside an allowlist, or gains struct tags |
 | A store implementation | Nothing: run it through `itemtest.StoreContract` | The same contract `httpstore.Store` and the in-memory fake pass |
 | An environment variable (or its default) | `.env.example` and the Configuration table in the README | `cmd/api/envexample_test.go`: the variables the code reads, the two lists and their defaults must all agree |
 
 Recipes: [adding a log line](logging.md#rules-for-log-lines),
 [adding a flag](feature-flags.md#adding-a-flag), and [adding a scenario](#adding-a-scenario).
 
-The handlers in `internal/item` depend only on the `Store` interface. To add a new backing store,
-implement `Store` (in its own package, like `internal/item/httpstore`) and call
-`itemtest.StoreContract` from its tests: the contract that `httpstore.Store` and the in-memory
-`itemtest.MemStore` both pass.
+`internal/item` is the domain, and it is pure: the `Item` entity, the `Name` value object (the only
+way to make one is `item.NewName`, so a `Name` is always valid), the `Store` interface and the
+domain errors. Everything technical depends on it, never the reverse:
+
+- `internal/item/httpapi` decodes requests into domain values, so the domain's rules decide what
+  is valid (a broken rule is a 422 with the rule's message), and owns the API's JSON types. The
+  JSON shape is defined there and in `docs/openapi.json`, nowhere in the domain.
+- `internal/item/httpstore` translates between the domain and the upstream's own JSON. Upstream
+  data that breaks a domain rule is the upstream's fault: a 502 and a WARN log, never a 422.
+
+The handlers depend only on the `Store` interface. To add a new backing store, implement `Store`
+(in its own package, like `internal/item/httpstore`), refuse items that fail `item.CheckStorable`,
+and call `itemtest.StoreContract` from its tests: the contract that `httpstore.Store` and the
+in-memory `itemtest.MemStore` both pass.
 
 ## Tests
 
@@ -163,3 +174,7 @@ Not planned, but considered:
   context-aware log handler.
 - **Changing the log level at runtime** (`slog.LevelVar` and an admin endpoint).
 - **Log sampling.**
+- **More domain-driven design**: an application-service layer between the handlers and the store,
+  aggregates, domain events, and Gherkin scenarios written in the domain's language rather than
+  HTTP's. With one entity and CRUD rules these would be ceremony; add them when a real domain with
+  workflows replaces `Item`.

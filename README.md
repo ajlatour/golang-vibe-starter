@@ -161,9 +161,11 @@ documentation (the code's doc comments) at http://localhost:6060.
 
 ```
 cmd/api/                 API service: config, wiring, Dockerfile
-internal/item/           Item model, Store interface, /items handlers
-internal/item/httpstore/ The production Store: items on the upstream over HTTP,
-                         and UpstreamError (502/504) when the upstream fails
+internal/item/           The domain: Item, the Name value object and its rules, the
+                         Store interface, domain errors. Pure: no HTTP, JSON or logging
+internal/item/httpapi/   The /items handlers and the API's JSON request and response types
+internal/item/httpstore/ The production Store: items on the upstream over HTTP, with
+                         its own wire types, and UpstreamError (502/504) on failure
 internal/httpx/          HTTP plumbing: graceful Serve, middleware (correlation IDs,
                          request logging), JSON helpers, healthcheck probe
 internal/headerguard/    Screens every request's headers: limits, duplicates, JSON

@@ -15,6 +15,7 @@ import (
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/httpapi"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
 	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
@@ -229,7 +230,7 @@ func TestUpstreamFailureEndToEnd(t *testing.T) {
 	logger := debugLogger(&logs)
 	store := httpstore.New(upstream.URL, upstream.Client(), httpstore.WithLogger(logger))
 	mux := http.NewServeMux()
-	item.RegisterRoutes(mux, logger, store)
+	httpapi.RegisterRoutes(mux, logger, store)
 
 	req := httptest.NewRequest(http.MethodGet, "/items", nil)
 	req.Header.Set(httpx.RequestIDHeader, "corr-9")
@@ -366,7 +367,7 @@ func TestUpstreamFailureStatuses(t *testing.T) {
 			}
 
 			mux := http.NewServeMux()
-			item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), httpstore.New(base, client))
+			httpapi.RegisterRoutes(mux, slog.New(slog.DiscardHandler), httpstore.New(base, client))
 			for _, path := range []string{"/items", "/items/a"} {
 				rec := httptest.NewRecorder()
 				mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
@@ -394,5 +395,54 @@ func decodeBody(t *testing.T, rec *httptest.ResponseRecorder, v any) {
 	}
 	if err := json.NewDecoder(rec.Body).Decode(v); err != nil {
 		t.Fatalf("decode body: %v", err)
+	}
+}
+
+// TestUpstreamDataBreakingTheRules checks the anti-corruption layer: an
+// upstream that sends an item breaking the domain's rules (here, a blank
+// name) is an upstream failure, reported as a 502, and never shows through as
+// the domain's ValidationError, which the handlers would answer with a 422
+// and so blame the client.
+func TestUpstreamDataBreakingTheRules(t *testing.T) {
+	upstream := httptest.NewServer(nettest.Status(http.StatusOK, `{"id":"a","name":"   ","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`))
+	defer upstream.Close()
+
+	var logs logtest.Buffer
+	_, err := httpstore.New(upstream.URL, upstream.Client(), httpstore.WithLogger(debugLogger(&logs))).Get(t.Context(), "a")
+
+	var ue *httpstore.UpstreamError
+	if !errors.As(err, &ue) || ue.HTTPStatus() != http.StatusBadGateway {
+		t.Fatalf("error = %v, want an *UpstreamError mapping to 502", err)
+	}
+	var invalid *item.ValidationError
+	if errors.As(err, &invalid) {
+		t.Errorf("the domain's ValidationError shows through %v; the handlers would answer 422 for the upstream's bad data", err)
+	}
+	if !strings.Contains(logs.String(), "upstream request failed") {
+		t.Errorf("logs = %s, want the bad response logged as a failed upstream request", logs.String())
+	}
+
+	mux := http.NewServeMux()
+	httpapi.RegisterRoutes(mux, slog.New(slog.DiscardHandler), httpstore.New(upstream.URL, upstream.Client()))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/items/a", nil))
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("GET /items/a = %d, want 502 for the upstream's bad data", rec.Code)
+	}
+}
+
+// TestRefusesAnItemWithNoName checks the store refuses an item built without
+// item.NewName before calling the upstream at all.
+func TestRefusesAnItemWithNoName(t *testing.T) {
+	called := false
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true }))
+	defer upstream.Close()
+	_, err := httpstore.New(upstream.URL, upstream.Client()).Create(t.Context(), item.Item{Description: "no name"})
+	var invalid *item.ValidationError
+	if !errors.As(err, &invalid) {
+		t.Errorf("error = %v, want an *item.ValidationError", err)
+	}
+	if called {
+		t.Error("the upstream was called with an invalid item")
 	}
 }

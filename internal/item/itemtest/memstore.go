@@ -52,6 +52,9 @@ func (s *MemStore) Get(_ context.Context, id string) (item.Item, error) {
 }
 
 func (s *MemStore) Create(_ context.Context, it item.Item) (item.Item, error) {
+	if err := item.CheckStorable(it); err != nil {
+		return item.Item{}, err
+	}
 	now := s.now().UTC()
 	it.ID = rand.Text()
 	it.CreatedAt = now
@@ -64,6 +67,9 @@ func (s *MemStore) Create(_ context.Context, it item.Item) (item.Item, error) {
 }
 
 func (s *MemStore) Update(_ context.Context, it item.Item) (item.Item, error) {
+	if err := item.CheckStorable(it); err != nil {
+		return item.Item{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cur, ok := s.items[it.ID]

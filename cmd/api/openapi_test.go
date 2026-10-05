@@ -23,6 +23,7 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/httpapi"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
@@ -182,7 +183,7 @@ func TestOpenAPIRoutesMatchCode(t *testing.T) {
 	}
 }
 
-// fixedFlags is an item.Flags with one answer for every flag.
+// fixedFlags is an httpapi.Flags with one answer for every flag.
 type fixedFlags bool
 
 func (f fixedFlags) Bool(context.Context, string) bool { return bool(f) }
@@ -221,11 +222,11 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 	switch env {
 	case "ok", "flagOn":
 		store := itemtest.NewMemStore()
-		seeded, err := store.Create(t.Context(), item.Item{Name: "seeded", Description: "first"})
+		seeded, err := store.Create(t.Context(), item.Item{Name: item.MustNewName("seeded"), Description: "first"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		return newHandler(logger, headerguard.DefaultPolicy(), store, item.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID
+		return newHandler(logger, headerguard.DefaultPolicy(), store, httpapi.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID
 	case "internal":
 		return newHandler(logger, headerguard.DefaultPolicy(), errStore{}), ""
 	case "badgw":
@@ -498,9 +499,10 @@ func TestOpenAPIMatchesBehavior(t *testing.T) {
 	}
 }
 
-// TestOpenAPIItemSchemaMatchesStruct fails if the Item schema and item.Item
-// disagree about which fields exist and which are always present, and checks
-// the input limits the spec states against the constants the code enforces.
+// TestOpenAPIItemSchemaMatchesStruct fails if the Item schema and
+// httpapi.ItemResponse (the API's JSON for an item) disagree about which
+// fields exist and which are always present, and checks the input limits the
+// spec states against the constants the code enforces.
 func TestOpenAPIItemSchemaMatchesStruct(t *testing.T) {
 	s := loadSpec(t)
 
@@ -510,13 +512,13 @@ func TestOpenAPIItemSchemaMatchesStruct(t *testing.T) {
 	for _, r := range schema["required"].([]any) {
 		required[r.(string)] = true
 	}
-	typ := reflect.TypeOf(item.Item{})
+	typ := reflect.TypeOf(httpapi.ItemResponse{})
 	fields := map[string]bool{}
 	for i := range typ.NumField() {
 		name, opts, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
 		fields[name] = true
 		if _, ok := props[name]; !ok {
-			t.Errorf("item.Item has JSON field %q, which the Item schema doesn't describe", name)
+			t.Errorf("httpapi.ItemResponse has JSON field %q, which the Item schema doesn't describe", name)
 		}
 		if always := !strings.Contains(opts, "omitempty"); always != required[name] {
 			t.Errorf("field %q: always present in Go = %v, required in the spec = %v", name, always, required[name])
@@ -524,7 +526,7 @@ func TestOpenAPIItemSchemaMatchesStruct(t *testing.T) {
 	}
 	for name := range props {
 		if !fields[name] {
-			t.Errorf("the Item schema describes %q, which item.Item doesn't have", name)
+			t.Errorf("the Item schema describes %q, which httpapi.ItemResponse doesn't have", name)
 		}
 	}
 

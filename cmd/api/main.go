@@ -16,6 +16,7 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/httpapi"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
@@ -79,14 +80,14 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		return err
 	}
 
-	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, newHandler(logger, cfg.HeaderGuard, store, item.WithFlags(evaluator)))
+	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, newHandler(logger, cfg.HeaderGuard, store, httpapi.WithFlags(evaluator)))
 }
 
 // newFlags returns the feature flag evaluator: flagd when FLAGS_URL is set,
 // otherwise the flag definitions' default values alone. Either way every flag
 // the application declares must be defined there, because those defaults are
 // what evaluation falls back to when flagd can't answer.
-func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
+func newFlags(logger *slog.Logger, cfg config) (httpapi.Flags, error) {
 	defaults, err := featureflag.LoadDefaults(cfg.FlagsFallbackFile)
 	if err != nil {
 		return nil, err
@@ -106,10 +107,10 @@ func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
 // newHandler builds the API's root handler: routes, the header guard, and
 // the standard middleware around them. The guard sits inside the middleware,
 // so a request it rejects still gets a correlation ID and its log lines.
-func newHandler(logger *slog.Logger, guard headerguard.Policy, items item.Store, opts ...item.Option) http.Handler {
+func newHandler(logger *slog.Logger, guard headerguard.Policy, items item.Store, opts ...httpapi.Option) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+httpx.HealthzPath, httpx.Healthz)
-	item.RegisterRoutes(mux, logger, items, opts...)
+	httpapi.RegisterRoutes(mux, logger, items, opts...)
 
 	return httpx.Middleware(logger, headerguard.Middleware(logger, guard, mux))
 }

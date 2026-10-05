@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/httpapi"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 )
@@ -25,7 +26,7 @@ func TestStoreContract(t *testing.T) {
 func newUpstream(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
-	item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), itemtest.NewMemStore())
+	httpapi.RegisterRoutes(mux, slog.New(slog.DiscardHandler), itemtest.NewMemStore())
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv

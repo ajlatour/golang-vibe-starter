@@ -63,44 +63,92 @@ func New(baseURL string, client *http.Client, opts ...Option) *Store {
 
 func (s *Store) List(ctx context.Context) ([]item.Item, error) {
 	var out struct {
-		Items []item.Item `json:"items"`
+		Items []wireItem `json:"items"`
 	}
-	if err := s.do(ctx, http.MethodGet, "/items", nil, http.StatusOK, &out); err != nil {
+	var items []item.Item
+	err := s.do(ctx, http.MethodGet, "/items", nil, http.StatusOK, &out, func() error {
+		items = make([]item.Item, 0, len(out.Items))
+		for _, w := range out.Items {
+			it, err := w.toDomain()
+			if err != nil {
+				return err
+			}
+			items = append(items, it)
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-	if out.Items == nil {
-		out.Items = []item.Item{}
-	}
-	return out.Items, nil
+	return items, nil
 }
 
 func (s *Store) Get(ctx context.Context, id string) (item.Item, error) {
-	var it item.Item
-	err := s.do(ctx, http.MethodGet, itemPath(id), nil, http.StatusOK, &it)
-	return it, err
+	return s.doItem(ctx, http.MethodGet, itemPath(id), nil, http.StatusOK)
 }
 
 func (s *Store) Create(ctx context.Context, it item.Item) (item.Item, error) {
-	var out item.Item
-	err := s.do(ctx, http.MethodPost, "/items", itemInput{Name: it.Name, Description: it.Description}, http.StatusCreated, &out)
-	return out, err
+	if err := item.CheckStorable(it); err != nil {
+		return item.Item{}, err
+	}
+	return s.doItem(ctx, http.MethodPost, "/items", toWireInput(it), http.StatusCreated)
 }
 
 func (s *Store) Update(ctx context.Context, it item.Item) (item.Item, error) {
-	var out item.Item
-	err := s.do(ctx, http.MethodPut, itemPath(it.ID), itemInput{Name: it.Name, Description: it.Description}, http.StatusOK, &out)
-	return out, err
+	if err := item.CheckStorable(it); err != nil {
+		return item.Item{}, err
+	}
+	return s.doItem(ctx, http.MethodPut, itemPath(it.ID), toWireInput(it), http.StatusOK)
 }
 
 func (s *Store) Delete(ctx context.Context, id string) error {
-	return s.do(ctx, http.MethodDelete, itemPath(id), nil, http.StatusNoContent, nil)
+	return s.do(ctx, http.MethodDelete, itemPath(id), nil, http.StatusNoContent, nil, nil)
 }
 
-// itemInput is the request body sent upstream to create or replace an item:
-// the same shape the API's own handlers accept.
-type itemInput struct {
+// doItem makes a call whose response is one item, and turns it into a domain
+// Item.
+func (s *Store) doItem(ctx context.Context, method, path string, body any, want int) (item.Item, error) {
+	var w wireItem
+	var it item.Item
+	err := s.do(ctx, method, path, body, want, &w, func() (err error) {
+		it, err = w.toDomain()
+		return err
+	})
+	return it, err
+}
+
+// The upstream's wire format. It happens to match the API's own JSON today,
+// but it is the upstream's contract, so it has its own types: a change on
+// either side is made in one place, and the upstream's data is checked
+// against the domain's rules on the way in.
+
+// wireItem is an item as the upstream sends it.
+type wireItem struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// toDomain turns the upstream's item into a domain Item, holding it to the
+// domain's rules: an upstream that sends a blank name has sent bad data.
+func (w wireItem) toDomain() (item.Item, error) {
+	name, err := item.NewName(w.Name)
+	if err != nil {
+		return item.Item{}, err
+	}
+	return item.Item{ID: w.ID, Name: name, Description: w.Description, CreatedAt: w.CreatedAt, UpdatedAt: w.UpdatedAt}, nil
+}
+
+// wireInput is the request body sent upstream to create or replace an item.
+type wireInput struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+}
+
+func toWireInput(it item.Item) wireInput {
+	return wireInput{Name: it.Name.String(), Description: it.Description}
 }
 
 func itemPath(id string) string {
@@ -108,19 +156,29 @@ func itemPath(id string) string {
 }
 
 // do sends a request with an optional JSON body and decodes a JSON response
-// into out (if non-nil). A JSON 404 becomes item.ErrNotFound; any other status
-// than want is an *UpstreamError that includes the upstream's error message.
+// into out (if non-nil), then calls toDomain (if non-nil) to turn it into
+// domain values. A JSON 404 becomes item.ErrNotFound; any other status than
+// want, or a response toDomain refuses, is an *UpstreamError.
 //
 // Each call logs up to three lines: "upstream request sent" before it goes
 // out; "upstream response received" once a response has arrived, whatever its
 // status; and, if the call failed, one more line saying so (see
 // WithLogger). Never headers or bodies.
-func (s *Store) do(ctx context.Context, method, path string, body any, want int, out any) error {
+func (s *Store) do(ctx context.Context, method, path string, body any, want int, out any, toDomain func() error) error {
 	call := method + " " + logx.Truncate(path, logx.MaxLoggedPath)
 	s.logger.LogAttrs(ctx, slog.LevelInfo, "upstream request sent", slog.String(logx.KeyUpstream, call))
 
 	start := time.Now()
 	status, err := s.roundTrip(ctx, method, path, body, want, out)
+	if err == nil && toDomain != nil {
+		if derr := toDomain(); derr != nil {
+			// The upstream's data breaks the domain's rules: an upstream
+			// failure (502), not the client's. %v, not %w, so the domain's
+			// ValidationError (which the handlers answer with 422) doesn't
+			// show through.
+			err = fmt.Errorf("upstream %s: response breaks the item rules: %v", call, derr)
+		}
+	}
 	elapsed := time.Since(start)
 	attrs := upstreamAttrs(call, status, elapsed)
 
