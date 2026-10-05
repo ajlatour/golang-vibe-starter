@@ -3,7 +3,7 @@
 # k6 in Docker on the stack's network. `make perf PROFILE=<name>` starts the
 # stack and calls this; see docs/performance.md.
 #
-#   sh perf/run.sh <profile>
+#   sh perf/run.sh <profile> [summary file name]
 #
 # k6 prints its summary, with each threshold marked as passed or crossed, and
 # the summary is also saved as JSON in bin/perf/. The exit status is k6's: 0
@@ -15,7 +15,7 @@ set -eu
 profile=${1:?usage: run.sh <profile>}
 out=bin/perf
 mkdir -p "$out"
-summary="$profile-$(date +%Y%m%d-%H%M%S).json"
+summary=${2:-$profile-$(date +%Y%m%d-%H%M%S).json}
 
 # informational reports whether the profile has "informational": true: the
 # text of its object, from its key to the matching closing brace, is checked

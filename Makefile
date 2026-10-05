@@ -22,12 +22,14 @@ FLAGD_URL    ?= http://localhost:8016
 PPROF_URL    ?= http://localhost:6061
 
 # Performance tests. PROFILE picks the k6 profile (perf/profiles.json) for
-# make perf and perf-profile, which have their own defaults. For the
-# benchmarks: how many runs (benchstat wants several), and which commit
-# bench-compare measures against.
+# make perf and perf-profile, which have their own defaults. The comparisons
+# measure the working tree against BENCH_BASE, interleaving BENCH_COUNT
+# benchmark rounds (benchstat wants at least 6) and LOAD_ROUNDS k6 runs.
 BENCH_COUNT ?= 6
+LOAD_ROUNDS ?= 2
 BENCH_BASE  ?= main
 BENCH_OUT   := bin/bench
+LOAD_OUT    := bin/perf/compare
 BENCHSTAT   := go run golang.org/x/perf/cmd/benchstat@v0.0.0-20260929162123-406019bb8b68
 
 # The fault stubs that `make fault` can switch on.
@@ -46,7 +48,7 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
 	live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint \
-	perf perf-profile bench bench-compare
+	perf perf-profile bench bench-compare load-compare perf-compare
 
 ##@ Help
 
@@ -90,6 +92,7 @@ fault-reset: ## Switch off every fault (back to the mounted stubs)
 
 test: ## Unit tests (no Docker)
 	go test ./...
+	go test -C perf/report ./...
 
 fmt: ## Format the code
 	gofmt -w .
@@ -98,12 +101,14 @@ fmt-check: ## Fail if any file needs gofmt
 	@unformatted="$$(gofmt -l .)"; \
 	if [ -n "$$unformatted" ]; then echo "These files need gofmt (run make fmt):"; echo "$$unformatted"; exit 1; fi
 
-vet: ## go vet, for the service and the integration module
+vet: ## go vet, for the service and the integration and perf report modules
 	go vet ./...
 	go vet -C integration ./...
+	go vet -C perf/report ./...
 
 test-race: ## Unit tests with the race detector
 	go test -race ./...
+	go test -C perf/report -race ./...
 
 check: fmt-check vet test-race ## Everything CI's fast job runs
 
@@ -145,13 +150,21 @@ bench: ## Run the Go benchmarks, BENCH_COUNT times each, into bin/bench/current.
 	@mkdir -p $(BENCH_OUT)
 	go test -run '^$$' -bench . -benchmem -count $(BENCH_COUNT) ./... | tee $(BENCH_OUT)/current.txt
 
-bench-compare: bench ## Compare the benchmarks with BENCH_BASE (default main) using benchstat
-	rm -rf $(BENCH_OUT)/base-src
-	git worktree add --detach $(BENCH_OUT)/base-src $(BENCH_BASE)
-	@# Benchmarks that don't exist at the base just have no comparison.
-	(cd $(BENCH_OUT)/base-src && go test -run '^$$' -bench . -benchmem -count $(BENCH_COUNT) ./...) > $(BENCH_OUT)/base.txt || true
-	git worktree remove --force $(BENCH_OUT)/base-src
-	$(BENCHSTAT) base=$(BENCH_OUT)/base.txt current=$(BENCH_OUT)/current.txt | tee $(BENCH_OUT)/compare.txt
+bench-compare: ## Run the benchmarks here and at BENCH_BASE (default main), interleaved, and compare them
+	sh perf/bench-ab.sh $(BENCH_BASE) $(BENCH_COUNT) $(BENCH_OUT)
+	$(BENCHSTAT) base=$(BENCH_OUT)/base.txt head=$(BENCH_OUT)/head.txt | tee $(BENCH_OUT)/compare.txt
+
+load-compare: ## Run the k6 smoke profile against this tree and BENCH_BASE, interleaved
+	$(COMPOSE) up -d --wait mock flagd
+	sh perf/load-ab.sh $(BENCH_BASE) $(LOAD_ROUNDS) $(LOAD_OUT) $(or $(PROFILE),smoke)
+
+perf-compare: ## Both comparisons, written up as the pull request comment CI posts: bin/perf/report.md
+	$(MAKE) bench-compare
+	@status=0; $(MAKE) load-compare || status=$$?; \
+	go run -C perf/report . -base-name $(BENCH_BASE) \
+		-bench-base ../../$(BENCH_OUT)/base.txt -bench-head ../../$(BENCH_OUT)/head.txt \
+		-load ../../$(LOAD_OUT) $$([ $$status -ne 0 ] && echo -load-failed) > bin/perf/report.md || status=$$?; \
+	echo "The report is in bin/perf/report.md"; exit $$status
 
 ##@ Documentation (rendered in Docker; nothing to install)
 

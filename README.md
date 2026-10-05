@@ -52,7 +52,7 @@ make test           # unit tests: fast, no Docker
 make check          # what CI's fast job runs: gofmt, vet and the race-enabled unit tests
 make integration    # starts the stack, runs the integration tests, stops the stack
 make perf PROFILE=load   # k6 load test against the stack; see docs/performance.md
-make bench-compare  # Go benchmarks, compared with main
+make perf-compare   # benchmarks and a load test against main: the report CI posts on a pull request
 ```
 
 CI runs these same targets on every push to `main` and every pull request.

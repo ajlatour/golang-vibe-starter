@@ -21,8 +21,12 @@ Ideas considered but not planned are listed under
   - `PPROF_ADDR` serves the runtime profiles (pprof) on a listener of its own; off by default.
     The compose stack sets it, published on `127.0.0.1:6061`. `make perf-profile` captures CPU,
     heap, allocation and goroutine profiles during and after a load run.
-  - CI runs the smoke profile and a benchmark comparison against the base branch on every pull
-    request. Neither fails on numbers alone.
+  - Every pull request gets a performance report from the new Performance workflow, kept in one
+    comment edited on each push: the benchmarks and the k6 smoke profile, run against the pull
+    request and its base interleaved on one runner, compared with benchstat's statistics
+    (`perf/report`). It fails only on more allocations per operation (unless the pull request has
+    the `perf-ok` label) or crossed load thresholds; timing changes are reported, never failed
+    on. `make perf-compare` writes the same report locally.
 - `scripts/api`, for calling the API by hand: `scripts/api POST /items '{"name": "Sprocket"}'`.
   It wraps curl, adding `Content-Type: application/json` to a body (from the argument, a file or
   stdin) and an optional `CORRELATION_ID`, prints the status and correlation ID, pretty-prints

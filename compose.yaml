@@ -8,6 +8,9 @@ name: golang-vibe-starter
 
 services:
   api:
+    # The image `up --build` builds, or with --no-build, an image built
+    # elsewhere: perf/load-ab.sh runs two versions of the API this way.
+    image: ${API_IMAGE:-golang-vibe-starter-api}
     build:
       context: .
       dockerfile: cmd/api/Dockerfile

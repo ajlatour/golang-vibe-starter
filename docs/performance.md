@@ -11,7 +11,9 @@ Three tools, from the cheapest to the most realistic:
 | Command | What it does |
 | ------- | ------------ |
 | `make bench` | Runs the Go benchmarks, 6 times each, into `bin/bench/current.txt` |
-| `make bench-compare` | The same, plus on `main` (`BENCH_BASE=<ref>` for another), compared with benchstat |
+| `make bench-compare` | Runs them here and on `main` (`BENCH_BASE=<ref>` for another), interleaved, and compares them with benchstat |
+| `make load-compare` | Runs the k6 smoke profile against this tree and `main`, interleaved |
+| `make perf-compare` | Both, written up as the comment CI posts on a pull request: `bin/perf/report.md` |
 | `make perf PROFILE=<name>` | Starts the stack and runs a k6 profile (default `smoke`) |
 | `make perf-profile PROFILE=<name>` | Runs a k6 profile (default `load`) and captures pprof profiles during and after it |
 
@@ -26,8 +28,8 @@ Nothing to install beyond Go and Docker: k6 runs from its image, and benchstat t
 | `internal/headerguard` `BenchmarkMiddleware` | Screening a typical request's headers, and stripping a proxy header |
 | `internal/logx` `BenchmarkLogLine` | One request-scoped log line in JSON and text, and one below the level |
 
-`make bench-compare` checks out the base in a temporary worktree, runs the same benchmarks there,
-and prints benchstat's table: time, bytes and allocations per operation, with the change and
+`make bench-compare` checks out the base in a temporary worktree and runs both versions'
+benchmarks in alternating rounds, then prints benchstat's table: time, bytes and allocations per operation, with the change and
 whether it is statistically significant (`~` means it isn't). Benchmarks need a quiet machine:
 close what you can, and plug in a laptop. Allocations per operation don't depend on the machine,
 so a change in them is real wherever it shows up.
@@ -45,7 +47,7 @@ ramp from a lower rate) and thresholds. A threshold can apply to one phase, writ
 
 | Profile | Shape | Passes when |
 | ------- | ----- | ----------- |
-| `smoke` | 30s at 50 req/s | No errors to speak of, p99 under 500ms. CI runs it on every pull request |
+| `smoke` | 30s at 50 req/s | No errors to speak of, p99 under 500ms. Every pull request runs it, against itself and its base |
 | `load` | 30s ramp, then 3 minutes at 200 req/s | p99 under 25ms, p99.9 under 100ms, under 0.1% errors |
 | `stress` | Steps of 1 minute at 500, 1000, 2000, 4000 and 8000 req/s | Always: see below |
 | `spike` | 100 req/s, 30s at 2000 req/s, then 100 req/s again | Under 1% errors in the spike, and back within budget in the recovery phase |
@@ -114,13 +116,38 @@ The block and mutex profiles are served but empty: they need sampling switched o
 (`runtime.SetBlockProfileRate`, `runtime.SetMutexProfileFraction`), which costs throughput. Turn
 them on locally when chasing contention.
 
-## In CI
+## Pull request reports
 
-Two jobs run on every pull request, and neither fails on numbers alone, because shared runners
-vary too much from run to run:
+Every pull request gets a performance comparison with its base branch, from the Performance
+workflow (`.github/workflows/perf.yml`), kept in a single comment that's edited on every push. Its
+edit history shows how the numbers moved across pushes.
 
-- **load-smoke** runs the `smoke` profile against the stack. It fails on errors or an absurd p99:
-  a broken or deadlocked service.
-- **bench** runs `make bench-compare` against the pull request's base branch and writes the
-  benchstat table to the job's summary page. It fails only if a benchmark can't run. Read the
-  allocation columns first: they're exact.
+**How it's measured.** Shared CI runners differ from one another by 10% or more, so absolute numbers
+from them mean little. The workflow measures both versions on the same runner, interleaved: the
+benchmarks in 8 rounds of base then PR, or PR then base (`perf/bench-ab.sh`), and the k6 smoke
+profile in 2 rounds against an API image built from each (`perf/load-ab.sh`), after a warm-up run
+that's thrown away. Whatever slows the runner meanwhile lands on both versions alike.
+
+**What the comment shows.** First the verdict, then the changes that matter, then the load test's
+latency and errors for each version. Every benchmark is in a collapsed table, with full benchstat
+output and k6's output in the run, which the comment links to.
+
+| Change | Effect |
+| ------ | ------ |
+| More allocations per operation on any benchmark | ❌ **Fails the check.** Allocation counts are exact, the same on every run and machine, so any increase is a real change. If it's intended, add the `perf-ok` label to the pull request; the workflow reruns and accepts it |
+| The load test crosses the smoke profile's thresholds | ❌ **Fails the check.** Errors, or a p99 far over budget: the service is broken. No label accepts this |
+| Time per operation up more than 15%, or bytes per operation up more than 10%, and statistically significant | ⚠️ Reported, never failed on |
+| p99 under load up more than 25% and more than 1ms | ⚠️ Reported, never failed on |
+| Anything smaller, or not significant (`~`) | Shown in the full table only |
+
+A ⚠️ on a shared runner is a lead, not a verdict: confirm it on a quiet machine with
+`make perf-compare`, which runs the same comparison against `main` (`BENCH_BASE=<ref>` for another)
+and writes the same report to `bin/perf/report.md`. It takes about 6 minutes; `make bench-compare`
+and `make load-compare` run its two halves.
+
+A pull request from a fork gets a read-only token, so it can't be commented on; its report is in
+the workflow run's summary instead.
+
+The report is written by `perf/report`, a small Go module of its own (like `integration/`, so the
+service stays standard library only). It uses benchstat's statistics library, so it agrees with
+`make bench-compare`.
