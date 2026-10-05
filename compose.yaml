@@ -112,7 +112,7 @@ services:
   flagd:
     # OpenFeature sidecar. The API evaluates flags over OFREP (HTTP, port
     # 8016); no OpenFeature SDK or gRPC dependency is needed.
-    image: ghcr.io/open-feature/flagd:v0.12.9@sha256:e6cca86b29629a06806aa7954b4a9b5f291c30839c6ae4f815dc4ddcee4a0746
+    image: ghcr.io/open-feature/flagd:v0.17.0@sha256:c9f21380dfe51d3ad662a116bc350c7692dead7a8d1e640aa0f6b40cd3d966df
     ports:
       - "127.0.0.1:8016:8016"
     volumes:
