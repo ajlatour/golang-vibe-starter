@@ -77,11 +77,12 @@ func TestRunWithAPIKeys(t *testing.T) {
 		// Authentication hands the router a copy of the request; the route
 		// it matched must still reach the outer "response sent" line.
 		if rec["msg"] == "response sent" && rec["path"] == "/items" && rec["status"] == float64(http.StatusBadGateway) {
-			routed = rec["route"] == "GET /items"
+			// ...and so must the name of the key that made it.
+			routed = rec["route"] == "GET /items" && rec["api_key"] == "reader"
 		}
 	}
 	if !routed {
-		t.Errorf("the authenticated request's response sent line doesn't name its route:\n%s", logs)
+		t.Errorf("the authenticated request's response sent line doesn't name its route and key:\n%s", logs)
 	}
 	if !found {
 		t.Errorf("no startup line naming the keys:\n%s", logs)

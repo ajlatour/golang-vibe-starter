@@ -104,12 +104,12 @@ duration of each route. A route is the pattern a request matched, `none` for one
 routing (refused by the header guard, authentication or the limits), and an unusual method counts
 as `OTHER`, so no request can create series at will. Recording a request allocates nothing.
 
-**The API's runtime metrics.** The same `/metrics` also has every scalar measurement in Go's `runtime/metrics` (goroutines, heap, allocations, GC cycles, CPU
-spent in GC, and more), with the process's CPU time and, on Linux, its resident memory. They're
-in Prometheus's text format, written with the standard library alone
-(`internal/profiling/metrics.go`) and named as the Prometheus Go client names them, so
-`go_sched_goroutines_goroutines` or `go_gc_heap_allocs_bytes_total`. Read them with curl while the
-stack runs:
+**The API's runtime metrics.** The same `/metrics` also has every scalar measurement in Go's
+`runtime/metrics` (goroutines, heap, allocations, GC cycles, CPU spent in GC, and more), with the
+process's CPU time and, on Linux, its resident memory. They're in Prometheus's text format, written
+with the standard library alone (`internal/profiling/metrics.go`) and named as the Prometheus Go
+client names them, so `go_sched_goroutines_goroutines` or `go_gc_heap_allocs_bytes_total`. Read them
+with curl while the stack runs:
 
 ```sh
 curl -s localhost:6061/metrics | grep -E '^(go_sched_goroutines_goroutines|go_memory_classes_heap_objects_bytes|process_cpu_seconds_total) '

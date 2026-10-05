@@ -9,6 +9,7 @@ import (
 
 	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
 	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
 const (
@@ -162,5 +163,36 @@ func TestGenerate(t *testing.T) {
 	}
 	if other, _, _ := apikey.Generate("ci", apikey.Write); other == key {
 		t.Error("two generated keys are the same")
+	}
+}
+
+// TestKeyNameOnLaterLogLines checks an authenticated request's later log
+// lines, including those written outside the middleware, name its key.
+func TestKeyNameOnLaterLogLines(t *testing.T) {
+	var logs logtest.Buffer
+	logger := slog.New(logx.NewContextHandler(logs.Handler(slog.LevelDebug)))
+	inner := apikey.Middleware(logger, policy(t), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logger.InfoContext(r.Context(), "inside")
+	}))
+	outer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(logx.WithRequestID(r.Context(), "req-1"))
+		inner.ServeHTTP(w, r)
+		logger.InfoContext(r.Context(), "outside, afterwards")
+	})
+	req := httptest.NewRequest("GET", "/items", nil)
+	req.Header.Set("Authorization", "Bearer "+readKey)
+	outer.ServeHTTP(httptest.NewRecorder(), req)
+
+	recs := logs.Records(t)
+	if len(recs) != 2 {
+		t.Fatalf("logs = %v, want two lines", recs)
+	}
+	for _, r := range recs {
+		if r["api_key"] != "dash" || r["request_id"] != "req-1" {
+			t.Errorf("%q: api_key %v, request_id %v; want dash and req-1", r["msg"], r["api_key"], r["request_id"])
+		}
+	}
+	if strings.Contains(logs.String(), readKey) {
+		t.Error("the key itself was logged")
 	}
 }

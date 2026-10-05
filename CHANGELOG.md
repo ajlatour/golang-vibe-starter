@@ -54,6 +54,8 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Every log line of a request made with an API key names the key (`api_key`, never the key
+  itself), `response sent` included, so the logs say which client did what.
 - Request metrics on `/metrics` (`internal/httpmetrics`, standard library only):
   `http_requests_total` and the `http_request_duration_seconds` histogram by route pattern, method
   and status, and `http_requests_in_flight`. Labels are bounded (the matched pattern, `none`
