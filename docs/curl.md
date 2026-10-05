@@ -55,6 +55,9 @@ scripts/api GET /items/widget
 
 scripts/api GET /healthz
 # 200 OK
+
+scripts/api GET /readyz
+# 200 OK
 ```
 
 For example:

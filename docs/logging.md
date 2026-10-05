@@ -104,6 +104,8 @@ upstream, comes back, and leaves the API.
 | `feature flags: no FLAGS_URL, using default values only` | INFO | none | Startup, with `FLAGS_URL` unset. |
 | `server started` | INFO | `addr` | The server is listening. |
 | `shutting down` | INFO | `timeout` | A shutdown signal arrived. |
+| `not ready` | WARN | `reason` | `/readyz` started answering 503: `shutting down`, or a check failed (`upstream unavailable`, with `error`). Logged once per change, not per probe. |
+| `ready again` | INFO | none | A failing readiness check passes again. |
 | `server stopped` | INFO | none | Shutdown finished cleanly. |
 | `profiling server started` | INFO | `addr` | Startup, with `PPROF_ADDR` set: the runtime profiles are served there. |
 | `profiling server is reachable beyond this machine; keep its port private` | WARN | `addr` | Startup, with `PPROF_ADDR` on an address other machines can reach. Expected inside a container whose port is published privately, as in the compose stack; anywhere else, a mistake. |

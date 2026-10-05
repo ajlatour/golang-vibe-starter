@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
 	"github.com/ajlatour/golang-vibe-starter/internal/featureflag"
@@ -99,8 +101,13 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		go profiling.Serve(ctx, logger, ln)
 	}
 
-	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, newHandler(logger, cfg.HeaderGuard, cfg.Auth, cfg.Limits, store, item.WithFlags(evaluator)),
-		httpx.MaxHeaderBytes(serverHeaderLimit(cfg.HeaderGuard)))
+	// Ready while this instance can reach the upstream, until shutdown.
+	readiness := httpx.NewReadiness(logger, time.Second, time.Second, httpx.Check{Name: "upstream", Fn: store.Reachable})
+	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness},
+		store, item.WithFlags(evaluator))
+	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, handler,
+		httpx.MaxHeaderBytes(serverHeaderLimit(cfg.HeaderGuard)),
+		httpx.OnShutdown(readiness.Stopping), httpx.ShutdownDelay(cfg.ShutdownDelay))
 }
 
 // newFlags returns the feature flag evaluator: flagd when FLAGS_URL is set,
@@ -124,6 +131,15 @@ func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
 	return featureflag.NewOFREP(cfg.FlagsURL.String(), &http.Client{Timeout: cfg.FlagsTimeout}, logger, defaults), nil
 }
 
+// handlerConfig is everything newHandler puts in front of the routes.
+type handlerConfig struct {
+	Guard  headerguard.Policy
+	Auth   apikey.Policy
+	Limits limit.Policy
+	// Readiness answers /readyz. Nil reports ready, always.
+	Readiness *httpx.Readiness
+}
+
 // newHandler builds the API's root handler. From the outside in: the standard
 // middleware (correlation ID, logging), the cap on requests in flight, the
 // header guard, authentication, the per-client rate limit, and the routes.
@@ -131,14 +147,24 @@ func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
 // the guard runs before authentication, so a doubled Authorization header is
 // refused before either copy is read; the rate limit comes after it, so a
 // client is its key. All sit inside the middleware, so a request they refuse
-// still gets a correlation ID and its log lines.
-func newHandler(logger *slog.Logger, guard headerguard.Policy, auth apikey.Policy, limits limit.Policy, items item.Store, opts ...item.Option) http.Handler {
+// still gets a correlation ID and its log lines. The probes, /healthz and
+// /readyz, are exempt from authentication and the limits.
+func newHandler(logger *slog.Logger, cfg handlerConfig, items item.Store, opts ...item.Option) http.Handler {
+	readiness := cfg.Readiness
+	if readiness == nil {
+		readiness = httpx.NewReadiness(logger, time.Second, time.Second)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+httpx.HealthzPath, httpx.Healthz)
+	mux.Handle("GET "+httpx.ReadyzPath, readiness)
 	item.RegisterRoutes(mux, logger, items, opts...)
 
+	probes := []string{httpx.HealthzPath, httpx.ReadyzPath}
+	auth, limits := cfg.Auth, cfg.Limits
+	auth.Exempt = append(slices.Clip(auth.Exempt), probes...)
+	limits.Exempt = append(slices.Clip(limits.Exempt), probes...)
 	return httpx.Middleware(logger, limit.InFlight(limits,
-		headerguard.Middleware(logger, guard, apikey.Middleware(logger, auth, limit.PerClient(limits, mux)))))
+		headerguard.Middleware(logger, cfg.Guard, apikey.Middleware(logger, auth, limit.PerClient(limits, mux)))))
 }
 
 // serverHeaderLimit is how much of a request's line and headers Go's server

@@ -10,7 +10,6 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
 	"github.com/ajlatour/golang-vibe-starter/internal/envconfig"
 	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
-	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/limit"
 )
 
@@ -46,6 +45,11 @@ type config struct {
 
 	// Limits caps requests in flight, and each client's rate.
 	Limits limit.Policy
+
+	// ShutdownDelay is how long the service keeps serving after a shutdown
+	// signal, reporting not ready, before it stops accepting connections:
+	// time for a load balancer to stop sending it requests.
+	ShutdownDelay time.Duration
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
@@ -81,24 +85,23 @@ func loadConfig(getenv func(string) string) (config, error) {
 	cfg.HeaderGuard = guard
 
 	// Authentication: on, with every request needing a key, unless told
-	// otherwise. The healthcheck never needs one, so the container's own
-	// probe works.
+	// otherwise. (newHandler exempts the probes, /healthz and /readyz.)
 	cfg.Auth = apikey.Policy{
 		Off:       envconfig.Optional(env, "API_AUTH", false, parseAuthOff),
 		OpenReads: envconfig.Optional(env, "API_AUTH_READS", false, parseOpenReads),
 		Keys:      envconfig.Optional(env, "API_KEYS", nil, apikey.ParseKeys),
-		Exempt:    []string{httpx.HealthzPath},
 	}
 
 	// Limits: on by default, generous enough that a well-behaved client never
-	// meets them. The healthcheck is exempt, so a busy service isn't also
-	// restarted by its own probe.
+	// meets them. (newHandler exempts the probes, so a busy service isn't
+	// also restarted, or taken out of service, by its own probes.)
 	cfg.Limits = limit.Policy{
 		MaxInFlight: envconfig.Optional(env, "MAX_IN_FLIGHT", 512, strconv.Atoi),
 		Rate:        envconfig.Optional(env, "RATE_LIMIT", 100.0, parseRate),
 		Burst:       envconfig.Optional(env, "RATE_BURST", 200, strconv.Atoi),
-		Exempt:      []string{httpx.HealthzPath},
 	}
+
+	cfg.ShutdownDelay = envconfig.Optional(env, "SHUTDOWN_DELAY", 0, parseNonNegativeDuration)
 
 	errs := []error{srvErr, env.Err()}
 	if err := cfg.Limits.Validate(); err != nil && env.Err() == nil {
@@ -154,4 +157,13 @@ func parseOpenReads(v string) (bool, error) {
 // parseRate reads RATE_LIMIT: requests per second, 0 for no limit.
 func parseRate(v string) (float64, error) {
 	return strconv.ParseFloat(v, 64)
+}
+
+// parseNonNegativeDuration reads a duration that may be zero.
+func parseNonNegativeDuration(v string) (time.Duration, error) {
+	d, err := time.ParseDuration(v)
+	if err == nil && d < 0 {
+		err = fmt.Errorf("must not be negative, got %s", v)
+	}
+	return d, err
 }

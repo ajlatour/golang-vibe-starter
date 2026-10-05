@@ -46,8 +46,8 @@ const StatusClientClosedRequest = 499
 
 // responseLevel picks the level of the "response sent" line: server failures
 // are errors, so alerting on level=ERROR finds them; the container's
-// healthcheck is debug, because it fires every few seconds and says nothing
-// unless it fails; everything else, including 4xx (the client's mistake, not
+// healthcheck and readiness probes are debug, because they fire every few
+// seconds and say nothing unless they fail; everything else, including 4xx (the client's mistake, not
 // an incident), is info.
 func responseLevel(r *http.Request, status int) slog.Level {
 	if status >= 500 {
@@ -57,9 +57,9 @@ func responseLevel(r *http.Request, status int) slog.Level {
 }
 
 // receivedLevel picks the level of the "request received" line: info, except
-// for the healthcheck, which is debug.
+// for the healthcheck and readiness probes, which are debug.
 func receivedLevel(r *http.Request) slog.Level {
-	if r.URL.Path == HealthzPath {
+	if r.URL.Path == HealthzPath || r.URL.Path == ReadyzPath {
 		return slog.LevelDebug
 	}
 	return slog.LevelInfo

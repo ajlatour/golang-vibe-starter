@@ -147,9 +147,10 @@ func codeRoutes(t *testing.T) map[string]bool {
 				case *ast.BinaryExpr: // mux.HandleFunc("GET "+httpx.HealthzPath, ...)
 					left, lok := arg.X.(*ast.BasicLit)
 					right, rok := arg.Y.(*ast.SelectorExpr)
-					if lok && rok && right.Sel.Name == "HealthzPath" {
+					paths := map[string]string{"HealthzPath": httpx.HealthzPath, "ReadyzPath": httpx.ReadyzPath}
+					if path, known := paths[right.Sel.Name]; lok && rok && known {
 						method, _ := strconv.Unquote(left.Value)
-						routes[method+httpx.HealthzPath] = true
+						routes[method+path] = true
 					} else if lok {
 						t.Errorf("%s: can't read this route pattern; teach codeRoutes about it so the spec check covers it", fset.Position(arg.Pos()))
 					}
@@ -232,12 +233,12 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), noLimits, store, item.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID
+		return newHandler(logger, handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: testAuth(t)}, store, item.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID
 	case "ratelimited":
 		// The test client (its key) has spent its only token, and gets
 		// another in about 11 days.
 		limits := limit.Policy{Rate: 1e-6, Burst: 1}
-		h := newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), limits, itemtest.NewMemStore())
+		h := newHandler(logger, handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: testAuth(t), Limits: limits}, itemtest.NewMemStore())
 		warm := httptest.NewRequest("GET", "/items", nil)
 		warm.Header.Set("Authorization", "Bearer "+testWriteKey)
 		h.ServeHTTP(httptest.NewRecorder(), warm)
@@ -245,7 +246,7 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 	case "overloaded":
 		// The one request the service takes at once is stuck in the store.
 		store := blockingStore{entered: make(chan struct{}), release: make(chan struct{})}
-		h := newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), limit.Policy{MaxInFlight: 1}, store)
+		h := newHandler(logger, handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: testAuth(t), Limits: limit.Policy{MaxInFlight: 1}}, store)
 		stuck := httptest.NewRequest("GET", "/items", nil)
 		stuck.Header.Set("Authorization", "Bearer "+testWriteKey)
 		done := make(chan struct{})
@@ -254,13 +255,15 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 		t.Cleanup(func() { close(store.release); <-done })
 		return h, ""
 	case "internal":
-		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), noLimits, errStore{}), ""
+		return newHandler(logger, handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: testAuth(t)}, errStore{}), ""
 	case "badgw":
-		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), noLimits, httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})), ""
+		store := httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})
+		readiness := httpx.NewReadiness(logger, time.Second, time.Second, httpx.Check{Name: "upstream", Fn: store.Reachable})
+		return newHandler(logger, handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: testAuth(t), Readiness: readiness}, store), ""
 	case "timeout":
 		upstream := httptest.NewServer(http.HandlerFunc(nettest.Hang))
 		t.Cleanup(upstream.Close)
-		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), noLimits, httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})), ""
+		return newHandler(logger, handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: testAuth(t)}, httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})), ""
 	}
 	t.Fatalf("unknown environment %q", env)
 	return nil, ""
@@ -341,6 +344,9 @@ func scenarios(t *testing.T, s *spec) []scenario {
 
 		{name: "delete", env: "ok", method: "DELETE", path: "/items/" + seededPlaceholder, op: "DELETE /items/{id}", want: 204},
 		{name: "delete unknown", env: "ok", method: "DELETE", path: "/items/nope", op: "DELETE /items/{id}", want: 404},
+
+		{name: "ready", env: "ok", method: "GET", path: "/readyz", op: "GET /readyz", want: 200},
+		{name: "not ready: the upstream can't be reached", env: "badgw", method: "GET", path: "/readyz", op: "GET /readyz", want: 503},
 	}
 
 	// The header rules (internal/headerguard), for every operation: too many
@@ -399,8 +405,8 @@ func scenarios(t *testing.T, s *spec) []scenario {
 	// which is exempt: over the client's rate (429), and with the service
 	// full (503).
 	for _, o := range s.operations(t) {
-		if o.Path == "/healthz" {
-			continue
+		if o.Path == "/healthz" || o.Path == "/readyz" {
+			continue // the probes are exempt, and reach no store
 		}
 		path := strings.ReplaceAll(o.Path, "{id}", "x")
 		body := ""
@@ -419,8 +425,8 @@ func scenarios(t *testing.T, s *spec) []scenario {
 	// operation that reaches the store.
 	failures := map[string]int{"internal": 500, "badgw": 502, "timeout": 504}
 	for _, o := range s.operations(t) {
-		if o.Path == "/healthz" {
-			continue
+		if o.Path == "/healthz" || o.Path == "/readyz" {
+			continue // the probes are exempt, and reach no store
 		}
 		path := strings.ReplaceAll(o.Path, "{id}", "x")
 		body := ""
@@ -666,7 +672,7 @@ func TestOpenAPIItemIDMatchesBehavior(t *testing.T) {
 	}
 
 	asked := false
-	handler := newHandler(slog.New(slog.DiscardHandler), headerguard.DefaultPolicy(), noAuth, noLimits, spyStore{asked: &asked})
+	handler := newHandler(slog.New(slog.DiscardHandler), handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: noAuth}, spyStore{asked: &asked})
 	for _, id := range []string{
 		"widget", "new-item", "x_1", strings.Repeat("a", 128), strings.Repeat("a", 129),
 		".", "..", "%2E%2E", "..%2F..%2Fadmin", "a%2Fb", "a%20b", "x%3Fq", "%C3%A9",

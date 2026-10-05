@@ -149,8 +149,8 @@ func TestTrafficCoversTheAPI(t *testing.T) {
 			switch {
 			case !slices.Contains([]string{"get", "put", "post", "delete", "patch", "head", "options"}, method):
 				continue // "parameters" and other path-level keys
-			case path == "/healthz":
-				continue // the liveness probe isn't traffic
+			case path == "/healthz" || path == "/readyz":
+				continue // the probes aren't traffic
 			}
 			route := strings.ToUpper(method) + " " + path
 			if !strings.Contains(string(script), "route: '"+route+"'") {

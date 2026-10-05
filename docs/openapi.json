@@ -30,6 +30,29 @@
         }
       }
     },
+    "/readyz": {
+      "get": {
+        "operationId": "readyz",
+        "security": [],
+        "summary": "Readiness check",
+        "description": "Whether to send this instance traffic: 200 while it can reach the upstream (any answer from it counts, an error included), 503 once it is shutting down or if it can't reach the upstream at all. Liveness is /healthz. The result is cached for a second, so frequent probes cost little.",
+        "parameters": [{ "$ref": "#/components/parameters/CorrelationID" }],
+        "responses": {
+          "200": {
+            "description": "Ready.",
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Readiness" } } }
+          },
+          "503": {
+            "description": "Not ready: shutting down, or the upstream can't be reached.",
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Readiness" } } }
+          },
+          "400": { "$ref": "#/components/responses/DuplicateHeader" },
+          "431": { "$ref": "#/components/responses/HeadersTooLarge" }
+        }
+      }
+    },
     "/items": {
       "get": {
         "operationId": "listItems",
@@ -210,6 +233,15 @@
       }
     },
     "schemas": {
+      "Readiness": {
+        "type": "object",
+        "required": ["status"],
+        "additionalProperties": false,
+        "properties": {
+          "status": { "type": "string", "enum": ["ready", "not ready"] },
+          "reason": { "type": "string", "description": "Why not: `shutting down`, or `upstream unavailable`." }
+        }
+      },
       "Item": {
         "type": "object",
         "additionalProperties": false,
