@@ -125,7 +125,10 @@ integration: ## Start the test stack, run the suite, and always stop it again
 	$(MAKE) integration-down; exit $$status
 
 integration-up: ## Start the stack with the integration overrides
-	$(COMPOSE_INTEGRATION) up -d --build --wait
+	@# Pull WireMock and flagd while the API builds, rather than one after the other.
+	$(COMPOSE_INTEGRATION) pull --quiet --ignore-buildable & pull=$$!; \
+		$(COMPOSE_INTEGRATION) build && wait $$pull
+	$(COMPOSE_INTEGRATION) up -d --wait
 
 integration-test: ## Run the suite against a running stack (TAGS=@smoke, ARGS=...)
 	go test -C integration ./... -v -count=1 $(if $(TAGS),-godog.tags=$(TAGS)) $(ARGS)
@@ -154,9 +157,8 @@ bench-compare: ## Run the benchmarks here and at BENCH_BASE (default main), inte
 	sh perf/bench-ab.sh $(BENCH_BASE) $(BENCH_COUNT) $(BENCH_OUT)
 	$(BENCHSTAT) base=$(BENCH_OUT)/base.txt head=$(BENCH_OUT)/head.txt | tee $(BENCH_OUT)/compare.txt
 
-load-compare: ## Run the k6 smoke profile against this tree and BENCH_BASE, interleaved
-	$(COMPOSE) up -d --wait mock flagd
-	sh perf/load-ab.sh $(BENCH_BASE) $(LOAD_ROUNDS) $(LOAD_OUT) $(or $(PROFILE),smoke)
+load-compare: ## Run the k6 compare profile against this tree and BENCH_BASE, interleaved
+	sh perf/load-ab.sh $(BENCH_BASE) $(LOAD_ROUNDS) $(LOAD_OUT) $(or $(PROFILE),compare)
 
 perf-compare: ## Both comparisons, written up as the pull request comment CI posts: bin/perf/report.md
 	$(MAKE) bench-compare

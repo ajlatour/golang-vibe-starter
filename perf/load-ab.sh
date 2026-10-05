@@ -6,7 +6,7 @@
 #   sh perf/load-ab.sh <base ref> <rounds> <output dir> [profile]
 #
 # Builds an API image for each version, then for each round runs the profile
-# (default smoke) against each, alternating which goes first, with the same
+# (default compare) against each, alternating which goes first, with the same
 # WireMock and flagd throughout. A first run against the working tree warms
 # up the stack (WireMock's JIT above all) and is thrown away. Summaries are
 # written as <output dir>/base-<n>.json and head-<n>.json.
@@ -18,7 +18,7 @@ set -eu
 base=${1:?usage: load-ab.sh <base ref> <rounds> <output dir> [profile]}
 rounds=${2:?usage: load-ab.sh <base ref> <rounds> <output dir> [profile]}
 out=${3:?usage: load-ab.sh <base ref> <rounds> <output dir> [profile]}
-profile=${4:-smoke}
+profile=${4:-compare}
 mkdir -p "$out"
 basesrc=$(cd "$out" && pwd)/base-src
 
@@ -27,9 +27,16 @@ trap cleanup EXIT
 cleanup
 git worktree add --quiet --detach "$basesrc" "$base"
 
-echo "Building the API at $base and in the working tree..."
-docker build --quiet -f "$basesrc/cmd/api/Dockerfile" -t golang-vibe-starter-api:base "$basesrc" >/dev/null
+echo "Starting WireMock and flagd, and building the API at $base and in the working tree..."
+# All three at once: the two builds share BuildKit's base images and run
+# their Go builds side by side, while the other containers start.
+docker compose up -d --wait mock flagd >/dev/null 2>&1 &
+stack=$!
+docker build --quiet -f "$basesrc/cmd/api/Dockerfile" -t golang-vibe-starter-api:base "$basesrc" >/dev/null &
+basebuild=$!
 docker build --quiet -f cmd/api/Dockerfile -t golang-vibe-starter-api:head . >/dev/null
+wait "$basebuild"
+wait "$stack"
 cleanup
 
 # serve <side>: (re)start the stack with that side's API image.

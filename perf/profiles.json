@@ -11,6 +11,18 @@
       "http_req_duration{phase:steady}": ["p(99)<500"]
     }
   },
+  "compare": {
+    "description": "20s at a brisk rate, for comparing two versions back to back: short, but enough requests for a steady p99. Every pull request runs it against itself and its base, interleaved.",
+    "phases": [
+      { "name": "warmup", "from": 50, "rate": 300, "duration": "5s" },
+      { "name": "steady", "rate": 300, "duration": "15s" }
+    ],
+    "thresholds": {
+      "http_req_failed": ["rate<0.01"],
+      "checks": ["rate>0.99"],
+      "http_req_duration{phase:steady}": ["p(99)<500"]
+    }
+  },
   "load": {
     "description": "Expected traffic, held for a few minutes after a warm-up. The thresholds are the service's latency and error budget.",
     "phases": [

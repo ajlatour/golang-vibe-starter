@@ -12,7 +12,7 @@ Three tools, from the cheapest to the most realistic:
 | ------- | ------------ |
 | `make bench` | Runs the Go benchmarks, 6 times each, into `bin/bench/current.txt` |
 | `make bench-compare` | Runs them here and on `main` (`BENCH_BASE=<ref>` for another), interleaved, and compares them with benchstat |
-| `make load-compare` | Runs the k6 smoke profile against this tree and `main`, interleaved |
+| `make load-compare` | Runs the k6 `compare` profile against this tree and `main`, interleaved |
 | `make perf-compare` | Both, written up as the comment CI posts on a pull request: `bin/perf/report.md` |
 | `make perf PROFILE=<name>` | Starts the stack and runs a k6 profile (default `smoke`) |
 | `make perf-profile PROFILE=<name>` | Runs a k6 profile (default `load`) and captures pprof profiles during and after it |
@@ -47,7 +47,8 @@ ramp from a lower rate) and thresholds. A threshold can apply to one phase, writ
 
 | Profile | Shape | Passes when |
 | ------- | ----- | ----------- |
-| `smoke` | 30s at 50 req/s | No errors to speak of, p99 under 500ms. Every pull request runs it, against itself and its base |
+| `smoke` | 30s at 50 req/s | No errors to speak of, p99 under 500ms |
+| `compare` | 20s at 300 req/s | The same as `smoke`. Short, but enough requests for a steady p99: every pull request runs it, against itself and its base |
 | `load` | 30s ramp, then 3 minutes at 200 req/s | p99 under 25ms, p99.9 under 100ms, under 0.1% errors |
 | `stress` | Steps of 1 minute at 500, 1000, 2000, 4000 and 8000 req/s | Always: see below |
 | `spike` | 100 req/s, 30s at 2000 req/s, then 100 req/s again | Under 1% errors in the spike, and back within budget in the recovery phase |
@@ -123,10 +124,17 @@ workflow (`.github/workflows/perf.yml`), kept in a single comment that's edited 
 edit history shows how the numbers moved across pushes.
 
 **How it's measured.** Shared CI runners differ from one another by 10% or more, so absolute numbers
-from them mean little. The workflow measures both versions on the same runner, interleaved: the
-benchmarks in 8 rounds of base then PR, or PR then base (`perf/bench-ab.sh`), and the k6 smoke
-profile in 2 rounds against an API image built from each (`perf/load-ab.sh`), after a warm-up run
-that's thrown away. Whatever slows the runner meanwhile lands on both versions alike.
+from them mean little. So each comparison measures both versions on one runner, interleaved:
+
+- **Benchmarks** (`perf/bench-ab.sh`): 10 rounds of base then PR, or PR then base, each benchmark
+  running for 300ms a round. Many short samples serve the statistics better than a few long ones,
+  and allocation counts are exact however long a benchmark runs.
+- **Load** (`perf/load-ab.sh`): the k6 `compare` profile in 2 rounds, against an API image built
+  from each version, after a warm-up run that's thrown away.
+
+Whatever slows a runner meanwhile lands on both versions alike. The two comparisons run as parallel
+jobs on separate runners, and a third job writes the report from their results; only that job can
+write to the pull request. Changes to Markdown and `docs/` alone don't run the workflow.
 
 **What the comment shows.** First the verdict, then the changes that matter, then the load test's
 latency and errors for each version. Every benchmark is in a collapsed table, with full benchstat
@@ -135,14 +143,14 @@ output and k6's output in the run, which the comment links to.
 | Change | Effect |
 | ------ | ------ |
 | More allocations per operation on any benchmark | ❌ **Fails the check.** Allocation counts are exact, the same on every run and machine, so any increase is a real change. If it's intended, add the `perf-ok` label to the pull request; the workflow reruns and accepts it |
-| The load test crosses the smoke profile's thresholds | ❌ **Fails the check.** Errors, or a p99 far over budget: the service is broken. No label accepts this |
+| The load test crosses the `compare` profile's thresholds | ❌ **Fails the check.** Errors, or a p99 far over budget: the service is broken. No label accepts this |
 | Time per operation up more than 15%, or bytes per operation up more than 10%, and statistically significant | ⚠️ Reported, never failed on |
 | p99 under load up more than 25% and more than 1ms | ⚠️ Reported, never failed on |
 | Anything smaller, or not significant (`~`) | Shown in the full table only |
 
 A ⚠️ on a shared runner is a lead, not a verdict: confirm it on a quiet machine with
 `make perf-compare`, which runs the same comparison against `main` (`BENCH_BASE=<ref>` for another)
-and writes the same report to `bin/perf/report.md`. It takes about 6 minutes; `make bench-compare`
+and writes the same report to `bin/perf/report.md`. It takes about 3 minutes; `make bench-compare`
 and `make load-compare` run its two halves.
 
 A pull request from a fork gets a read-only token, so it can't be commented on; its report is in

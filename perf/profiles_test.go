@@ -62,7 +62,7 @@ var (
 
 func TestProfiles(t *testing.T) {
 	profiles := loadProfiles(t)
-	for _, name := range []string{"smoke", "load", "stress", "spike", "soak"} {
+	for _, name := range []string{"smoke", "compare", "load", "stress", "spike", "soak"} {
 		if _, ok := profiles[name]; !ok {
 			t.Errorf("profiles.json has no %q profile; the docs and CI rely on it", name)
 		}
@@ -99,8 +99,8 @@ func TestProfiles(t *testing.T) {
 				}
 				total += s
 			}
-			if name == "smoke" && total > 60 {
-				t.Errorf("smoke runs %ds; keep it under a minute, as CI runs it on every pull request", total)
+			if (name == "smoke" || name == "compare") && total > 30 {
+				t.Errorf("%s runs %ds; keep it to 30s, as every pull request runs it", name, total)
 			}
 
 			metrics := map[string]bool{}

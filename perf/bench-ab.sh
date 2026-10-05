@@ -3,18 +3,23 @@
 # base commit, interleaved on this machine. `make bench-compare` and the perf
 # workflow call it; see docs/performance.md.
 #
-#   sh perf/bench-ab.sh <base ref> <rounds> <output dir>
+#   sh perf/bench-ab.sh <base ref> <rounds> <output dir> [benchtime]
 #
 # Writes <output dir>/base.txt and head.txt in Go's benchmark format, for
 # benchstat or perf/report. Each round runs every benchmark once for each
 # version, alternating which goes first, so anything that slows the machine
 # for a while (another process, thermal throttling, a noisy neighbour on a
 # shared runner) lands on both versions alike instead of skewing one.
+#
+# Each benchmark runs for benchtime (default 300ms) per round. Many short
+# samples serve benchstat's statistics better than a few long ones, and
+# allocation counts are exact however long a benchmark runs.
 set -eu
 
-base=${1:?usage: bench-ab.sh <base ref> <rounds> <output dir>}
-rounds=${2:?usage: bench-ab.sh <base ref> <rounds> <output dir>}
-out=${3:?usage: bench-ab.sh <base ref> <rounds> <output dir>}
+base=${1:?usage: bench-ab.sh <base ref> <rounds> <output dir> [benchtime]}
+rounds=${2:?usage: bench-ab.sh <base ref> <rounds> <output dir> [benchtime]}
+out=${3:?usage: bench-ab.sh <base ref> <rounds> <output dir> [benchtime]}
+benchtime=${4:-300ms}
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
 head=$(pwd)
@@ -50,7 +55,7 @@ run() {
 	for bin in "$bins/$1"/*.test; do
 		[ -e "$bin" ] || continue
 		dir=$(basename "$bin" .test | tr _ /)
-		(cd "$2/$dir" && "$bin" -test.run '^$' -test.bench . -test.benchmem -test.count 1) >>"$out/$1.txt"
+		(cd "$2/$dir" && "$bin" -test.run '^$' -test.bench . -test.benchmem -test.count 1 -test.benchtime "$benchtime") >>"$out/$1.txt"
 	done
 }
 
