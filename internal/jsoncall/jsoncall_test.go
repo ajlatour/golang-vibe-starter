@@ -273,3 +273,33 @@ func TestDoIgnoresBodyWhenOutNil(t *testing.T) {
 		t.Errorf("Do() error = %v, want nil when Out is nil", err)
 	}
 }
+
+// TestDoRefusesRedirects checks a redirect is never followed, even by a
+// client configured to follow them: the 3xx comes back as an unexpected
+// status, and the address it names is never called, with or without the
+// request body.
+func TestDoRefusesRedirects(t *testing.T) {
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("the redirect was followed: %s %s", r.Method, r.URL)
+	}))
+	defer elsewhere.Close()
+
+	for _, code := range []int{301, 302, 303, 307, 308} {
+		for _, in := range []any{nil, map[string]string{"secret": "body"}} {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Redirect(w, r, elsewhere.URL+"/internal", code)
+			}))
+			follows := &http.Client{Timeout: time.Second} // the default policy follows up to 10
+			status, err := jsoncall.Call{Client: follows, Method: "POST", URL: srv.URL + "/x", Label: "svc POST /x", In: in, Want: 200}.Do(t.Context())
+			srv.Close()
+
+			var jerr *jsoncall.Error
+			if !errors.As(err, &jerr) || jerr.Kind != jsoncall.KindStatus || status != code {
+				t.Errorf("redirect %d (body %v): status %d, error %v; want the %d as an unexpected status", code, in != nil, status, err, code)
+			}
+			if follows.CheckRedirect != nil {
+				t.Error("Do changed the caller's client")
+			}
+		}
+	}
+}

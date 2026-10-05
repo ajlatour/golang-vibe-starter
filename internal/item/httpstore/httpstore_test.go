@@ -210,3 +210,23 @@ func TestInvalidIDsNeverReachTheUpstream(t *testing.T) {
 		t.Errorf("the upstream was called %d times", n)
 	}
 }
+
+// TestUpstreamRedirectIsAFailure checks an upstream's redirect is a failed
+// call (502 to the API's client), not followed to wherever it points.
+func TestUpstreamRedirectIsAFailure(t *testing.T) {
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("the redirect was followed: %s %s", r.Method, r.URL)
+	}))
+	defer elsewhere.Close()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+"/latest/meta-data", http.StatusTemporaryRedirect)
+	}))
+	defer upstream.Close()
+
+	store := httpstore.New(upstream.URL, &http.Client{Timeout: time.Second})
+	_, err := store.Create(t.Context(), item.Item{Name: "x"})
+	var uerr *httpstore.UpstreamError
+	if !errors.As(err, &uerr) || uerr.Status != http.StatusTemporaryRedirect || uerr.HTTPStatus() != http.StatusBadGateway {
+		t.Errorf("Create error = %v; want an UpstreamError for the 307, answered as 502", err)
+	}
+}

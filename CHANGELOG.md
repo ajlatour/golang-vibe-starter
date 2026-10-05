@@ -19,6 +19,9 @@ Ideas considered but not planned are listed under
 - The compose stack publishes the API (8080), WireMock (8081) and flagd (8016) on `127.0.0.1` only,
   like the ports added since. Before, they listened on every interface, so anyone on the same
   network could use WireMock's unauthenticated admin API to change what the API was served.
+- Calls to the upstream and to flagd never follow redirects (`jsoncall`): a 3xx is a failed call,
+  so the API answers 502. Before, a compromised or misconfigured upstream could redirect the API to
+  any address, internal ones included, and on a 307 or 308 the request body went along.
 
 ### Added
 

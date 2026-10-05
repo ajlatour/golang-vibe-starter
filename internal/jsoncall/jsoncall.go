@@ -1,8 +1,8 @@
 // Package jsoncall makes one JSON-over-HTTP call to another service and
 // reports failures in a consistent, log-safe way. It holds the steps every
 // outbound client here repeats: encode the request, send it, redact the URL in
-// transport errors, cap and drain the response, check the status, and decode
-// the body. Each client supplies only what differs: how to describe itself in
+// transport errors, refuse redirects, cap and drain the response, check the
+// status, and decode the body. Each client supplies only what differs: how to describe itself in
 // errors, what an error body looks like, and any status with special meaning.
 package jsoncall
 
@@ -118,7 +118,15 @@ func (c Call) Do(ctx context.Context) (status int, err error) {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	resp, err := c.Client.Do(req)
+	// Never follow a redirect, whatever the client was configured with: the
+	// 3xx is returned as an unexpected status instead. A compromised or
+	// misconfigured service could otherwise send this one to any address it
+	// can name, internal ones included, and on a 307 or 308 the request body
+	// would go along too. Copying the client is cheap; it shares the
+	// Transport, and so its connections.
+	client := *c.Client
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Do(req)
 	if err != nil {
 		return fail(KindTransport, 0, "%w", logx.RedactURLError(err))
 	}
