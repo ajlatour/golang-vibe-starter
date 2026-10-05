@@ -131,7 +131,7 @@ func (c Call) Do(ctx context.Context) (status int, err error) {
 	defer func() {
 		// Drain so the connection can be reused.
 		_, _ = io.Copy(io.Discard, body)
-		resp.Body.Close()
+		_ = resp.Body.Close() // fully read: nothing to do about an error
 	}()
 
 	if resp.StatusCode != c.Want {

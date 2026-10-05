@@ -19,8 +19,11 @@ func TestOutageTracker(t *testing.T) {
 		t.Error("first failed() = false, want it to start an outage")
 	}
 	clock = clock.Add(2 * time.Second)
-	if o.failed() || o.failed() {
-		t.Error("failed() during an outage started a new one")
+	// Two more failures, which count as fallbacks but start nothing.
+	for range 2 {
+		if o.failed() {
+			t.Error("failed() during an outage started a new one")
+		}
 	}
 
 	clock = clock.Add(3 * time.Second)

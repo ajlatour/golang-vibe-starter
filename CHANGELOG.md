@@ -54,6 +54,10 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Static analysis: `make lint` and a CI job run staticcheck and gosec on all three modules, at
+  pinned versions. Their first run found a test condition that only worked by accident, an
+  unchecked hex decode in `apikey.ParseKeys`, and five unhandled `Close` errors, all fixed. (CodeQL
+  would need GitHub Advanced Security on this private repository; ADR-0026.)
 - Architecture documentation. [Architecture](docs/architecture.md) covers the context and scope,
   the request path, the packages and their dependency rules, runtime behaviour, deployment, and 36
   requirements, each naming what verifies it. [Architecture decisions](docs/decisions.md) has 25
@@ -297,6 +301,10 @@ Ideas considered but not planned are listed under
 
 ### Fixed
 
+- The pull request load comparison's base build failed once `main` had a kept Go build cache: the
+  pull request's build replaced the cache directory while the base's, running alongside, could
+  still be reading it. Both images now build before the cache is kept, a failed copy of the cache
+  no longer fails a build, and a failed build prints its output instead of hiding it.
 - The `route` field of every "response sent" line was empty since authentication was added:
   authentication hands the router a copy of the request, and the route it matched never reached
   the logging middleware outside. `httpx.RecordRoute` now records it in the request's shared log

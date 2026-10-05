@@ -145,3 +145,22 @@ jobs:
         with:
           name: fuzz-failure
           path: internal/**/testdata/fuzz/
+
+  # Static analysis on all three modules (make lint): staticcheck for bugs and
+  # suspicious code, gosec for security mistakes. CodeQL would need GitHub
+  # Advanced Security on a private repository (docs/decisions.md, ADR-0026).
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            integration/go.sum
+            perf/report/go.sum
+
+      - name: staticcheck and gosec
+        run: make lint

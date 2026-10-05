@@ -63,6 +63,7 @@ Template:
 | [ADR-0023](#adr-0023-a-requests-log-lines-share-state) | A request's log lines share state | Accepted |
 | [ADR-0024](#adr-0024-mains-performance-history-lives-on-a-data-branch) | Main's performance history lives on a data branch | Accepted |
 | [ADR-0025](#adr-0025-ci-keeps-gos-build-cache-not-dockers-layers) | CI keeps Go's build cache, not Docker's layers | Accepted |
+| [ADR-0026](#adr-0026-static-analysis-is-gosec-and-staticcheck-not-codeql) | Static analysis is gosec and staticcheck, not CodeQL | Accepted |
 
 ## ADR-0001: Record architecture decisions
 
@@ -480,3 +481,25 @@ build as an optional build context and exported after it (`scripts/build-api-ima
 **Consequences.** Only changed packages recompile: the integration job's image build went from 40s
 to 29s. Local builds are unchanged. The cache is keyed on the Dockerfile and `go.mod`, so a new Go
 version starts afresh rather than growing the old cache.
+
+## ADR-0026: Static analysis is gosec and staticcheck, not CodeQL
+
+- **Status:** Accepted
+- **Date:** 2026-10-05
+
+**Context.** Tests, fuzzing, `go vet` and govulncheck catch a lot, but not every security mistake or
+suspicious construct. CodeQL, GitHub's analysis, was the first choice; on a private repository it
+needs GitHub Advanced Security, which this repository doesn't have, and its licence allows it on
+private code only with that.
+
+**Decision.** Run two open-source analysers for Go through `go run` at pinned versions (ADR-0011):
+staticcheck, for bugs and suspicious code, and gosec, for security mistakes, on all three modules,
+as `make lint` and a CI job. A finding is fixed, or accepted on its own line with the rule and the
+reason (`// #nosec G304 -- why`). The report tool, whose job is reading the files named on its
+command line, skips gosec's file-inclusion rule.
+
+**Consequences.** No licence or setting needed (SEC-9). Their first run found a fragile test
+condition, an unchecked hex decode in `apikey.ParseKeys`, and five unhandled `Close` errors, all
+fixed, plus one false positive accepted. Results live in the CI log, not GitHub's Security tab. If
+the repository becomes public or gains Advanced Security, CodeQL can be added beside them.
+

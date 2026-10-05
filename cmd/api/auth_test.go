@@ -8,7 +8,6 @@ import (
 
 	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
-	"github.com/ajlatour/golang-vibe-starter/internal/limit"
 )
 
 // The API keys the tests call the service with: one that may write, and one
@@ -31,9 +30,6 @@ func testAuth(t testing.TB) apikey.Policy {
 
 // noAuth is for tests about something else, which don't send a key.
 var noAuth = apikey.Policy{Off: true}
-
-// noLimits is for tests about something else, which mustn't be throttled.
-var noLimits = limit.Policy{}
 
 // TestRunWithAPIKeys runs the whole service with keys configured: a request
 // needs one, the healthcheck doesn't, and the startup line names the keys

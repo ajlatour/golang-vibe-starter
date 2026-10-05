@@ -53,6 +53,7 @@ don't, and its message says what to fix.
 | A k6 profile or threshold | `perf/profiles.json`, and its row in `docs/performance.md` | `perf/profiles_test.go` checks phases, durations and threshold syntax |
 | A package's imports (a new package, or one importing another it didn't) | The package table in `docs/architecture.md` | `docs/architecture_test.go` |
 | An architectural choice: a new dependency, protocol, protection or pattern | A record in `docs/decisions.md`, superseding any it replaces | `docs/architecture_test.go` checks records are complete and indexed |
+| Code that `make lint` flags, where the finding is wrong or accepted on purpose | A comment on the line, with the rule and why: `// #nosec G304 -- the path is the operator's own configuration`, or `//lint:ignore SA4000 why` for staticcheck | `make lint`, in CI's lint job |
 | An environment variable (or its default) | `.env.example` and the Configuration table in the README | `cmd/api/envexample_test.go`: the variables the code reads, the two lists and their defaults must all agree |
 
 Recipes: [adding a log line](logging.md#rules-for-log-lines),
@@ -160,7 +161,7 @@ value with a double quote in it can't go inside a step's quoted argument; give i
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request, in five jobs, each
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request, in six jobs, each
 step a `make` target:
 
 - **test**: `make fmt-check`, `make vet` and `make test-race` (together, `make check`). Fast, no
@@ -170,6 +171,8 @@ step a `make` target:
   the API's log lines say which build they came from.
 - **docs**: `make docs-check`, which builds the documentation website and checks every page and
   link in it (`docs/site/site_test.go`).
+- **lint**: `make lint`, staticcheck (bugs and suspicious code) and gosec (security mistakes) on
+  all three modules.
 - **fuzz**: `make fuzz FUZZTIME=10s`, a short run of every fuzz test (see [Tests](#tests)).
 - **vuln**: `make vuln`, govulncheck over all three modules: known vulnerabilities in the
   dependencies and the Go standard library that the code can actually reach.

@@ -24,6 +24,8 @@ type Defaults map[string]bool
 func LoadDefaults(path string) (Defaults, error) {
 	data := flagd.Flags
 	if path != "" {
+		// #nosec G304 -- the path is FLAGS_FALLBACK_FILE, the operator's own
+		// configuration, never anything a request supplies.
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("flag definitions: %w", err)
