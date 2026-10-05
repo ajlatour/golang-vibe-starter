@@ -54,6 +54,21 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Fuzz tests for the code that handles untrusted input: JSON request bodies, correlation IDs, the
+  header guard, item IDs, `API_KEYS` and the request metrics' labels, each checking a property
+  that must hold for any input. `make fuzz` runs them, and a new CI job runs each for 10 seconds.
+- Every log line of a request made with an API key names the key (`api_key`, never the key
+  itself), `response sent` included, so the logs say which client did what.
+- Request metrics on `/metrics` (`internal/httpmetrics`, standard library only):
+  `http_requests_total` and the `http_request_duration_seconds` histogram by route pattern, method
+  and status, and `http_requests_in_flight`. Labels are bounded (the matched pattern, `none`
+  before routing, `OTHER` for unusual methods), and recording a request allocates nothing. The
+  Grafana dashboard has a row for them.
+- `/readyz`, a readiness probe beside `/healthz`: 200 while the instance can reach the upstream (any
+  answer counts, an error included), 503 once it starts shutting down. Checks are cached for a
+  second, and changes are logged once each way (`not ready`, `ready again`). `SHUTDOWN_DELAY`
+  keeps serving for a while after SIGTERM, reporting not ready, so a load balancer can stop
+  sending requests before the server stops accepting them.
 - Resource monitoring ([watching resources](docs/performance.md#watching-resources)):
   - The API serves its Go runtime metrics, and the process's CPU time and memory, at `/metrics`
     on `PPROF_ADDR`, in Prometheus's text format, with the standard library alone.
@@ -268,6 +283,10 @@ Ideas considered but not planned are listed under
 
 ### Fixed
 
+- The `route` field of every "response sent" line was empty since authentication was added:
+  authentication hands the router a copy of the request, and the route it matched never reached
+  the logging middleware outside. `httpx.RecordRoute` now records it in the request's shared log
+  state, at no extra allocation.
 - Labelling a pull request (Dependabot labels its own as it opens them) no longer cancels its
   performance comparison: only the `perf-ok` label shares the comparison's concurrency group;
   other label changes get their own, and skip.

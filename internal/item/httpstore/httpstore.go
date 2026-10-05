@@ -199,3 +199,27 @@ func isJSON(h http.Header) bool {
 	mt, _, _ := mime.ParseMediaType(h.Get("Content-Type"))
 	return mt == "application/json"
 }
+
+// Reachable reports whether the upstream answers HTTP at its base URL. Any
+// response counts, an error status included: it says whether this instance
+// can reach the upstream (its network, DNS, configuration), not whether the
+// upstream is well. Readiness built on the upstream's own health would take
+// every instance out of service together whenever the upstream struggled.
+// The request goes through the client's transport alone, so a redirect is a
+// response like any other, never followed.
+func (s *Store) Reachable(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.baseURL+"/", nil)
+	if err != nil {
+		return err
+	}
+	transport := s.client.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		return logx.RedactURLError(err)
+	}
+	resp.Body.Close()
+	return nil
+}

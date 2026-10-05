@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ajlatour/golang-vibe-starter/internal/httpmetrics"
 	"github.com/ajlatour/golang-vibe-starter/internal/profiling"
 )
 
@@ -82,19 +83,24 @@ func TestDashboardUsesTheDataSource(t *testing.T) {
 	}
 }
 
-// TestDashboardMetricsExist fails if the dashboard queries a Go runtime or
-// process metric that the API's /metrics doesn't serve, so a renamed metric
+// TestDashboardMetricsExist fails if the dashboard queries a Go runtime,
+// process or request metric that the API's /metrics doesn't serve, so a renamed metric
 // can't leave a panel quietly empty.
 func TestDashboardMetricsExist(t *testing.T) {
 	rec := httptest.NewRecorder()
-	profiling.MetricsHandler().ServeHTTP(rec, httptest.NewRequest("GET", profiling.MetricsPath, nil))
+	profiling.MetricsHandler(httpmetrics.New().WritePrometheus).ServeHTTP(rec, httptest.NewRequest("GET", profiling.MetricsPath, nil))
 	body, _ := io.ReadAll(rec.Body)
 	served := map[string]bool{}
-	for _, m := range regexp.MustCompile(`(?m)^# TYPE (\S+) `).FindAllStringSubmatch(string(body), -1) {
+	for _, m := range regexp.MustCompile(`(?m)^# TYPE (\S+) (\S+)`).FindAllStringSubmatch(string(body), -1) {
 		served[m[1]] = true
+		if m[2] == "histogram" { // its samples are <name>_bucket, _sum and _count
+			for _, suffix := range []string{"_bucket", "_sum", "_count"} {
+				served[m[1]+suffix] = true
+			}
+		}
 	}
 
-	used := regexp.MustCompile(`\b(?:go|process)_[a-z0-9_]+`)
+	used := regexp.MustCompile(`\b(?:go|process|http)_[a-z0-9_]+`)
 	checked := 0
 	for expr, panel := range loadDashboard(t).exprs() {
 		for _, name := range used.FindAllString(expr, -1) {

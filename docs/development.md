@@ -77,6 +77,18 @@ and what the API's client expects. It's skipped unless `LIVE_UPSTREAM_URL` is se
 make live-test    # starts the WireMock container, then runs the Live test against it
 ```
 
+### Fuzz tests
+
+The code that handles untrusted input has fuzz tests (Go's built-in fuzzing): JSON request bodies
+(`FuzzDecodeJSON`), correlation IDs (`FuzzCorrelationID`), the header guard (`FuzzMiddleware`), item
+IDs (`FuzzValidID`), `API_KEYS` (`FuzzParseKeys`) and the request metrics' labels (`FuzzObserve`).
+Each states a property that must hold for any input, not just "doesn't panic": the header guard
+lets a request through or refuses it with 400, 415 or 431, and never passes on a header it strips;
+a valid ID never needs escaping in a URL. Their seed inputs run with every `go test`. `make fuzz`
+runs each target for `FUZZTIME` (30s), and CI for 10s on every push. When the fuzzer finds a
+failing input it saves it under the package's `testdata/fuzz/`: commit it with the fix, and it
+runs as a regression test from then on.
+
 ## Integration tests
 
 End-to-end scenarios, written in Gherkin in `integration/features/`, run with
@@ -142,7 +154,7 @@ value with a double quote in it can't go inside a step's quoted argument; give i
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request, in four jobs, each
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request, in five jobs, each
 step a `make` target:
 
 - **test**: `make fmt-check`, `make vet` and `make test-race` (together, `make check`). Fast, no
@@ -152,6 +164,7 @@ step a `make` target:
   the API's log lines say which build they came from.
 - **docs**: `make docs-check`, which builds the documentation website and checks every page and
   link in it (`docs/site/site_test.go`).
+- **fuzz**: `make fuzz FUZZTIME=10s`, a short run of every fuzz test (see [Tests](#tests)).
 - **vuln**: `make vuln`, govulncheck over all three modules: known vulnerabilities in the
   dependencies and the Go standard library that the code can actually reach.
 

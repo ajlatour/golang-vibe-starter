@@ -64,6 +64,7 @@ the code.
 | Method | Path          | Success | Description                                   |
 | ------ | ------------- | ------- | --------------------------------------------- |
 | GET    | `/healthz`    | 200     | Liveness: `{"status":"ok"}`.                  |
+| GET    | `/readyz`     | 200/503 | Readiness: whether to send this instance traffic. |
 | GET    | `/items`      | 200     | List items: `{"items":[...]}`, oldest first.  |
 | POST   | `/items`      | 201     | Create an item. Sets a `Location` header.     |
 | GET    | `/items/{id}` | 200     | Get one item.                                 |
@@ -76,7 +77,13 @@ trimmed of surrounding whitespace. Bodies are limited to 1 MiB, and unknown fiel
 An item ID is 1 to 128 letters, digits, `-` and `_`; no item has any other ID, so any other ID is a
 404, answered by the API without asking the upstream.
 
-Every route but `/healthz` needs an API key, sent as `Authorization: Bearer <key>`. A key may read,
+`/healthz` says the process is alive: the container's healthcheck restarts it if not. `/readyz`
+says whether to send it traffic: 503 once it starts shutting down (see `SHUTDOWN_DELAY`), or if it
+can't reach the upstream at all. Any answer from the upstream counts, an error included, so a
+struggling upstream doesn't take every instance out of service at once. Neither probe needs an API
+key or counts against the limits.
+
+Every route but the probes needs an API key, sent as `Authorization: Bearer <key>`. A key may read,
 or read and write. `make api-key NAME=<who> SCOPE=read|write` generates one, with the `API_KEYS`
 entry that configures it; the local stack comes with two development keys
 ([Calling the API](docs/curl.md#api-keys)).
@@ -149,13 +156,14 @@ The API reads these environment variables:
 | `LOG_LEVEL`           | `info`     | `debug`, `info`, `warn`, or `error`.                       |
 | `LOG_FORMAT`          | `json`     | `json` or `text`.                                          |
 | `SHUTDOWN_TIMEOUT`    | `10s`      | How long in-flight requests get to finish on SIGTERM.      |
+| `SHUTDOWN_DELAY`      | `0s`       | How long to keep serving after SIGTERM, reporting not ready on `/readyz`, before refusing new connections: time for a load balancer to stop sending requests. |
 | `API_KEYS`            | (required) | API keys: comma-separated `name:scope:sha256` entries, scope `read` or `write`. `make api-key NAME=<who> SCOPE=read\|write` generates one. Only the key's hash goes here. Required unless `API_AUTH=off`. |
 | `API_AUTH`            | `on`       | `off` lets every request through without a key: local development only, and logged as a warning. |
 | `API_AUTH_READS`      | `required` | `open` lets reads (`GET`) through without a key; a key that is sent must still be valid. |
 | `MAX_IN_FLIGHT`       | `512`      | The most requests served at once; more get 503 with `Retry-After`. `0` is no cap. |
 | `RATE_LIMIT`          | `100`      | Requests per second each client may make on average; more get 429 with `Retry-After`. A client is its API key, or its IP address without one. `0` is no limit. |
 | `RATE_BURST`          | `200`      | Requests a client may make at once after a quiet spell. |
-| `PPROF_ADDR`          |            | Where to serve the runtime profiles (pprof) and metrics (`/metrics`), e.g. `127.0.0.1:6061`. Unset serves neither. Keep it private: see [Performance](docs/performance.md#profiling). |
+| `PPROF_ADDR`          |            | Where to serve the runtime profiles (pprof) and metrics (`/metrics`: requests by route, and the Go runtime), e.g. `127.0.0.1:6061`. Unset serves neither. Keep it private: see [Performance](docs/performance.md#profiling). |
 | `HEADER_GUARD_MODE`   | `enforce`  | `enforce` rejects requests that break a [header rule](#request-headers); `report` only logs them. |
 | `HEADER_MAX_COUNT`    | `100`      | The most request headers allowed.                          |
 | `HEADER_MAX_BYTES`    | `8192`     | The largest any one request header may be, name and value, in bytes. |

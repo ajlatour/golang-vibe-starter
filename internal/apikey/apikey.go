@@ -174,7 +174,8 @@ func safe(method string) bool {
 
 // Middleware refuses requests without a valid key (401), and requests a key
 // isn't allowed to make (403), before next sees them. Each refusal is logged
-// once, with its reason and, for a 403, the key's name; never the key.
+// once, with its reason and, for a 403, the key's name; never the key. An
+// allowed request's later log lines all carry the key's name as api_key.
 func Middleware(logger *slog.Logger, p Policy, next http.Handler) http.Handler {
 	exempt := map[string]bool{}
 	for _, path := range p.Exempt {
@@ -217,6 +218,9 @@ func Middleware(logger *slog.Logger, p Policy, next http.Handler) http.Handler {
 			refuse(http.StatusForbidden, "read-only key", "this API key may only read", slog.String(logx.KeyAPIKey, k.Name))
 			return
 		}
+		// Every later log line of the request names the key, those written
+		// outside this handler (such as "response sent") included.
+		logx.AddAttrs(r.Context(), slog.String(logx.KeyAPIKey, k.Name))
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), keyNameKey{}, k.Name)))
 	})
 }

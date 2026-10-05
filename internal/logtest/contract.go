@@ -36,6 +36,8 @@ var Contract = map[string]Message{
 	"server started":           {[]string{"INFO"}, []string{"addr"}},
 	"shutting down":            {[]string{"INFO"}, []string{"timeout"}},
 	"server stopped":           {[]string{"INFO"}, nil},
+	"not ready":                {[]string{"WARN"}, []string{"reason"}},
+	"ready again":              {[]string{"INFO"}, nil},
 	"profiling server started": {[]string{"INFO"}, []string{"addr"}},
 	"profiling server failed":  {[]string{"ERROR"}, []string{"error"}},
 	"profiling server is reachable beyond this machine; keep its port private": {[]string{"WARN"}, []string{"addr"}},
@@ -73,6 +75,6 @@ var Contract = map[string]Message{
 var OutsideRequests = []string{
 	"using upstream", "using feature flags", "using header guard", "using API keys", "using limits",
 	"authentication is off: every request is allowed", "feature flags: no FLAGS_URL, using default values only",
-	"server started", "shutting down", "server stopped", "profiling server started", "profiling server failed",
+	"server started", "shutting down", "server stopped", "not ready", "ready again", "profiling server started", "profiling server failed",
 	"profiling server is reachable beyond this machine; keep its port private",
 }

@@ -230,3 +230,30 @@ func TestUpstreamRedirectIsAFailure(t *testing.T) {
 		t.Errorf("Create error = %v; want an UpstreamError for the 307, answered as 502", err)
 	}
 }
+
+func TestReachable(t *testing.T) {
+	for name, handler := range map[string]http.HandlerFunc{
+		"ok":       func(w http.ResponseWriter, r *http.Request) {},
+		"an error": func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) },
+		"a redirect": func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "http://127.0.0.1:1/", http.StatusFound)
+		},
+	} {
+		t.Run("answers with "+name, func(t *testing.T) {
+			upstream := httptest.NewServer(handler)
+			defer upstream.Close()
+			if err := httpstore.New(upstream.URL, upstream.Client()).Reachable(t.Context()); err != nil {
+				t.Errorf("Reachable() = %v; any answer means reachable", err)
+			}
+		})
+	}
+	t.Run("refuses connections", func(t *testing.T) {
+		err := httpstore.New("http://user:SECRET@"+strings.TrimPrefix(nettest.DeadURL(), "http://"), &http.Client{}).Reachable(t.Context())
+		if err == nil {
+			t.Fatal("Reachable() = nil for a dead address")
+		}
+		if strings.Contains(err.Error(), "SECRET") {
+			t.Errorf("the error carries the URL's password: %v", err)
+		}
+	})
+}

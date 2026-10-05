@@ -56,7 +56,7 @@ include `.git`; without it, container logs show `version=devel`.
 | `reason`      | `request headers rejected`, `request headers would be rejected` | Which header rule was broken: `header too large`, `too many headers`, `headers too large`, `duplicate header`, `missing content type` or `unsupported content type`. |
 | `header`      | the same lines, when one header is to blame | The header's name, e.g. `Content-Type`.      |
 | `headers`     | `request headers stripped` | The names of the headers removed, comma-separated.       |
-| `api_key`     | `request refused by authentication` | The name of the API key, as configured in `API_KEYS`; never the key. |
+| `api_key`     | `request refused by authentication` (a 403), and every line of a request after it was authenticated, `response sent` included | The name of the API key, as configured in `API_KEYS`; never the key. Absent for requests without one (the probes, or with `API_AUTH=off`). |
 | `api_keys`    | `using API keys`       | The configured keys' names and scopes, e.g. `ci (write), dashboard (read)`. |
 | `reads`       | `using API keys`       | Whether reads need a key: `required` or `open` (`API_AUTH_READS`). |
 | `max_in_flight` | `using limits`       | The cap on requests being served at once (`MAX_IN_FLIGHT`). |
@@ -104,6 +104,8 @@ upstream, comes back, and leaves the API.
 | `feature flags: no FLAGS_URL, using default values only` | INFO | none | Startup, with `FLAGS_URL` unset. |
 | `server started` | INFO | `addr` | The server is listening. |
 | `shutting down` | INFO | `timeout` | A shutdown signal arrived. |
+| `not ready` | WARN | `reason` | `/readyz` started answering 503: `shutting down`, or a check failed (`upstream unavailable`, with `error`). Logged once per change, not per probe. |
+| `ready again` | INFO | none | A failing readiness check passes again. |
 | `server stopped` | INFO | none | Shutdown finished cleanly. |
 | `profiling server started` | INFO | `addr` | Startup, with `PPROF_ADDR` set: the runtime profiles are served there. |
 | `profiling server is reachable beyond this machine; keep its port private` | WARN | `addr` | Startup, with `PPROF_ADDR` on an address other machines can reach. Expected inside a container whose port is published privately, as in the compose stack; anywhere else, a mistake. |
