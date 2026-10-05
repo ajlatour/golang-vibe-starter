@@ -107,7 +107,7 @@ all, an error included (ADR-0021).
 **When flagd fails.** Flag evaluation never fails a request: an unreachable, slow
 (`FLAGS_TIMEOUT`, 500ms) or confused flagd means the flag's default from `flagd/flags.json`, logged
 once per outage (ADR-0005). Values are cached for `FLAGS_CACHE_TTL` (1s), and during an outage
-flagd is retried once per that, so an outage costs a request nothing but the default.
+flagd is retried once per that, so an outage costs a request nothing but the default (ADR-0029).
 
 **Under load.** At most `MAX_IN_FLIGHT` requests (512) are served at once, and each client may
 make `RATE_LIMIT` requests a second (100) in bursts of `RATE_BURST` (200). Beyond that the service
