@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"slices"
-	"strings"
 	"syscall"
 	"time"
 
@@ -73,6 +72,14 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		return fmt.Errorf("unexpected arguments %q (want none, or \"healthcheck\")", args)
 	}
 
+	// Keys from a file are held in a keyring the watcher below can replace.
+	if cfg.KeysFile != "" {
+		keys, err := apikey.LoadFile(cfg.KeysFile)
+		if err != nil {
+			return fmt.Errorf("config: API_KEYS_FILE: %w", err)
+		}
+		cfg.Auth.Ring = apikey.NewKeyring(keys)
+	}
 	if err := cfg.Auth.Validate(); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
@@ -85,6 +92,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		logx.KeyMaxHeaderBytes, cfg.HeaderGuard.MaxHeaderBytes,
 		logx.KeyMaxTotalBytes, cfg.HeaderGuard.MaxTotalBytes)
 	logAuth(logger, cfg.Auth)
+	if cfg.Auth.Ring != nil {
+		go apikey.WatchFile(ctx, logger, cfg.KeysFile, cfg.Auth.Ring, cfg.KeysReload)
+	}
 	logger.Info("using limits", logx.KeyMaxInFlight, cfg.Limits.MaxInFlight,
 		logx.KeyRateLimit, cfg.Limits.Rate, logx.KeyRateBurst, cfg.Limits.Burst)
 	store := httpstore.New(cfg.UpstreamURL.String(), &http.Client{Timeout: cfg.UpstreamTimeout}, httpstore.WithLogger(logger))
@@ -188,20 +198,21 @@ func serverHeaderLimit(guard headerguard.Policy) int {
 	return 2 * guard.MaxTotalBytes
 }
 
-// logAuth says at startup who may call the API: the keys' names (never the
-// keys) and whether reads need one, or loudly, that nobody is checked.
+// logAuth says at startup who may call the API: the keys' names, scopes and
+// limits (never the keys) and whether reads need one, or loudly, that nobody
+// is checked.
 func logAuth(logger *slog.Logger, auth apikey.Policy) {
 	if auth.Off {
 		logger.Warn("authentication is off: every request is allowed")
 		return
 	}
-	names := make([]string, len(auth.Keys))
-	for i, k := range auth.Keys {
-		names[i] = k.Name + " (" + k.Scope.String() + ")"
+	keys := auth.Keys
+	if auth.Ring != nil {
+		keys = auth.Ring.Keys()
 	}
 	reads := "required"
 	if auth.OpenReads {
 		reads = "open"
 	}
-	logger.Info("using API keys", logx.KeyAPIKeys, strings.Join(names, ", "), logx.KeyReads, reads)
+	logger.Info("using API keys", logx.KeyAPIKeys, apikey.Describe(keys), logx.KeyReads, reads)
 }

@@ -46,6 +46,11 @@ type config struct {
 	// Limits caps requests in flight, and each client's rate.
 	Limits limit.Policy
 
+	// KeysFile is API_KEYS_FILE: keys to read from a file, and reload every
+	// KeysReload while the service runs, instead of API_KEYS. Empty: none.
+	KeysFile   string
+	KeysReload time.Duration
+
 	// ShutdownDelay is how long the service keeps serving after a shutdown
 	// signal, reporting not ready, before it stops accepting connections:
 	// time for a load balancer to stop sending it requests.
@@ -102,8 +107,13 @@ func loadConfig(getenv func(string) string) (config, error) {
 	}
 
 	cfg.ShutdownDelay = envconfig.Optional(env, "SHUTDOWN_DELAY", 0, parseNonNegativeDuration)
+	cfg.KeysFile = env.String("API_KEYS_FILE")
+	cfg.KeysReload = envconfig.Optional(env, "API_KEYS_RELOAD", 10*time.Second, envconfig.ParsePositiveDuration)
 
 	errs := []error{srvErr, env.Err()}
+	if cfg.KeysFile != "" && len(cfg.Auth.Keys) > 0 {
+		errs = append(errs, errors.New("API_KEYS and API_KEYS_FILE: set one, not both"))
+	}
 	if err := cfg.Limits.Validate(); err != nil && env.Err() == nil {
 		errs = append(errs, err)
 	}

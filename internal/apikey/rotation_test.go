@@ -1,0 +1,115 @@
+package apikey_test
+
+import (
+	"context"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
+	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
+)
+
+func TestParseKeysLimitsAndLayout(t *testing.T) {
+	h := apikey.HashHex("k")
+	keys, err := apikey.ParseKeys("# ci keys\n a:write:" + h + ":500/1000\n b:read:" + h + ":2.5, c:read:" + h + "\n\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 3 {
+		t.Fatalf("%d keys, want 3: %+v", len(keys), keys)
+	}
+	for i, want := range []struct {
+		rate  float64
+		burst int
+	}{{500, 1000}, {2.5, 5}, {0, 0}} {
+		if keys[i].Rate != want.rate || keys[i].Burst != want.burst {
+			t.Errorf("key %s: rate %v burst %d, want %v and %d", keys[i].Name, keys[i].Rate, keys[i].Burst, want.rate, want.burst)
+		}
+	}
+	if got := apikey.Describe(keys); got != "a (write, 500/s in bursts of 1000), b (read, 2.5/s in bursts of 5), c (read)" {
+		t.Errorf("Describe = %q", got)
+	}
+	for _, bad := range []string{"a:write:" + h + ":0", "a:write:" + h + ":-1", "a:write:" + h + ":x", "a:write:" + h + ":5/0", "a:write:" + h + ":5/x", "a:write:" + h + ":5:6"} {
+		if _, err := apikey.ParseKeys(bad); err == nil {
+			t.Errorf("ParseKeys(%q) = nil error, want one", bad)
+		}
+	}
+}
+
+// TestWatchFile checks a keys file is reloaded when it changes, and that a bad
+// edit, an emptied file or a deleted one leaves the keys in force alone, each
+// logged once.
+func TestWatchFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "keys")
+	write := func(content string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entry := func(name, key string) string { return name + ":write:" + apikey.HashHex(key) + "\n" }
+	write(entry("first", "gvs_one"))
+	keys, err := apikey.LoadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ring := apikey.NewKeyring(keys)
+
+	var logs logtest.Buffer
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() {
+		apikey.WatchFile(ctx, logs.Logger(slog.LevelDebug), path, ring, 10*time.Millisecond)
+		close(done)
+	}()
+	defer func() { cancel(); <-done }()
+
+	names := func() string { return apikey.Describe(ring.Keys()) }
+	waitFor := func(want string) {
+		t.Helper()
+		for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+			if names() == want {
+				return
+			}
+		}
+		t.Fatalf("keys in force = %q, want %q", names(), want)
+	}
+	settle := func() { time.Sleep(60 * time.Millisecond) }
+
+	write(entry("first", "gvs_one") + entry("second", "gvs_two"))
+	waitFor("first (write), second (write)")
+
+	write("first:admin:nope\n")
+	settle()
+	write("first:admin:nope\n") // the same bad file again: logged once
+	settle()
+	write("# nothing\n")
+	settle()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	settle()
+	if names() != "first (write), second (write)" {
+		t.Fatalf("a bad, empty or missing file changed the keys in force: %q", names())
+	}
+
+	write(entry("third", "gvs_three"))
+	waitFor("third (write)")
+
+	var got []string
+	for _, r := range logs.Records(t) {
+		got = append(got, r["level"].(string)+" "+r["msg"].(string))
+	}
+	want := []string{"INFO API keys reloaded", "ERROR API keys not reloaded", "ERROR API keys not reloaded", "ERROR API keys not reloaded", "INFO API keys reloaded"}
+	if strings.Join(got, "; ") != strings.Join(want, "; ") {
+		t.Errorf("logs:\n %q\nwant\n %q", got, want)
+	}
+	if strings.Contains(logs.String(), "gvs_") {
+		t.Error("a key was logged")
+	}
+}

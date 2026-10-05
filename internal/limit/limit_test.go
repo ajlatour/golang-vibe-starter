@@ -1,12 +1,14 @@
 package limit_test
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
 	"github.com/ajlatour/golang-vibe-starter/internal/limit"
 )
 
@@ -128,5 +130,57 @@ func TestValidate(t *testing.T) {
 	}
 	if err := (limit.Policy{MaxInFlight: 512, Rate: 100, Burst: 200}).Validate(); err != nil {
 		t.Errorf("the defaults: %v", err)
+	}
+}
+
+// withKey runs the request through authentication with a key that has its
+// own rate limit (or none), so the limiter sees what it would in the service.
+func withKey(t *testing.T, rateLimit string, h http.Handler) http.Handler {
+	t.Helper()
+	entry := "k:write:" + apikey.HashHex("gvs_k")
+	if rateLimit != "" {
+		entry += ":" + rateLimit
+	}
+	keys, err := apikey.ParseKeys(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return apikey.Middleware(slog.New(slog.DiscardHandler), apikey.Policy{Keys: keys}, h)
+}
+
+func getWithKey(h http.Handler) int {
+	req := httptest.NewRequest("GET", "/items", nil)
+	req.Header.Set("Authorization", "Bearer gvs_k")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec.Code
+}
+
+// TestPerKeyLimits checks a key's own limit replaces the policy's, and applies
+// even with no policy limit at all.
+func TestPerKeyLimits(t *testing.T) {
+	now := time.Unix(0, 0)
+	clock := func() time.Time { return now }
+	for name, tt := range map[string]struct {
+		policy  limit.Policy
+		keyRate string
+		allowed int
+	}{
+		"the key's limit, tighter than the policy's": {limit.Policy{Rate: 100, Burst: 200}, "1/3", 3},
+		"the key's limit, looser than the policy's":  {limit.Policy{Rate: 1, Burst: 2}, "10/5", 5},
+		"the key's limit, with none in the policy":   {limit.Policy{}, "1/4", 4},
+		"no limit on the key: the policy's":          {limit.Policy{Rate: 1, Burst: 2}, "", 2},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := withKey(t, tt.keyRate, limit.PerClientAt(tt.policy, clock, http.HandlerFunc(ok)))
+			for i := range tt.allowed {
+				if code := getWithKey(h); code != 204 {
+					t.Fatalf("request %d: %d, want 204", i+1, code)
+				}
+			}
+			if code := getWithKey(h); code != 429 {
+				t.Errorf("request %d: %d, want 429", tt.allowed+1, code)
+			}
+		})
 	}
 }

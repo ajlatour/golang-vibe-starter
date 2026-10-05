@@ -85,9 +85,11 @@ struggling upstream doesn't take every instance out of service at once. Neither 
 key or counts against the limits.
 
 Every route but the probes needs an API key, sent as `Authorization: Bearer <key>`. A key may read,
-or read and write. `make api-key NAME=<who> SCOPE=read|write` generates one, with the `API_KEYS`
-entry that configures it; the local stack comes with two development keys
-([Calling the API](docs/curl.md#api-keys)).
+or read and write, and may carry its own rate limit. `make api-key NAME=<who> SCOPE=read|write`
+generates one, with the `API_KEYS` entry that configures it; the local stack comes with two
+development keys ([Calling the API](docs/curl.md#api-keys)). With `API_KEYS_FILE`, keys are read
+from a file and reloaded while the service runs, so they can be rotated without a restart: add the
+new key, move clients to it, then remove the old one.
 
 Errors are JSON, `{"error":"..."}`:
 
@@ -158,7 +160,9 @@ The API reads these environment variables:
 | `LOG_FORMAT`          | `json`     | `json` or `text`.                                          |
 | `SHUTDOWN_TIMEOUT`    | `10s`      | How long in-flight requests get to finish on SIGTERM.      |
 | `SHUTDOWN_DELAY`      | `0s`       | How long to keep serving after SIGTERM, reporting not ready on `/readyz`, before refusing new connections: time for a load balancer to stop sending requests. |
-| `API_KEYS`            | (required) | API keys: comma-separated `name:scope:sha256` entries, scope `read` or `write`. `make api-key NAME=<who> SCOPE=read\|write` generates one. Only the key's hash goes here. Required unless `API_AUTH=off`. |
+| `API_KEYS`            | (required) | API keys: comma-separated `name:scope:sha256` entries, scope `read` or `write`, with an optional fourth field, the key's own rate limit (`:500` or `:500/1000` for a burst). `make api-key NAME=<who> SCOPE=read\|write` generates one. Only the key's hash goes here. Required unless `API_KEYS_FILE` is set or `API_AUTH=off`. |
+| `API_KEYS_FILE`       |            | Instead of `API_KEYS`, a file of the same entries, one per line, reloaded while the service runs: keys are added, removed or rotated without a restart. A file that won't parse changes nothing. |
+| `API_KEYS_RELOAD`     | `10s`      | How often `API_KEYS_FILE` is checked for changes. |
 | `API_AUTH`            | `on`       | `off` lets every request through without a key: local development only, and logged as a warning. |
 | `API_AUTH_READS`      | `required` | `open` lets reads (`GET`) through without a key; a key that is sent must still be valid. |
 | `MAX_IN_FLIGHT`       | `512`      | The most requests served at once; more get 503 with `Retry-After`. `0` is no cap. |
