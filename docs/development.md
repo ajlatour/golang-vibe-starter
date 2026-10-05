@@ -190,6 +190,9 @@ their digests are updated by hand.
 
 A newer push to the same branch cancels the run in progress.
 
+`.github/workflows/release.yml` publishes a release when a version tag is pushed; see
+[Releasing](releasing.md).
+
 `.github/workflows/perf-trends.yml` runs after every merge to `main`, recording its performance on
 the `perf-data` branch; see [trends](performance.md#trends).
 

@@ -6,7 +6,10 @@
 # the cache it kept from earlier runs, so only changed packages recompile.
 FROM scratch AS gocache
 
-FROM golang:1.27-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS build
+# The build runs on the builder's own platform and cross-compiles for the
+# target's, so a multi-platform image (the release's amd64 and arm64) needs
+# no emulation. A plain build is for the builder's platform, as before.
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS build
 WORKDIR /src
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local
 
@@ -20,11 +23,13 @@ COPY cmd/api/ cmd/api/
 # Stamped into every log line. .git isn't in the build context, so pass the
 # commit in: docker build --build-arg VERSION=$(git rev-parse --short HEAD)
 ARG VERSION=devel
+ARG TARGETOS TARGETARCH
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=bind,from=gocache,target=/tmp/gocache-seed \
     { cp -a /tmp/gocache-seed/. /root/.cache/go-build/ || \
       echo "seeding the Go build cache failed; building without it"; } && \
+    GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/api ./cmd/api
 
 # The Go build cache after the build, for CI to keep for the next run:

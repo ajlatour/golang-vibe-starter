@@ -1,8 +1,9 @@
 # Changelog
 
 Notable changes to this project. The format is based on
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). There are no tagged releases yet, so
-everything is under Unreleased.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions on
+[Semantic Versioning](https://semver.org/). Changes not yet released are under Unreleased; each
+release has a section of its own, made by `make release-prepare` ([Releasing](docs/releasing.md)).
 
 Ideas considered but not planned are listed under
 [Open ideas](docs/development.md#open-ideas).
@@ -54,6 +55,12 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- A release process ([Releasing](docs/releasing.md)): `make release-prepare` cuts the changelog
+  section in a pull request, and `make release-tag` tags `main`. The tag publishes the image to the
+  GitHub Container Registry for linux/amd64 and linux/arm64, with an SBOM and build provenance,
+  and a GitHub release with the changelog section as its notes. Only a tag on `main` publishes;
+  the workflow can also be run by hand as a dry run. The Dockerfile cross-compiles, so the second
+  platform needs no emulation.
 - Static analysis: `make lint` and a CI job run staticcheck and gosec on all three modules, at
   pinned versions. Their first run found a test condition that only worked by accident, an
   unchecked hex decode in `apikey.ParseKeys`, and five unhandled `Close` errors, all fixed. (CodeQL

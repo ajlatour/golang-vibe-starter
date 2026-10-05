@@ -184,6 +184,8 @@ start otherwise, so a typo can't switch a limit off.
 pages, the changelog and the API spec, with links between them. `make godoc` serves the Go package
 documentation (the code's doc comments) at http://localhost:6060.
 
+- [Releasing](docs/releasing.md): cutting a version, and the image, SBOM and provenance it
+  publishes.
 - [Architecture](docs/architecture.md): how the service is built, from its context to its
   packages, and its requirements, each with the test that verifies it.
 - [Architecture decisions](docs/decisions.md): why it's built that way, one record per decision.
@@ -232,6 +234,7 @@ internal/logtest/        Capture and parse JSON logs in tests; the log contract
 internal/nettest/        Dead, hanging, dropping and failing upstream stubs for tests
 scripts/api              Calls the API with curl; see docs/curl.md
 scripts/build-api-image.sh  Builds the API's image, keeping Go's build cache (CI)
+scripts/changelog.sh     Cuts a release's changelog section, and prints its notes
 perf/                    k6 load profiles, the scripts that run them, and the PR report
 monitoring/              Prometheus and Grafana config for make monitor
 flagd/                   Feature flag definitions: served by flagd, and embedded
@@ -245,5 +248,6 @@ integration/             Godog end-to-end tests against the composed stack (own 
 compose.yaml             Local stack: api + WireMock + flagd
 compose.integration.yaml Compose overrides for the integration tests (ignores .env)
 .env.example             Every setting the API reads, with its default
-.github/workflows/       CI, the pull request performance report, and main's performance record
+.github/workflows/       CI, the pull request performance report, main's performance record,
+                         and releases
 ```

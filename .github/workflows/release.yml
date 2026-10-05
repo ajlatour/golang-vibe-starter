@@ -1,0 +1,112 @@
+name: Release
+
+# Publishes a release when a version tag is pushed (make release-tag; see
+# docs/releasing.md): the API's image for linux/amd64 and linux/arm64 on the
+# GitHub Container Registry, tagged vX.Y.Z, X.Y and latest, with an SBOM and
+# build provenance attached; and a GitHub release whose notes are the
+# version's section of CHANGELOG.md.
+#
+# Run it by hand (workflow_dispatch) for a dry run: the same checks and build,
+# from the branch it's run on, publishing nothing.
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # the GitHub release
+      packages: write # the image
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # main's history, to check the tag is on it.
+          fetch-depth: 0
+
+      - name: Check what's being released
+        run: |
+          if [ "$DRY_RUN" = true ]; then
+            echo "Dry run of $(git rev-parse --short HEAD): building, publishing nothing."
+            echo "VERSION=v0.0.0-dryrun" >> "$GITHUB_ENV"
+            sh scripts/changelog.sh notes > "$RUNNER_TEMP/notes.md"
+            exit 0
+          fi
+          # Only a tag on main is released: a release is what was reviewed and
+          # merged, never a branch.
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "$TAG is on a commit that isn't on main; release from main (make release-tag)."
+            exit 1
+          fi
+          sh scripts/changelog.sh notes "$TAG" > "$RUNNER_TEMP/notes.md"
+          echo "VERSION=$TAG" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            integration/go.sum
+            perf/report/go.sum
+
+      # What's tagged passed CI on main; this is a last check of the exact
+      # commit being published.
+      - name: Checks
+        run: make check
+
+      - name: Build the image, and push it unless this is a dry run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          image=$(echo "ghcr.io/$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          number=${VERSION#v}
+          set -- --platform linux/amd64,linux/arm64 -f cmd/api/Dockerfile \
+            --build-arg VERSION="$VERSION" \
+            --label org.opencontainers.image.source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label org.opencontainers.image.revision="$GITHUB_SHA" \
+            --label org.opencontainers.image.version="$VERSION" \
+            --sbom="generator=docker/buildkit-syft-scanner:stable-1@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9" \
+            --provenance=mode=max \
+            -t "$image:$VERSION" -t "$image:${number%.*}" -t "$image:latest"
+          docker buildx create --use --name release --driver docker-container > /dev/null
+          if [ "$DRY_RUN" = true ]; then
+            docker buildx build "$@" --output "type=oci,dest=$RUNNER_TEMP/image.tar" .
+            echo "Built $(du -h "$RUNNER_TEMP/image.tar" | cut -f1) for linux/amd64 and linux/arm64, with SBOM and provenance; pushed nothing." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx build "$@" --push .
+          {
+            echo "## $VERSION"
+            echo
+            echo "Image: \`$image:$VERSION\` (also \`${number%.*}\` and \`latest\`), for linux/amd64 and linux/arm64."
+            echo
+            echo '```'
+            docker buildx imagetools inspect "$image:$VERSION"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create the GitHub release
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          image=$(echo "ghcr.io/$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          {
+            echo "Image: \`$image:$VERSION\`, for linux/amd64 and linux/arm64, with an SBOM and build provenance."
+            echo
+            cat "$RUNNER_TEMP/notes.md"
+          } > "$RUNNER_TEMP/release.md"
+          gh release create "$VERSION" --title "$VERSION" --notes-file "$RUNNER_TEMP/release.md" --verify-tag
