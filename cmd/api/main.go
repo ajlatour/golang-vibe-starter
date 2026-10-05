@@ -97,7 +97,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	}
 	logger.Info("using limits", logx.KeyMaxInFlight, cfg.Limits.MaxInFlight,
 		logx.KeyRateLimit, cfg.Limits.Rate, logx.KeyRateBurst, cfg.Limits.Burst)
-	store := httpstore.New(cfg.UpstreamURL.String(), &http.Client{Timeout: cfg.UpstreamTimeout}, httpstore.WithLogger(logger))
+	store := httpstore.New(cfg.UpstreamURL.String(),
+		&http.Client{Timeout: cfg.UpstreamTimeout, Transport: newTransport(cfg.Limits.MaxInFlight)}, httpstore.WithLogger(logger))
 
 	evaluator, err := newFlags(logger, cfg)
 	if err != nil {
@@ -141,8 +142,33 @@ func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
 		logger.Info("feature flags: no FLAGS_URL, using default values only")
 		return defaults, nil
 	}
-	logger.Info("using feature flags", logx.KeyURL, cfg.FlagsURL.Redacted(), logx.KeyTimeout, cfg.FlagsTimeout.String())
-	return featureflag.NewOFREP(cfg.FlagsURL.String(), &http.Client{Timeout: cfg.FlagsTimeout}, logger, defaults), nil
+	logger.Info("using feature flags", logx.KeyURL, cfg.FlagsURL.Redacted(), logx.KeyTimeout, cfg.FlagsTimeout.String(),
+		logx.KeyCacheTTL, cfg.FlagsCacheTTL.String())
+	client := &http.Client{Timeout: cfg.FlagsTimeout, Transport: newTransport(cfg.Limits.MaxInFlight)}
+	return featureflag.NewOFREP(cfg.FlagsURL.String(), client, logger, defaults, featureflag.WithCache(cfg.FlagsCacheTTL)), nil
+}
+
+// defaultIdleConns is how many idle connections newTransport keeps to a
+// service when nothing caps the requests in flight.
+const defaultIdleConns = 100
+
+// newTransport returns the connection pool for calls to one service (the
+// upstream, flagd). Go's default keeps just 2 idle connections per host, so
+// under load most calls would open a new one, paying for the handshake and
+// leaving sockets in TIME_WAIT; this one keeps as many as there can be
+// requests in flight, each of which makes at most one call at a time. It
+// also never uses a proxy from HTTP_PROXY and the like: the services are
+// named by their own URLs, and a variable set for something else in the
+// environment mustn't reroute the calls.
+func newTransport(maxInFlight int) *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.Proxy = nil
+	idle := maxInFlight
+	if idle <= 0 {
+		idle = defaultIdleConns
+	}
+	t.MaxIdleConns, t.MaxIdleConnsPerHost = idle, idle
+	return t
 }
 
 // handlerConfig is everything newHandler puts in front of the routes.

@@ -266,7 +266,11 @@
             "maxLength": 200,
             "pattern": "\\S"
           },
-          "description": { "type": "string" }
+          "description": {
+            "type": "string",
+            "description": "Optional. At most 2000 characters.",
+            "maxLength": 2000
+          }
         }
       },
       "ItemList": {

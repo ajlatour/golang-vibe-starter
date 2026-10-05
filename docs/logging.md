@@ -68,6 +68,7 @@ include `.git`; without it, container logs show `version=devel`.
 | `max_total_bytes` | `using header guard` | The total header size limit in force, in bytes (`HEADER_MAX_TOTAL_BYTES`). |
 | `flag`        | flag lines             | Feature flag key.                                            |
 | `fallbacks`   | `flag service recovered` | Evaluations served from defaults during the outage.        |
+| `cache_ttl`   | `using feature flags` | How long a flag's value is kept (`FLAGS_CACHE_TTL`), e.g. `1s`. |
 
 ## Messages
 
@@ -98,7 +99,7 @@ upstream, comes back, and leaves the API.
 | `flag evaluation failed, using default` | WARN the first time a flag has a problem, then DEBUG | `flag`, `default`, `error` | A flag couldn't be evaluated and its default was used. Also DEBUG for each failed evaluation during an outage. |
 | `flag has no configured default, using false` | ERROR | `flag` | A flag the code reads has no default in the definitions. Logged once per flag. |
 | `using upstream` | INFO | `url`, `timeout` | Startup. |
-| `using feature flags` | INFO | `url`, `timeout` | Startup, with `FLAGS_URL` set. |
+| `using feature flags` | INFO | `url`, `timeout`, `cache_ttl` | Startup, with `FLAGS_URL` set. |
 | `using API keys` | INFO | `api_keys`, `reads` | Startup: the names and scopes of the configured keys (never the keys), and whether reads need one. |
 | `authentication is off: every request is allowed` | WARN | none | Startup, with `API_AUTH=off`. For local development only. |
 | `using limits` | INFO | `max_in_flight`, `rate_limit`, `rate_burst` | Startup: the cap on requests in flight and the per-client rate limit in force (0 is none). |

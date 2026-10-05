@@ -50,6 +50,10 @@ func TestOpenAPIItemSchemaMatchesStruct(t *testing.T) {
 	if got := int(nameSchema["maxLength"].(float64)); got != item.MaxNameLen {
 		t.Errorf("spec says names may be %d characters; the code allows %d (item.MaxNameLen)", got, item.MaxNameLen)
 	}
+	descSchema := s.lookupSchema(t, "ItemInput")["properties"].(map[string]any)["description"].(map[string]any)
+	if got, _ := descSchema["maxLength"].(float64); int(got) != item.MaxDescriptionLen {
+		t.Errorf("spec says descriptions may be %v characters; the code allows %d (item.MaxDescriptionLen)", descSchema["maxLength"], item.MaxDescriptionLen)
+	}
 	if desc, _ := s.lookupSchema(t, "ItemInput")["description"].(string); !strings.Contains(desc, strconv.Itoa(httpx.MaxBodyBytes>>20)+" MiB") {
 		t.Errorf("ItemInput's description should state the %d MiB body limit (httpx.MaxBodyBytes)", httpx.MaxBodyBytes>>20)
 	}

@@ -14,6 +14,9 @@ services:
       UPSTREAM_TIMEOUT: 3s
       # JSON, so tests can read the API's log lines.
       LOG_FORMAT: json
+      # Flag steps switch a flag and wait until flagd serves it; with no cache
+      # the API sees the change at once too, so scenarios needn't wait it out.
+      FLAGS_CACHE_TTL: 0s
 
   flagd:
     volumes:

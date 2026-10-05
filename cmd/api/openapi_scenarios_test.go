@@ -37,6 +37,7 @@ func scenarios(t *testing.T, s *spec) []scenario {
 	t.Helper()
 	input := s.lookupSchema(t, "ItemInput")
 	maxName := int(input["properties"].(map[string]any)["name"].(map[string]any)["maxLength"].(float64))
+	maxDesc := int(input["properties"].(map[string]any)["description"].(map[string]any)["maxLength"].(float64))
 	name := func(n int) string { return strings.Repeat("a", n) }
 	okBody := `{"name":"widget","description":"d"}`
 
@@ -66,6 +67,8 @@ func scenarios(t *testing.T, s *spec) []scenario {
 		{name: "create", env: "ok", method: "POST", path: "/items", op: "POST /items", body: okBody, want: 201},
 		{name: "create at the name length limit", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"name":"` + name(maxName) + `"}`, want: 201},
 		{name: "create over the name length limit", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"name":"` + name(maxName+1) + `"}`, want: 422},
+		{name: "create at the description length limit", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"name":"x","description":"` + name(maxDesc) + `"}`, want: 201},
+		{name: "create over the description length limit", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"name":"x","description":"` + name(maxDesc+1) + `"}`, want: 422},
 		{name: "create with a blank name", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"name":"   "}`, want: 422},
 		{name: "create without a name", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"description":"x"}`, want: 422},
 		{name: "create with malformed JSON", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"name":`, want: 400},

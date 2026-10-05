@@ -24,6 +24,9 @@ type config struct {
 	// feature flags: every flag then takes its default.
 	FlagsURL     *url.URL
 	FlagsTimeout time.Duration
+	// FlagsCacheTTL is how long a flag's value is kept after flagd serves
+	// it, and how often flagd is retried during an outage. Zero: neither.
+	FlagsCacheTTL time.Duration
 
 	// FlagsFallbackFile is the path of a flagd-format flag definitions file
 	// whose default variants replace those of the copy compiled into the
@@ -71,8 +74,11 @@ func loadConfig(getenv func(string) string) (config, error) {
 		// Optional: flags are an add-on, and without a sidecar the service
 		// runs with every flag at its default. The timeout is short by
 		// default because flag evaluation sits on the request path.
-		FlagsURL:          envconfig.Optional(env, "FLAGS_URL", nil, parseHTTPURL),
-		FlagsTimeout:      envconfig.Optional(env, "FLAGS_TIMEOUT", 500*time.Millisecond, envconfig.ParsePositiveDuration),
+		FlagsURL:     envconfig.Optional(env, "FLAGS_URL", nil, parseHTTPURL),
+		FlagsTimeout: envconfig.Optional(env, "FLAGS_TIMEOUT", 500*time.Millisecond, envconfig.ParsePositiveDuration),
+		// A second: flag changes show within one, and flagd is asked about
+		// each flag about once a second however busy the service is.
+		FlagsCacheTTL:     envconfig.Optional(env, "FLAGS_CACHE_TTL", time.Second, parseNonNegativeDuration),
 		FlagsFallbackFile: env.String("FLAGS_FALLBACK_FILE"),
 
 		// Off unless asked for: profiles expose the program's internals.

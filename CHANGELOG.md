@@ -10,12 +10,30 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+### Added
+
+- `FLAGS_CACHE_TTL` (1s): the API keeps each flag value flagd serves for that long, so it asks flagd
+  about a flag about once a second however busy it is. While flagd isn't answering, flagd is retried
+  once per TTL and every evaluation in between takes its default at once, where each used to wait
+  out `FLAGS_TIMEOUT` (500ms). `0s` asks flagd every time, as before; the integration tests do.
+
 ### Changed
 
+- The upstream and flagd clients each keep their own connection pool, with as many idle
+  connections as `MAX_IN_FLIGHT` (100 with no cap), where Go's default kept 2: under load, calls
+  reuse connections instead of opening new ones. They also no longer route through a proxy named
+  in `HTTP_PROXY`, `HTTPS_PROXY` or `NO_PROXY`.
+- An item's `description` is at most 2000 characters; a longer one is a 422. It was limited only
+  by the 1 MiB body.
 - The documentation site's navigation, and the README's Documentation section, group the pages
   by theme: Start, Use the API, Run it, Build and ship, and Architecture. A guide in `docs/`
   that isn't in a theme fails the site build, and a test keeps the README's groups matching
   the site's. Long inline code wraps on a phone instead of widening the page.
+
+### Fixed
+
+- `http_requests_in_flight` no longer drifts upward if a handler aborts with
+  `http.ErrAbortHandler`: such a request is now counted as finished too.
 
 ## [0.1.0] - 2026-10-05
 

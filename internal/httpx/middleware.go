@@ -106,10 +106,13 @@ func logRequests(logger *slog.Logger, metrics Metrics, next http.Handler) http.H
 		)
 
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		next.ServeHTTP(rec, r)
 		if metrics != nil {
-			metrics.Observe(route(r), r.Method, rec.status, time.Since(start))
+			// Deferred, so a request that ends in a panic recoverPanics passes
+			// on (http.ErrAbortHandler) is still counted as finished, and the
+			// in-flight gauge doesn't drift.
+			defer func() { metrics.Observe(route(r), r.Method, rec.status, time.Since(start)) }()
 		}
+		next.ServeHTTP(rec, r)
 		// The route is known once the handler has returned: RecordRoute
 		// noted it (see route).
 		logger.LogAttrs(r.Context(), responseLevel(r, rec.status), "response sent",
