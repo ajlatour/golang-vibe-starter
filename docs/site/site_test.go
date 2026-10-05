@@ -10,6 +10,7 @@
 package site_test
 
 import (
+	"fmt"
 	"html"
 	"os"
 	"path/filepath"
@@ -140,4 +141,85 @@ func TestSiteLinks(t *testing.T) {
 		t.Fatal("found no links to check; the site is empty or the test is broken")
 	}
 	t.Logf("checked %d links across %d pages", checked, len(content))
+}
+
+// TestNavigationIsComplete checks every page's navigation links to every
+// page, grouped under its theme, so no page is ever unreachable from another.
+func TestNavigationIsComplete(t *testing.T) {
+	dir := siteDir(t)
+	pages := expectedPages(t)
+	navRE := regexp.MustCompile(`(?s)<nav class="site-nav">(.*?)</nav>`)
+	for _, page := range pages {
+		if page == "api.html" {
+			continue // Redocly's page, without our navigation
+		}
+		b, err := os.ReadFile(filepath.Join(dir, page))
+		if err != nil {
+			continue // TestSitePages reports it
+		}
+		m := navRE.FindSubmatch(b)
+		if m == nil {
+			t.Errorf("%s has no navigation", page)
+			continue
+		}
+		nav := string(m[1])
+		if n := strings.Count(nav, `class="nav-theme"`); n < 2 {
+			t.Errorf("%s's navigation has %d themes; want the pages grouped", page, n)
+		}
+		for _, other := range pages {
+			if !strings.Contains(nav, `href="`+other+`"`) {
+				t.Errorf("%s's navigation has no link to %s", page, other)
+			}
+		}
+	}
+}
+
+// TestReadmeGroupsLikeTheSite checks the README's list of documents uses the
+// site's themes, in the same order, each listing the same pages, so the two
+// ways in to the documentation agree.
+func TestReadmeGroupsLikeTheSite(t *testing.T) {
+	script, err := os.ReadFile("build.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	type theme struct {
+		name    string
+		sources []string
+	}
+	var site []theme
+	for _, m := range regexp.MustCompile(`(?m)^([A-Z][^|\n]*)\|([^|\n]+)\|[^|\n]+$`).FindAllStringSubmatch(string(script), -1) {
+		if len(site) == 0 || site[len(site)-1].name != m[1] {
+			site = append(site, theme{name: m[1]})
+		}
+		src := m[2]
+		switch src {
+		case "README.md":
+			continue // the README is the Overview: it doesn't list itself
+		case "-":
+			src = "docs/openapi.json" // the spec, which the site renders as api.html
+		}
+		site[len(site)-1].sources = append(site[len(site)-1].sources, src)
+	}
+	if len(site) < 2 {
+		t.Fatal("found no themes in build.sh's navigation")
+	}
+
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(readme)
+	doc = doc[strings.Index(doc, "\n## Documentation"):]
+	doc = doc[:strings.Index(doc[1:], "\n## ")+1]
+	var got []theme
+	for _, line := range strings.Split(doc, "\n") {
+		if m := regexp.MustCompile(`^\*\*(.+)\*\*$`).FindStringSubmatch(line); m != nil {
+			got = append(got, theme{name: m[1]})
+		} else if m := regexp.MustCompile(`^- \[[^\]]+\]\(([^)]+)\)`).FindStringSubmatch(line); m != nil && len(got) > 0 {
+			got[len(got)-1].sources = append(got[len(got)-1].sources, m[1])
+		}
+	}
+	if fmt.Sprint(got) != fmt.Sprint(site) {
+		t.Errorf("the README's Documentation list doesn't match the site's themes:\n README: %v\n site:   %v", got, site)
+	}
 }
