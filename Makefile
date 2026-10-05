@@ -19,6 +19,18 @@ export VERSION
 API_URL      ?= http://localhost:8080
 WIREMOCK_URL ?= http://localhost:8081
 FLAGD_URL    ?= http://localhost:8016
+PPROF_URL    ?= http://localhost:6061
+
+# Performance tests. PROFILE picks the k6 profile (perf/profiles.json) for
+# make perf and perf-profile, which have their own defaults. The comparisons
+# measure the working tree against BENCH_BASE, interleaving BENCH_COUNT
+# benchmark rounds (benchstat wants at least 6) and LOAD_ROUNDS k6 runs.
+BENCH_COUNT ?= 6
+LOAD_ROUNDS ?= 2
+BENCH_BASE  ?= main
+BENCH_OUT   := bin/bench
+LOAD_OUT    := bin/perf/compare
+BENCHSTAT   := go run golang.org/x/perf/cmd/benchstat@v0.0.0-20260929162123-406019bb8b68
 
 # The fault stubs that `make fault` can switch on.
 FAULTS := $(notdir $(basename $(wildcard wiremock/faults/*.json)))
@@ -35,7 +47,8 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .DEFAULT_GOAL := help
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
-	live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint
+	live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint \
+	perf perf-profile bench bench-compare load-compare perf-compare monitor
 
 ##@ Help
 
@@ -44,7 +57,8 @@ help: ## List the targets
 		/^##@/ { printf "\n%s\n", substr($$0, 5) } \
 		/^[a-zA-Z_-]+:.*## / { printf "  make %-18s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 	@echo
-	@echo "  Variables: FAULT=<name> for make fault; TAGS=@smoke or ARGS=... for the integration tests."
+	@echo "  Variables: FAULT=<name> for make fault; TAGS=@smoke or ARGS=... for the integration tests;"
+	@echo "  PROFILE=<name> for make perf: $$(sed -n 's/^  "\([a-z-]*\)": {/\1/p' perf/profiles.json | tr '\n' ' ')"
 
 ##@ Local stack
 
@@ -52,8 +66,9 @@ up: ## Start the API, WireMock and flagd in the background (rebuilds the API)
 	$(COMPOSE) up -d --build --wait
 	@echo "API: $(API_URL)   WireMock: $(WIREMOCK_URL)   flagd: $(FLAGD_URL)"
 
-down: ## Stop the local stack
-	$(COMPOSE) down
+down: ## Stop the local stack, monitoring included
+	@# Naming the profiles stops their containers too, which a plain down leaves running.
+	$(COMPOSE) --profile monitoring --profile perf down
 
 logs: ## Follow the stack's logs (Ctrl-C to stop)
 	$(COMPOSE) logs -f
@@ -78,6 +93,7 @@ fault-reset: ## Switch off every fault (back to the mounted stubs)
 
 test: ## Unit tests (no Docker)
 	go test ./...
+	go test -C perf/report ./...
 
 fmt: ## Format the code
 	gofmt -w .
@@ -86,12 +102,14 @@ fmt-check: ## Fail if any file needs gofmt
 	@unformatted="$$(gofmt -l .)"; \
 	if [ -n "$$unformatted" ]; then echo "These files need gofmt (run make fmt):"; echo "$$unformatted"; exit 1; fi
 
-vet: ## go vet, for the service and the integration module
+vet: ## go vet, for the service and the integration and perf report modules
 	go vet ./...
 	go vet -C integration ./...
+	go vet -C perf/report ./...
 
 test-race: ## Unit tests with the race detector
 	go test -race ./...
+	go test -C perf/report -race ./...
 
 check: fmt-check vet test-race ## Everything CI's fast job runs
 
@@ -118,6 +136,40 @@ integration-logs: ## Print the test stack's logs
 
 integration-down: ## Stop the test stack
 	$(COMPOSE_INTEGRATION) down
+
+##@ Performance (see docs/performance.md)
+
+monitor: ## Start the stack with monitoring: a Grafana dashboard of load, containers and the Go runtime
+	$(COMPOSE) --profile monitoring up -d --build --wait
+	@echo "Grafana: http://localhost:3000 (the performance dashboard)   Prometheus: http://localhost:9090"
+	@echo "Load runs (make perf PROFILE=load) show up on the dashboard as they happen. make down stops it all."
+
+perf: ## Start the stack and run a k6 profile (default PROFILE=smoke): make perf PROFILE=load
+	$(COMPOSE) up -d --build --wait
+	sh perf/run.sh $(or $(PROFILE),smoke)
+
+perf-profile: ## Run a k6 profile and capture CPU, heap, allocation and goroutine profiles (default PROFILE=load)
+	$(COMPOSE) up -d --build --wait
+	sh perf/profile.sh $(or $(PROFILE),load) $(PPROF_URL) bin/perf/pprof-$$(date +%Y%m%d-%H%M%S)
+
+bench: ## Run the Go benchmarks, BENCH_COUNT times each, into bin/bench/current.txt
+	@mkdir -p $(BENCH_OUT)
+	go test -run '^$$' -bench . -benchmem -count $(BENCH_COUNT) ./... | tee $(BENCH_OUT)/current.txt
+
+bench-compare: ## Run the benchmarks here and at BENCH_BASE (default main), interleaved, and compare them
+	sh perf/bench-ab.sh $(BENCH_BASE) $(BENCH_COUNT) $(BENCH_OUT)
+	$(BENCHSTAT) base=$(BENCH_OUT)/base.txt head=$(BENCH_OUT)/head.txt | tee $(BENCH_OUT)/compare.txt
+
+load-compare: ## Run the k6 compare profile against this tree and BENCH_BASE, interleaved
+	sh perf/load-ab.sh $(BENCH_BASE) $(LOAD_ROUNDS) $(LOAD_OUT) $(or $(PROFILE),compare)
+
+perf-compare: ## Both comparisons, written up as the pull request comment CI posts: bin/perf/report.md
+	$(MAKE) bench-compare
+	@status=0; $(MAKE) load-compare || status=$$?; \
+	go build -C perf/report -o $(CURDIR)/bin/perf-report . && bin/perf-report -base-name $(BENCH_BASE) \
+		-bench-base $(BENCH_OUT)/base.txt -bench-head $(BENCH_OUT)/head.txt \
+		-load $(LOAD_OUT) $$([ $$status -ne 0 ] && echo -load-failed) > bin/perf/report.md || status=$$?; \
+	echo "The report is in bin/perf/report.md"; exit $$status
 
 ##@ Documentation (rendered in Docker; nothing to install)
 

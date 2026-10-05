@@ -24,9 +24,11 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-          # The service has no dependencies, so the integration module's
-          # go.sum is the only one to key the cache on.
-          cache-dependency-path: integration/go.sum
+          # The service has no dependencies, so the integration and perf
+          # report modules' go.sum files are the ones to key the cache on.
+          cache-dependency-path: |
+            integration/go.sum
+            perf/report/go.sum
 
       # The same targets as `make check`, as separate steps so a failure
       # shows which one.

@@ -74,6 +74,8 @@ The integration tests switch these same stubs on, one scenario at a time.
 
 ## Load-test tuning
 
+[Performance](performance.md) covers running the load tests; this section covers WireMock's part.
+
 WireMock's defaults suit unit-test-style verification, not long or high-volume runs. `compose.yaml`
 sets:
 

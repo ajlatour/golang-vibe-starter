@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +19,7 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
+	"github.com/ajlatour/golang-vibe-starter/internal/profiling"
 )
 
 func main() {
@@ -77,6 +79,14 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	evaluator, err := newFlags(logger, cfg)
 	if err != nil {
 		return err
+	}
+
+	if cfg.PprofAddr != "" {
+		ln, err := net.Listen("tcp", cfg.PprofAddr)
+		if err != nil {
+			return fmt.Errorf("PPROF_ADDR: %w", err)
+		}
+		go profiling.Serve(ctx, logger, ln)
 	}
 
 	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, newHandler(logger, cfg.HeaderGuard, store, item.WithFlags(evaluator)))

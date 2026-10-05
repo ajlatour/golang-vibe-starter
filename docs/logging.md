@@ -52,7 +52,7 @@ include `.git`; without it, container logs show `version=devel`.
 | `default`     | `flag evaluation failed, using default` | The default value that was used instead.     |
 | `url`         | `using upstream`, `using feature flags` | A configured base URL, credentials redacted.  |
 | `timeout`     | startup and shutdown lines | A configured timeout, e.g. `5s`.                          |
-| `addr`        | `server started`       | The address the server is listening on.                      |
+| `addr`        | `server started`, `profiling server started` | The address the server is listening on.  |
 | `reason`      | `request headers rejected`, `request headers would be rejected` | Which header rule was broken: `header too large`, `too many headers`, `headers too large`, `duplicate header`, `missing content type` or `unsupported content type`. |
 | `header`      | the same lines, when one header is to blame | The header's name, e.g. `Content-Type`.      |
 | `headers`     | `request headers stripped` | The names of the headers removed, comma-separated.       |
@@ -95,6 +95,8 @@ upstream, comes back, and leaves the API.
 | `server started` | INFO | `addr` | The server is listening. |
 | `shutting down` | INFO | `timeout` | A shutdown signal arrived. |
 | `server stopped` | INFO | none | Shutdown finished cleanly. |
+| `profiling server started` | INFO | `addr` | Startup, with `PPROF_ADDR` set: the runtime profiles are served there. |
+| `profiling server failed` | ERROR | `error` | The profiling server stopped unexpectedly. The API keeps running, without profiles. |
 
 These two tables are checked against the code. A test fails the build if the Messages table
 disagrees with the code or with `logtest.Contract` (`internal/logtest/contract.go`), in either

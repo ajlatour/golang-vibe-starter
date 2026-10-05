@@ -27,6 +27,10 @@ type config struct {
 	// binary. Empty uses the embedded copy.
 	FlagsFallbackFile string
 
+	// PprofAddr is where to serve the runtime profiles (internal/profiling).
+	// Empty, the default, serves none.
+	PprofAddr string
+
 	// HeaderGuard is the header guard's policy: headerguard.DefaultPolicy,
 	// with the mode and limits overridden by the environment.
 	HeaderGuard headerguard.Policy
@@ -49,6 +53,9 @@ func loadConfig(getenv func(string) string) (config, error) {
 		FlagsURL:          envconfig.Optional(env, "FLAGS_URL", nil, parseHTTPURL),
 		FlagsTimeout:      envconfig.Optional(env, "FLAGS_TIMEOUT", 500*time.Millisecond, envconfig.ParsePositiveDuration),
 		FlagsFallbackFile: env.String("FLAGS_FALLBACK_FILE"),
+
+		// Off unless asked for: profiles expose the program's internals.
+		PprofAddr: env.String("PPROF_ADDR"),
 	}
 
 	// The header guard: the defaults live in headerguard.DefaultPolicy, and

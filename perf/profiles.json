@@ -1,0 +1,88 @@
+{
+  "smoke": {
+    "description": "30s at a gentle, steady rate. Catches a broken, erroring or deadlocked service, not small regressions. CI runs it on every pull request.",
+    "phases": [
+      { "name": "warmup", "rate": 20, "duration": "5s" },
+      { "name": "steady", "rate": 50, "duration": "25s" }
+    ],
+    "thresholds": {
+      "http_req_failed": ["rate<0.01"],
+      "checks": ["rate>0.99"],
+      "http_req_duration{phase:steady}": ["p(99)<500"]
+    }
+  },
+  "compare": {
+    "description": "20s at a brisk rate, for comparing two versions back to back: short, but enough requests for a steady p99. Every pull request runs it against itself and its base, interleaved.",
+    "phases": [
+      { "name": "warmup", "from": 50, "rate": 300, "duration": "5s" },
+      { "name": "steady", "rate": 300, "duration": "15s" }
+    ],
+    "thresholds": {
+      "http_req_failed": ["rate<0.01"],
+      "checks": ["rate>0.99"],
+      "http_req_duration{phase:steady}": ["p(99)<500"]
+    }
+  },
+  "load": {
+    "description": "Expected traffic, held for a few minutes after a warm-up. The thresholds are the service's latency and error budget.",
+    "phases": [
+      { "name": "warmup", "from": 10, "rate": 200, "duration": "30s" },
+      { "name": "steady", "rate": 200, "duration": "3m" }
+    ],
+    "thresholds": {
+      "http_req_failed{phase:steady}": ["rate<0.001"],
+      "checks{phase:steady}": ["rate>0.999"],
+      "http_req_duration{phase:steady}": ["p(99)<25", "p(99.9)<100"]
+    }
+  },
+  "stress": {
+    "description": "Steps the rate up until the service breaks. Each step has its own thresholds, so the summary shows the last step within budget: the knee. Crossed thresholds are the point of this test, not a failure.",
+    "informational": true,
+    "phases": [
+      { "name": "warmup", "from": 10, "rate": 200, "duration": "30s" },
+      { "name": "step-500", "rate": 500, "duration": "1m" },
+      { "name": "step-1000", "rate": 1000, "duration": "1m" },
+      { "name": "step-2000", "rate": 2000, "duration": "1m" },
+      { "name": "step-4000", "rate": 4000, "duration": "1m" },
+      { "name": "step-8000", "rate": 8000, "duration": "1m" }
+    ],
+    "thresholds": {
+      "http_req_duration{phase:step-500}": ["p(99)<25"],
+      "http_req_duration{phase:step-1000}": ["p(99)<25"],
+      "http_req_duration{phase:step-2000}": ["p(99)<25"],
+      "http_req_duration{phase:step-4000}": ["p(99)<25"],
+      "http_req_duration{phase:step-8000}": ["p(99)<25"],
+      "http_req_failed{phase:step-500}": ["rate<0.001"],
+      "http_req_failed{phase:step-1000}": ["rate<0.001"],
+      "http_req_failed{phase:step-2000}": ["rate<0.001"],
+      "http_req_failed{phase:step-4000}": ["rate<0.001"],
+      "http_req_failed{phase:step-8000}": ["rate<0.001"]
+    }
+  },
+  "spike": {
+    "description": "A sudden burst far above normal traffic, then normal traffic again. Checks the service survives the burst and recovers its latency afterwards.",
+    "phases": [
+      { "name": "warmup", "from": 10, "rate": 100, "duration": "30s" },
+      { "name": "baseline", "rate": 100, "duration": "1m" },
+      { "name": "spike", "rate": 2000, "duration": "30s" },
+      { "name": "recovery", "rate": 100, "duration": "1m" }
+    ],
+    "thresholds": {
+      "http_req_failed{phase:spike}": ["rate<0.01"],
+      "http_req_failed{phase:recovery}": ["rate<0.001"],
+      "http_req_duration{phase:recovery}": ["p(99)<25"]
+    }
+  },
+  "soak": {
+    "description": "Expected traffic for half an hour, to surface slow leaks: memory, goroutines or connections that grow with time. Compare heap and goroutine profiles from the start and the end (make perf-profile).",
+    "phases": [
+      { "name": "warmup", "from": 10, "rate": 200, "duration": "30s" },
+      { "name": "steady", "rate": 200, "duration": "30m" }
+    ],
+    "thresholds": {
+      "http_req_failed{phase:steady}": ["rate<0.001"],
+      "checks{phase:steady}": ["rate>0.999"],
+      "http_req_duration{phase:steady}": ["p(99)<25", "p(99.9)<100"]
+    }
+  }
+}

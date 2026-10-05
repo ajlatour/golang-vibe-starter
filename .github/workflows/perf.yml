@@ -1,0 +1,171 @@
+name: Performance
+
+# Compares each pull request's performance with its base branch and keeps the
+# result in a single comment on the pull request, edited on every push. See
+# docs/performance.md#pull-request-reports.
+#
+# Two comparisons run in parallel, each on one runner with the base and the
+# pull request interleaved (base, PR, PR, base, ...), so the runner's ups and
+# downs land on both alike: the Go benchmarks, and a short k6 load test. A
+# third job writes the report from their results. It fails only on what is
+# exact or plainly broken: more allocations per operation on a benchmarked
+# path (unless the pull request has the perf-ok label), or the load test
+# crossing its thresholds. Timing changes are reported, never failed on.
+
+on:
+  pull_request:
+    # labeled and unlabeled so adding or removing perf-ok re-evaluates.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    # Prose can't change performance.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  BASE_REF: ${{ github.base_ref }}
+  VERSION: ${{ github.sha }}
+
+jobs:
+  bench:
+    # Other labels don't change anything, so they don't rerun the comparison.
+    if: >-
+      (github.event.action != 'labeled' && github.event.action != 'unlabeled')
+      || github.event.label.name == 'perf-ok'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The base branch's history, for the base's worktree.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: perf/report/go.sum
+
+      - name: Benchmarks, interleaved with the base
+        run: sh perf/bench-ab.sh "origin/$BASE_REF" 10 bin/bench
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bench
+          path: |
+            bin/bench/base.txt
+            bin/bench/head.txt
+
+  load:
+    if: >-
+      (github.event.action != 'labeled' && github.event.action != 'unlabeled')
+      || github.event.label.name == 'perf-ok'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Load test, interleaved with the base
+        run: |
+          status=0
+          sh perf/load-ab.sh "origin/$BASE_REF" 2 bin/perf/compare compare || status=$?
+          # The report job turns crossed thresholds into the verdict.
+          if [ "$status" -ne 0 ]; then touch bin/perf/compare/head-failed; fi
+
+      - name: Logs from the stack
+        if: failure() || hashFiles('bin/perf/compare/head-failed') != ''
+        run: docker compose logs --no-color
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: load
+          path: bin/perf/compare/
+
+  report:
+    needs: [bench, load]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write # the comment; the jobs that take the measurements can't
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: perf/report/go.sum
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: results
+
+      - name: Write the report
+        id: report
+        env:
+          ACCEPT_ALLOCS: ${{ contains(github.event.pull_request.labels.*.name, 'perf-ok') }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DOCS_URL: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.event.pull_request.head.sha }}/docs/performance.md#pull-request-reports
+        run: |
+          set -- -base-name "$BASE_REF" -details-url "$RUN_URL" -docs-url "$DOCS_URL" \
+            -bench-base results/bench/base.txt -bench-head results/bench/head.txt \
+            -load results/load
+          [ -e results/load/head-failed ] && set -- "$@" -load-failed
+          [ "$ACCEPT_ALLOCS" = true ] && set -- "$@" -accept-allocs
+          # Built and then run, not go run, which turns every failure into
+          # exit status 1 and so would hide which kind this is.
+          go build -C perf/report -o "$RUNNER_TEMP/report" .
+          status=0
+          "$RUNNER_TEMP/report" "$@" > report.md || status=$?
+          # 1 is a blocking regression, reported below; anything else is a
+          # broken input, which fails here.
+          [ "$status" -le 1 ] || exit "$status"
+          if [ "$status" -eq 1 ]; then echo blocking=true; else echo blocking=false; fi >> "$GITHUB_OUTPUT"
+
+      - name: Write the job summary
+        run: |
+          {
+            cat report.md
+            echo
+            echo '<details><summary>benchstat</summary>'
+            echo
+            echo '```'
+            go run golang.org/x/perf/cmd/benchstat@v0.0.0-20260929162123-406019bb8b68 \
+              "$BASE_REF=results/bench/base.txt" PR=results/bench/head.txt
+            echo '```'
+            echo
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # A pull request from a fork gets a read-only token, so its report is in
+      # the job summary only.
+      - name: Comment on the pull request
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- perf-report -->"))) | .id' | head -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@report.md > /dev/null
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -F body=@report.md > /dev/null
+          fi
+
+      - name: Fail on a blocking regression
+        if: steps.report.outputs.blocking == 'true'
+        run: |
+          echo "Blocking performance regression: see the report in the job summary or on the pull request."
+          exit 1

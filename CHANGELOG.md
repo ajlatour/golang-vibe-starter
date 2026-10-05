@@ -11,6 +11,44 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Resource monitoring ([watching resources](docs/performance.md#watching-resources)):
+  - The API serves its Go runtime metrics, and the process's CPU time and memory, at `/metrics`
+    on `PPROF_ADDR`, in Prometheus's text format, with the standard library alone.
+  - Every `make perf` run samples each container's CPU and memory with `docker stats` and reads
+    the API's metrics before and after, and prints what the run cost. The pull request report
+    compares the API's CPU per request, peak memory, and allocations and GC cycles per request,
+    base against PR, and warns on a large increase.
+  - `make monitor` starts cAdvisor, Prometheus and Grafana (the `monitoring` compose profile,
+    published on loopback only) with a dashboard of k6's load, every container's CPU, memory and
+    network, and the API's runtime, on one timeline; k6 sends its results there while it's up.
+    `make down` stops the profiles too.
+- Performance testing ([Performance](docs/performance.md)):
+  - Go benchmarks for the request path (`BenchmarkAPI` through the whole service, and the
+    middleware, header guard and logger on their own). `make bench` runs them;
+    `make bench-compare` compares them with `main` using benchstat.
+  - k6 load profiles in `perf/profiles.json`, run in Docker on the stack's network:
+    `make perf PROFILE=smoke|load|stress|spike|soak`. Fixed-rate traffic, per-phase
+    thresholds, and a JSON summary in `bin/perf/`.
+  - `PPROF_ADDR` serves the runtime profiles (pprof) on a listener of its own; off by default.
+    The compose stack sets it, published on `127.0.0.1:6061`. `make perf-profile` captures CPU,
+    heap, allocation and goroutine profiles during and after a load run.
+  - Every pull request gets a performance report from the new Performance workflow, kept in one
+    comment edited on each push: the benchmarks and the k6 smoke profile, run against the pull
+    request and its base interleaved on one runner, compared with benchstat's statistics
+    (`perf/report`). It fails only on more allocations per operation (unless the pull request has
+    the `perf-ok` label) or crossed load thresholds; timing changes are reported, never failed
+    on. `make perf-compare` writes the same report locally. The benchmark and load comparisons run
+    as parallel jobs, with many short benchmark samples (300ms, 10 rounds) and a dedicated 20s
+    `compare` k6 profile, and the workflow skips changes to Markdown and `docs/` alone.
+- `scripts/api`, for calling the API by hand: `scripts/api POST /items '{"name": "Sprocket"}'`.
+  It wraps curl, adding `Content-Type: application/json` to a body (from the argument, a file or
+  stdin) and an optional `CORRELATION_ID`, prints the status and correlation ID, pretty-prints
+  the body with jq when jq is installed and the output is a terminal, and exits 1 on a 4xx or
+  5xx. `API_URL` points it elsewhere. Needs only bash (3.2 or later) and curl.
+- [Calling the API](docs/curl.md): an example of every route, error and header rule, with
+  `scripts/api` and with plain curl. A test runs every command on the page against the real
+  handlers and checks the status it promises, and that every route is called successfully.
+- `itemtest.MemStore.Seed`, to start a test from items with known IDs.
 - `.env.example`, listing every environment variable the API reads with its default, all commented
   out. Copy it to `.env` and uncomment lines to change settings under docker compose, which now
   reads `.env` if there is one (the integration stack ignores it). A test keeps the code,
@@ -187,6 +225,10 @@ Ideas considered but not planned are listed under
 
 ### Fixed
 
+- The pull request load comparison measured the pull request against itself: `docker compose run`
+  restarted the API on compose's default image before every k6 run, replacing the base's image.
+  k6 now runs with `--no-deps`, and `perf/load-ab.sh` checks after every run that the API ran the
+  image it chose.
 - The integration tests could leave flagd serving a stale flag value for the rest of the run.
   They replaced the flags file by writing a temporary file and renaming it, and flagd, which
   watches the file, sometimes failed to re-attach its watch to the new file ("error restoring

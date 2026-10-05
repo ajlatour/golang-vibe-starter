@@ -92,6 +92,7 @@ func TestRunErrors(t *testing.T) {
 	}{
 		{name: "missing upstream", env: map[string]string{}},
 		{name: "unknown argument", args: []string{"serve"}, env: map[string]string{"UPSTREAM_URL": "http://mock"}},
+		{name: "pprof address unusable", env: map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock", "PPROF_ADDR": "no-such-host.invalid:1"}},
 		{name: "healthcheck with nothing listening", args: []string{"healthcheck"}, env: map[string]string{"ADDR": "127.0.0.1:1", "UPSTREAM_URL": "http://mock"}},
 	}
 	for _, tt := range tests {
@@ -140,5 +141,67 @@ func TestNewFlags(t *testing.T) {
 		if !f.Bool(t.Context(), item.FlagListTotal) {
 			t.Error("Bool() = false, want the definitions-file default (true) when flagd is unreachable")
 		}
+	})
+}
+
+// TestProfiling checks the runtime profiles and metrics are served on
+// PPROF_ADDR when it's set, and never on the API's own port, set or not.
+func TestProfiling(t *testing.T) {
+	get := func(t *testing.T, url string) int {
+		t.Helper()
+		resp, err := http.Get(url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	t.Run("off by default", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		addr, logs, errc := startApp(t, ctx, map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock"})
+		for _, path := range []string{"/debug/pprof/", "/metrics"} {
+			if code := get(t, "http://"+addr+path); code != http.StatusNotFound {
+				t.Errorf("the API port answers %s with %d, want 404", path, code)
+			}
+		}
+		if strings.Contains(logs.String(), "profiling server started") {
+			t.Error("a profiling server started without PPROF_ADDR")
+		}
+		cancel()
+		waitForShutdown(t, errc)
+	})
+
+	t.Run("on PPROF_ADDR only", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		addr, logs, errc := startApp(t, ctx, map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock", "PPROF_ADDR": "127.0.0.1:0"})
+		var pprofAddr string
+		for deadline := time.Now().Add(5 * time.Second); pprofAddr == "" && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+			for _, line := range logs.Lines() {
+				var rec struct{ Msg, Addr string }
+				if json.Unmarshal([]byte(line), &rec) == nil && rec.Msg == "profiling server started" {
+					pprofAddr = rec.Addr
+				}
+			}
+		}
+		if pprofAddr == "" {
+			t.Fatalf("no profiling server started line; logs: %s", logs)
+		}
+		if code := get(t, "http://"+pprofAddr+"/debug/pprof/heap?debug=1"); code != http.StatusOK {
+			t.Errorf("PPROF_ADDR answers the heap profile with %d, want 200", code)
+		}
+		if code := get(t, "http://"+pprofAddr+"/metrics"); code != http.StatusOK {
+			t.Errorf("PPROF_ADDR answers /metrics with %d, want 200", code)
+		}
+		for _, path := range []string{"/debug/pprof/", "/metrics"} {
+			if code := get(t, "http://"+addr+path); code != http.StatusNotFound {
+				t.Errorf("the API port answers %s with %d, want 404", path, code)
+			}
+		}
+		if code := get(t, "http://"+pprofAddr+"/items"); code != http.StatusNotFound {
+			t.Errorf("PPROF_ADDR answers /items with %d, want 404: it serves profiles only", code)
+		}
+		cancel()
+		waitForShutdown(t, errc)
 	})
 }

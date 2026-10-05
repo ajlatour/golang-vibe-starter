@@ -30,9 +30,11 @@ var Contract = map[string]Message{
 	"using feature flags": {[]string{"INFO"}, []string{"url", "timeout"}},
 	"using header guard":  {[]string{"INFO"}, []string{"mode", "max_headers", "max_header_bytes", "max_total_bytes"}},
 	"feature flags: no FLAGS_URL, using default values only": {[]string{"INFO"}, nil},
-	"server started": {[]string{"INFO"}, []string{"addr"}},
-	"shutting down":  {[]string{"INFO"}, []string{"timeout"}},
-	"server stopped": {[]string{"INFO"}, nil},
+	"server started":           {[]string{"INFO"}, []string{"addr"}},
+	"shutting down":            {[]string{"INFO"}, []string{"timeout"}},
+	"server stopped":           {[]string{"INFO"}, nil},
+	"profiling server started": {[]string{"INFO"}, []string{"addr"}},
+	"profiling server failed":  {[]string{"ERROR"}, []string{"error"}},
 
 	// The four ends of a request, in order.
 	"request received":           {[]string{"INFO", "DEBUG"}, []string{"method", "path", "content_length"}},
@@ -63,5 +65,5 @@ var Contract = map[string]Message{
 // so legitimately have no request_id. Every other message has one.
 var OutsideRequests = []string{
 	"using upstream", "using feature flags", "using header guard", "feature flags: no FLAGS_URL, using default values only",
-	"server started", "shutting down", "server stopped",
+	"server started", "shutting down", "server stopped", "profiling server started", "profiling server failed",
 }

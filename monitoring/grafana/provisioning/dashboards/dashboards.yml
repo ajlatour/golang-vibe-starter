@@ -1,0 +1,10 @@
+# Loads the dashboards in monitoring/grafana/dashboards, mounted read-only.
+# Edit them as JSON in the repository; changes made in Grafana's UI can't be
+# saved back (export the JSON instead).
+apiVersion: 1
+providers:
+  - name: golang-vibe-starter
+    type: file
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
