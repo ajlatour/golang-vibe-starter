@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -9,13 +10,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
 	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
+	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 )
@@ -98,7 +102,7 @@ func guideServer(t *testing.T) (*httptest.Server, *recorder) {
 		routes.HandleFunc(pattern, func(http.ResponseWriter, *http.Request) {})
 	}
 	rec := &recorder{
-		next:   newHandler(slog.New(slog.DiscardHandler), headerguard.DefaultPolicy(), store),
+		next:   newHandler(slog.New(slog.DiscardHandler), headerguard.DefaultPolicy(), composeAuth(t), noLimits, store),
 		routes: routes,
 	}
 	srv := httptest.NewServer(rec)
@@ -106,19 +110,47 @@ func guideServer(t *testing.T) (*httptest.Server, *recorder) {
 	return srv, rec
 }
 
+// devKey is the local stack's development key, which docs/curl.md tells
+// readers to use; composeAuth checks compose.yaml really configures it.
+const devKey = "gvs_local-development-only"
+
+// composeAuth is the authentication the compose stack runs with: the keys
+// compose.yaml sets by default, so the guide's commands meet what they would
+// locally.
+func composeAuth(t *testing.T) apikey.Policy {
+	t.Helper()
+	b, err := os.ReadFile("../../compose.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`API_KEYS: \$\{API_KEYS:-([^}]+)\}`).FindSubmatch(b)
+	if m == nil {
+		t.Fatal("compose.yaml doesn't set a default API_KEYS")
+	}
+	keys, err := apikey.ParseKeys(string(m[1]))
+	if err != nil {
+		t.Fatalf("compose.yaml's API_KEYS: %v", err)
+	}
+	if !slices.ContainsFunc(keys, func(k apikey.Key) bool { return k.Hash == sha256.Sum256([]byte(devKey)) }) {
+		t.Fatalf("compose.yaml's API_KEYS doesn't include the development key %q the guide uses", devKey)
+	}
+	return apikey.Policy{Keys: keys, Exempt: []string{httpx.HealthzPath}}
+}
+
 // shell runs script with bash from the repository root, with API_URL set to
-// apiURL and CORRELATION_ID unset, and returns its combined output and exit
-// code.
+// apiURL, API_KEY to the development key (as docs/curl.md has readers export
+// it) and CORRELATION_ID unset, and returns its combined output and exit
+// code. extraEnv comes last, so it can override them.
 func shell(t *testing.T, apiURL, script string, extraEnv ...string) (string, int) {
 	t.Helper()
 	cmd := exec.Command("bash", "-c", script)
 	cmd.Dir = "../.."
 	for _, kv := range os.Environ() {
-		if !strings.HasPrefix(kv, "API_URL=") && !strings.HasPrefix(kv, "CORRELATION_ID=") {
+		if !strings.HasPrefix(kv, "API_URL=") && !strings.HasPrefix(kv, "API_KEY=") && !strings.HasPrefix(kv, "CORRELATION_ID=") {
 			cmd.Env = append(cmd.Env, kv)
 		}
 	}
-	cmd.Env = append(cmd.Env, "API_URL="+apiURL)
+	cmd.Env = append(cmd.Env, "API_URL="+apiURL, "API_KEY="+devKey)
 	cmd.Env = append(cmd.Env, extraEnv...)
 	out, err := cmd.CombinedOutput()
 	if _, ok := err.(*exec.ExitError); err != nil && !ok {
@@ -269,7 +301,7 @@ func TestAPIScript(t *testing.T) {
 		{name: "body from stdin", script: `echo '{"name":"Piped"}' | scripts/api POST /items -`, want: []string{"HTTP/1.1 201 Created", `"name":"Piped"`}},
 		{name: "a 4xx exits 1 and prints the body", script: `scripts/api GET /items/nope`, wantExit: 1, want: []string{"HTTP/1.1 404 Not Found", `{"error":"item not found"}`}},
 		{name: "correlation ID", script: `scripts/api GET /items`, env: []string{"CORRELATION_ID=from-the-script"}, want: []string{"Client-Correlation-Id: from-the-script"}},
-		{name: "curl options pass through", script: `scripts/api GET /items -H 'Authorization: Bearer t0ken'`, want: []string{"HTTP/1.1 200 OK"}},
+		{name: "curl options pass through", script: `scripts/api GET /items -H 'X-Extra: t0ken'`, want: []string{"HTTP/1.1 200 OK"}},
 		{name: "a full URL", script: `scripts/api GET ` + spy.URL + `/healthz`, want: []string{`{"status":"ok"}`}},
 		{name: "no arguments", script: `scripts/api`, wantExit: 2, want: []string{"scripts/api METHOD PATH [BODY]"}},
 		{name: "a path without a slash", script: `scripts/api GET items`, wantExit: 2, want: []string{"PATH must start with /"}},
@@ -297,11 +329,27 @@ func TestAPIScript(t *testing.T) {
 		}
 	})
 	t.Run("curl options reach the API", func(t *testing.T) {
-		shell(t, spy.URL, `scripts/api GET /items -H 'Authorization: Bearer t0ken'`)
+		shell(t, spy.URL, `scripts/api GET /items -H 'X-Extra: t0ken'`)
 		mu.Lock()
 		defer mu.Unlock()
-		if got := lastReq.Header.Get("Authorization"); got != "Bearer t0ken" {
-			t.Errorf("Authorization = %q, want the one passed to curl", got)
+		if got := lastReq.Header.Get("X-Extra"); got != "t0ken" {
+			t.Errorf("X-Extra = %q, want the one passed to curl", got)
+		}
+	})
+	t.Run("API_KEY is sent", func(t *testing.T) {
+		shell(t, spy.URL, `scripts/api GET /items`, "API_KEY=gvs_mine")
+		mu.Lock()
+		defer mu.Unlock()
+		if got := lastReq.Header.Get("Authorization"); got != "Bearer gvs_mine" {
+			t.Errorf("Authorization = %q, want Bearer gvs_mine", got)
+		}
+	})
+	t.Run("the development key never goes elsewhere", func(t *testing.T) {
+		shell(t, spy.URL, `scripts/api GET /healthz`, "API_KEY=")
+		mu.Lock()
+		defer mu.Unlock()
+		if got := lastReq.Header.Get("Authorization"); got != "" {
+			t.Errorf("with API_URL set and no API_KEY, Authorization = %q, want none", got)
 		}
 	})
 	t.Run("piped output is the API's bytes", func(t *testing.T) {

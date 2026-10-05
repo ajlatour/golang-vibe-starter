@@ -36,18 +36,18 @@ BENCHSTAT   := go run golang.org/x/perf/cmd/benchstat@v0.0.0-20260929162123-4060
 FAULTS := $(notdir $(basename $(wildcard wiremock/faults/*.json)))
 
 # pandoc renders the Markdown docs, run in Docker like Redocly below.
-PANDOC   := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/data" -w /data --entrypoint sh pandoc/core:3.7
+PANDOC   := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/data" -w /data --entrypoint sh pandoc/core:3.7@sha256:388e8ed4db8f9586e924f6fed4be88f64cada231777d7f4b8f10a8ae438a7ec9
 DOCS_OUT := bin/docs
 
 # Redocly CLI for the spec targets, run in Docker (already needed for the stack)
 # so there's nothing else to install. Pinned, so it behaves the same everywhere;
 # run as your user, so files it writes aren't owned by root.
-REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/spec" -w /spec redocly/cli:2.57.0
+REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/spec" -w /spec redocly/cli:2.57.0@sha256:e320090ecd380878ff2aa671a928d5ac28fcbb7bb6230250d772790811125aea
 
 .DEFAULT_GOAL := help
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
-	live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint \
+	api-key vuln live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint \
 	perf perf-profile bench bench-compare load-compare perf-compare monitor
 
 ##@ Help
@@ -112,6 +112,15 @@ test-race: ## Unit tests with the race detector
 	go test -C perf/report -race ./...
 
 check: fmt-check vet test-race ## Everything CI's fast job runs
+
+api-key: ## Generate an API key and its API_KEYS entry: make api-key NAME=ci SCOPE=write
+	@if [ -z "$(NAME)" ] || [ -z "$(SCOPE)" ]; then echo "usage: make api-key NAME=<who> SCOPE=read|write"; exit 2; fi
+	@go run ./cmd/apikey $(NAME) $(SCOPE)
+
+vuln: ## Check all three modules for known vulnerabilities the code can reach
+	go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+	go run -C integration golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+	go run -C perf/report golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
 live-test: ## The opt-in httpstore test against the running WireMock
 	$(COMPOSE) up -d --wait mock

@@ -30,6 +30,22 @@ Feature: Items
     Then the response status is 404
     And the JSON field "error" is "item not found"
 
+  # An ID with anything but letters, digits, - and _ can't name an item. The
+  # API answers 404 itself and never sends it upstream, where a proxy might
+  # normalize or decode it into another route.
+  Scenario Outline: An ID no item can have is not found
+    When I GET "<path>"
+    Then the response status is 404
+    And the JSON field "error" is "item not found"
+
+    Examples:
+      | path                       |
+      | /items/%2E%2E              |
+      | /items/..%2F..%2F__admin   |
+      | /items/a%2Fb               |
+      | /items/x%3Fq=1             |
+      | /items/with%20space        |
+
   Scenario: Creating an item
     When I POST "/items" with body:
       """

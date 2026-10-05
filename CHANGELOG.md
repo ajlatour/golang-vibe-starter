@@ -9,6 +9,49 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+### Security
+
+- API keys (`internal/apikey`): every route but `/healthz` needs one, sent as
+  `Authorization: Bearer <key>`; 401 without a valid key, 403 for a write with a read-only one.
+  `API_KEYS` lists the keys as `name:scope:sha256`, so only hashes are configured, and every
+  configured hash is compared in constant time. `make api-key` generates a key and its entry.
+  The service refuses to start with no keys unless `API_AUTH=off` (local development only,
+  logged as a warning), and `API_AUTH_READS=open` lets reads through without a key. The compose
+  stack sets two documented development keys, which `scripts/api`, k6 and the integration tests
+  use; `scripts/api` sends one only to the local stack.
+- Limits (`internal/limit`): at most `MAX_IN_FLIGHT` requests (512) are served at once, and more
+  get 503, before authentication, so floods without a valid key are capped too; and each client,
+  its API key or else its IP address, may make `RATE_LIMIT` requests a second (100) in bursts of
+  `RATE_BURST` (200), and more get 429. Both set `Retry-After`, and `/healthz` is exempt. The
+  compose stack turns the per-client limit off, so load tests measure the API.
+- Item IDs are checked before they reach the upstream: an ID must be 1 to 128 letters, digits,
+  `-` and `_` (`item.ValidID`), and any other is a 404 that never leaves the API. Before, an ID
+  such as `%2E%2E` reached the upstream as `/items/..`, which an upstream or proxy that
+  normalizes paths or decodes `%2F` could route somewhere other than `/items/{id}`. The rule is
+  in `docs/openapi.json`, and `httpstore` refuses such IDs too.
+- The compose stack publishes the API (8080), WireMock (8081) and flagd (8016) on `127.0.0.1` only,
+  like the ports added since. Before, they listened on every interface, so anyone on the same
+  network could use WireMock's unauthenticated admin API to change what the API was served.
+- Calls to the upstream and to flagd never follow redirects (`jsoncall`): a 3xx is a failed call,
+  so the API answers 502. Before, a compromised or misconfigured upstream could redirect the API to
+  any address, internal ones included, and on a 307 or 308 the request body went along.
+- The profiling listener (`PPROF_ADDR`) logs a WARN at startup when other machines can reach it,
+  and a CPU profile or trace is limited to 60 seconds, since pprof itself sets no limit on how
+  long a caller can keep the CPU busy.
+- Error messages for an unusable body describe it in JSON's terms (`field "name" must be a
+  string`); before, a type mismatch quoted encoding/json, naming the service's Go types.
+- Every response carries `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
+- The server reads at most twice `HEADER_MAX_TOTAL_BYTES` of request line and headers (64 KiB by
+  default) before refusing a request with a plain 431 of its own; before, Go's default let every
+  connection send 1 MiB before the header guard saw it.
+- The API container in compose runs with a read-only filesystem, no Linux capabilities and
+  `no-new-privileges`.
+- CI's supply chain: every action is pinned to a commit SHA and every container image to a
+  digest, Dependabot proposes weekly updates for Go modules, actions and images, and a new `vuln`
+  job (`make vuln`) runs govulncheck over all three modules. The performance workflow's comment is
+  posted by a job that never runs the pull request's code; the job that builds the report tool
+  from it is read-only.
+
 ### Added
 
 - Resource monitoring ([watching resources](docs/performance.md#watching-resources)):

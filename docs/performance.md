@@ -41,7 +41,8 @@ so a change in them is real wherever it shows up.
 
 ## Load tests (k6)
 
-`perf/k6.js` sends a mix of traffic like a real client's: 40% `GET /items`, 40% `GET /items/{id}`,
+`perf/k6.js` sends a mix of traffic like a real client's, with the stack's development API key (or
+`API_KEY`, to load-test with another): 40% `GET /items`, 40% `GET /items/{id}`,
 10% creates, 5% replaces and 5% deletes, against the items WireMock serves. It sends at a **fixed
 rate**, starting requests on schedule whether or not earlier ones have answered, so a slow service
 can't hide by slowing the test down (the trap called coordinated omission).
@@ -156,7 +157,10 @@ The API serves Go's runtime profiles (`net/http/pprof`), and its runtime metrics
 is set, on that address only, never on the API's port. It's off by default. The compose stack sets it and publishes it as
 `127.0.0.1:6061`, on this machine's loopback only, since profiles expose the program's internals
 (function names, stacks, what holds memory). If you enable it anywhere else, keep the port private
-the same way.
+the same way. The API logs a WARN at startup when the listener is reachable from other machines,
+which inside a container is expected (the port's publishing decides who can reach it) and anywhere
+else a mistake. A CPU profile or trace may run for at most 60 seconds (`?seconds=`), since both
+cost CPU for as long as they run.
 
 `make perf-profile` runs a k6 profile and, after a 40s warm-up, captures heap and goroutine
 snapshots, a 30s CPU profile and an allocation profile. When the run ends it captures heap and
@@ -197,8 +201,10 @@ from them mean little. So each comparison measures both versions on one runner, 
   from each version, after a warm-up run that's thrown away.
 
 Whatever slows a runner meanwhile lands on both versions alike. The two comparisons run as parallel
-jobs on separate runners, and a third job writes the report from their results; only that job can
-write to the pull request. Changes to Markdown and `docs/` alone don't run the workflow.
+jobs on separate runners, and a third job writes the report from their results. None of them can
+write to the pull request: the report tool is built from the pull request's own code, so a fourth
+job posts the comment and applies the verdict, reading the report as data and never checking out
+or running the pull request's code. Changes to Markdown and `docs/` alone don't run the workflow.
 
 **What the comment shows.** First the verdict, then the changes that matter, then the load test's
 latency and errors for each version, and what the API cost while it ran: CPU per request (from

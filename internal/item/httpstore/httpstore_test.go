@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -75,7 +76,7 @@ func TestStoreRequests(t *testing.T) {
 		{name: "plain", baseURL: "", id: "abc", wantPath: "/items/abc"},
 		{name: "trailing slash on base", baseURL: "/", id: "abc", wantPath: "/items/abc"},
 		{name: "path prefix", baseURL: "/v1/", id: "abc", wantPath: "/v1/items/abc"},
-		{name: "ID is escaped", baseURL: "", id: "a/b c", wantPath: "/items/a%2Fb%20c"},
+		{name: "every allowed character", baseURL: "", id: "aZ09-_", wantPath: "/items/aZ09-_"},
 	}
 
 	for _, tt := range tests {
@@ -179,5 +180,53 @@ func TestStoreTimeout(t *testing.T) {
 	store := httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})
 	if _, err := store.List(t.Context()); err == nil {
 		t.Error("List error = nil, want timeout")
+	}
+}
+
+// TestInvalidIDsNeverReachTheUpstream checks the store refuses an ID that
+// can't name an item (see item.ValidID) without calling the upstream, so a
+// crafted ID can't be normalized or decoded into another route there.
+func TestInvalidIDsNeverReachTheUpstream(t *testing.T) {
+	var calls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		t.Errorf("the upstream was called: %s %s", r.Method, r.URL.EscapedPath())
+	}))
+	defer upstream.Close()
+	store := httpstore.New(upstream.URL, upstream.Client())
+
+	for _, id := range []string{"", ".", "..", "../admin", "..%2F..%2Fadmin", "a/b", "a b", "x?q=1", "x#f", strings.Repeat("a", item.MaxIDLen+1)} {
+		if _, err := store.Get(t.Context(), id); !errors.Is(err, item.ErrNotFound) {
+			t.Errorf("Get(%q) error = %v, want ErrNotFound", id, err)
+		}
+		if _, err := store.Update(t.Context(), item.Item{ID: id, Name: "x"}); !errors.Is(err, item.ErrNotFound) {
+			t.Errorf("Update(%q) error = %v, want ErrNotFound", id, err)
+		}
+		if err := store.Delete(t.Context(), id); !errors.Is(err, item.ErrNotFound) {
+			t.Errorf("Delete(%q) error = %v, want ErrNotFound", id, err)
+		}
+	}
+	if n := calls.Load(); n != 0 {
+		t.Errorf("the upstream was called %d times", n)
+	}
+}
+
+// TestUpstreamRedirectIsAFailure checks an upstream's redirect is a failed
+// call (502 to the API's client), not followed to wherever it points.
+func TestUpstreamRedirectIsAFailure(t *testing.T) {
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("the redirect was followed: %s %s", r.Method, r.URL)
+	}))
+	defer elsewhere.Close()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+"/latest/meta-data", http.StatusTemporaryRedirect)
+	}))
+	defer upstream.Close()
+
+	store := httpstore.New(upstream.URL, &http.Client{Timeout: time.Second})
+	_, err := store.Create(t.Context(), item.Item{Name: "x"})
+	var uerr *httpstore.UpstreamError
+	if !errors.As(err, &uerr) || uerr.Status != http.StatusTemporaryRedirect || uerr.HTTPStatus() != http.StatusBadGateway {
+		t.Errorf("Create error = %v; want an UpstreamError for the 307, answered as 502", err)
 	}
 }

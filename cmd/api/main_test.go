@@ -37,7 +37,7 @@ func TestRun(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	env := map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": upstream.URL}
+	env := map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": upstream.URL, "API_AUTH": "off"}
 	addr, _, errc := startApp(t, ctx, env)
 	base := "http://" + addr
 
@@ -92,7 +92,9 @@ func TestRunErrors(t *testing.T) {
 	}{
 		{name: "missing upstream", env: map[string]string{}},
 		{name: "unknown argument", args: []string{"serve"}, env: map[string]string{"UPSTREAM_URL": "http://mock"}},
-		{name: "pprof address unusable", env: map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock", "PPROF_ADDR": "no-such-host.invalid:1"}},
+		{name: "authentication on, with no keys", env: map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock"}},
+		{name: "a bad API_KEYS entry", env: map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock", "API_KEYS": "ci:write:gvs_the-key-itself"}},
+		{name: "pprof address unusable", env: map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock", "PPROF_ADDR": "no-such-host.invalid:1", "API_AUTH": "off"}},
 		{name: "healthcheck with nothing listening", args: []string{"healthcheck"}, env: map[string]string{"ADDR": "127.0.0.1:1", "UPSTREAM_URL": "http://mock"}},
 	}
 	for _, tt := range tests {
@@ -159,7 +161,7 @@ func TestProfiling(t *testing.T) {
 
 	t.Run("off by default", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
-		addr, logs, errc := startApp(t, ctx, map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock"})
+		addr, logs, errc := startApp(t, ctx, map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock", "API_AUTH": "off"})
 		for _, path := range []string{"/debug/pprof/", "/metrics"} {
 			if code := get(t, "http://"+addr+path); code != http.StatusNotFound {
 				t.Errorf("the API port answers %s with %d, want 404", path, code)
@@ -174,7 +176,7 @@ func TestProfiling(t *testing.T) {
 
 	t.Run("on PPROF_ADDR only", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
-		addr, logs, errc := startApp(t, ctx, map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock", "PPROF_ADDR": "127.0.0.1:0"})
+		addr, logs, errc := startApp(t, ctx, map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock", "PPROF_ADDR": "127.0.0.1:0", "API_AUTH": "off"})
 		var pprofAddr string
 		for deadline := time.Now().Add(5 * time.Second); pprofAddr == "" && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 			for _, line := range logs.Lines() {

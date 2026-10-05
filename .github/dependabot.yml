@@ -1,0 +1,40 @@
+# Keeps every pinned dependency current: Go modules, the GitHub Actions
+# (pinned to commit SHAs, with the version in a comment, which Dependabot
+# updates together), and the container images (pinned to digests). Weekly,
+# with each kind grouped into one pull request, so updates arrive as a few
+# reviewable PRs rather than a stream. The pandoc and Redocly images in the
+# Makefile are outside what Dependabot reads; update their digests by hand
+# (docker buildx imagetools inspect <image>:<tag>).
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directories: ["/", "/integration", "/perf/report"]
+    schedule:
+      interval: weekly
+    groups:
+      go:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: "/cmd/api"
+    schedule:
+      interval: weekly
+    groups:
+      dockerfile:
+        patterns: ["*"]
+
+  - package-ecosystem: docker-compose
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      compose:
+        patterns: ["*"]

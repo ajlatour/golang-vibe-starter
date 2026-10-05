@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
@@ -74,6 +75,26 @@ func ServerError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, er
 	WriteError(w, status, msg)
 }
 
+// jsonKind describes the JSON value a Go kind is decoded from.
+func jsonKind(k reflect.Kind) string {
+	switch k {
+	case reflect.String:
+		return "a string"
+	case reflect.Bool:
+		return "true or false"
+	case reflect.Slice, reflect.Array:
+		return "an array"
+	case reflect.Struct, reflect.Map:
+		return "an object"
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return "a number"
+	default:
+		return "a different type"
+	}
+}
+
 // DecodeJSON decodes a single JSON object from the request body into v,
 // rejecting unknown fields, trailing data, and bodies over MaxBodyBytes.
 // The returned error is safe to show to the client.
@@ -83,13 +104,23 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		var maxErr *http.MaxBytesError
+		var typeErr *json.UnmarshalTypeError
 		switch {
 		case errors.Is(err, io.EOF):
 			return errors.New("request body is empty")
 		case errors.As(err, &maxErr):
 			return fmt.Errorf("request body exceeds %d bytes", maxErr.Limit)
+		case errors.As(err, &typeErr):
+			// encoding/json's own message names the Go type it was
+			// decoding into ("Go struct field itemInput.name"); say it in
+			// the client's terms instead.
+			if typeErr.Field == "" {
+				return fmt.Errorf("invalid JSON: the body must be %s", jsonKind(reflect.Struct))
+			}
+			return fmt.Errorf("invalid JSON: field %q must be %s", typeErr.Field, jsonKind(typeErr.Type.Kind()))
 		default:
-			return fmt.Errorf("invalid JSON: %w", err)
+			// Syntax errors and unknown fields, which name only the input.
+			return fmt.Errorf("invalid JSON: %s", strings.TrimPrefix(err.Error(), "json: "))
 		}
 	}
 	if dec.Decode(&struct{}{}) != io.EOF {

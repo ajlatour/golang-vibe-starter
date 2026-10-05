@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -25,6 +26,7 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
+	"github.com/ajlatour/golang-vibe-starter/internal/limit"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
 )
 
@@ -230,15 +232,35 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return newHandler(logger, headerguard.DefaultPolicy(), store, item.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID
+		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), noLimits, store, item.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID
+	case "ratelimited":
+		// The test client (its key) has spent its only token, and gets
+		// another in about 11 days.
+		limits := limit.Policy{Rate: 1e-6, Burst: 1}
+		h := newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), limits, itemtest.NewMemStore())
+		warm := httptest.NewRequest("GET", "/items", nil)
+		warm.Header.Set("Authorization", "Bearer "+testWriteKey)
+		h.ServeHTTP(httptest.NewRecorder(), warm)
+		return h, ""
+	case "overloaded":
+		// The one request the service takes at once is stuck in the store.
+		store := blockingStore{entered: make(chan struct{}), release: make(chan struct{})}
+		h := newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), limit.Policy{MaxInFlight: 1}, store)
+		stuck := httptest.NewRequest("GET", "/items", nil)
+		stuck.Header.Set("Authorization", "Bearer "+testWriteKey)
+		done := make(chan struct{})
+		go func() { h.ServeHTTP(httptest.NewRecorder(), stuck); close(done) }()
+		<-store.entered
+		t.Cleanup(func() { close(store.release); <-done })
+		return h, ""
 	case "internal":
-		return newHandler(logger, headerguard.DefaultPolicy(), errStore{}), ""
+		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), noLimits, errStore{}), ""
 	case "badgw":
-		return newHandler(logger, headerguard.DefaultPolicy(), httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})), ""
+		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), noLimits, httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})), ""
 	case "timeout":
 		upstream := httptest.NewServer(http.HandlerFunc(nettest.Hang))
 		t.Cleanup(upstream.Close)
-		return newHandler(logger, headerguard.DefaultPolicy(), httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})), ""
+		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), noLimits, httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})), ""
 	}
 	t.Fatalf("unknown environment %q", env)
 	return nil, ""
@@ -254,8 +276,9 @@ type scenario struct {
 	want         int
 	check        func(t *testing.T, body []byte)
 
-	// header is added to the request. A request with a body gets
-	// Content-Type: application/json unless header sets one.
+	// header is added to the request; a header with nil values is left out.
+	// A request gets the test write key, and with a body, Content-Type:
+	// application/json, unless header says otherwise.
 	header http.Header
 
 	// exempt says why a body the schema calls valid is refused anyway, for a
@@ -351,6 +374,45 @@ func scenarios(t *testing.T, s *spec) []scenario {
 				body: body, header: http.Header{"Content-Type": {"text/plain"}}, want: http.StatusUnsupportedMediaType,
 			})
 		}
+
+		// Authentication (internal/apikey): every operation the spec says
+		// needs a key refuses a request without one, and a read-only key's
+		// writes.
+		if sec, ok := o.Op["security"].([]any); ok && len(sec) == 0 {
+			continue // exempt, like the healthcheck
+		}
+		list = append(list, scenario{
+			name: o.Key() + " without an API key", env: "ok", method: method, path: path, op: o.Key(),
+			body: body, header: http.Header{"Authorization": nil}, want: http.StatusUnauthorized,
+			exempt: "refused for its key, not its body",
+		})
+		if method != http.MethodGet {
+			list = append(list, scenario{
+				name: o.Key() + " with a read-only key", env: "ok", method: method, path: path, op: o.Key(),
+				body: body, header: http.Header{"Authorization": {"Bearer " + testReadKey}}, want: http.StatusForbidden,
+				exempt: "refused for its key, not its body",
+			})
+		}
+	}
+
+	// The limits (internal/limit), for every operation but the healthcheck,
+	// which is exempt: over the client's rate (429), and with the service
+	// full (503).
+	for _, o := range s.operations(t) {
+		if o.Path == "/healthz" {
+			continue
+		}
+		path := strings.ReplaceAll(o.Path, "{id}", "x")
+		body := ""
+		if _, has := o.Op["requestBody"]; has {
+			body = okBody
+		}
+		for env, want := range map[string]int{"ratelimited": http.StatusTooManyRequests, "overloaded": http.StatusServiceUnavailable} {
+			list = append(list, scenario{
+				name: o.Key() + " " + env, env: env, method: strings.ToUpper(o.Method), path: path, op: o.Key(),
+				body: body, want: want, exempt: "refused for its rate, not its body",
+			})
+		}
 	}
 
 	// The three ways the service itself or its upstream can fail, for every
@@ -428,7 +490,12 @@ func TestOpenAPIMatchesBehavior(t *testing.T) {
 			if sc.body != "" {
 				req.Header.Set("Content-Type", "application/json")
 			}
+			req.Header.Set("Authorization", "Bearer "+testWriteKey)
 			for name, values := range sc.header {
+				if values == nil {
+					req.Header.Del(name) // nil means: don't send it
+					continue
+				}
 				req.Header[name] = values
 			}
 			rec := httptest.NewRecorder()
@@ -582,3 +649,93 @@ func TestOpenAPICorrelationIDMatchesBehavior(t *testing.T) {
 		})
 	}
 }
+
+// TestOpenAPIItemIDMatchesBehavior fails if the spec's rule for an item ID
+// and the code's (item.ValidID) disagree. An ID the spec rejects must get a
+// 404 without the store being asked, so it never reaches the upstream.
+func TestOpenAPIItemIDMatchesBehavior(t *testing.T) {
+	s := loadSpec(t)
+	param, ok := s.lookup("#/components/parameters/ItemID")
+	if !ok {
+		t.Fatal("spec has no ItemID parameter")
+	}
+	schema := param["schema"].(map[string]any)
+	pattern := regexp.MustCompile(schema["pattern"].(string))
+	if int(schema["maxLength"].(float64)) != item.MaxIDLen {
+		t.Errorf("spec maxLength = %v, item.MaxIDLen = %d", schema["maxLength"], item.MaxIDLen)
+	}
+
+	asked := false
+	handler := newHandler(slog.New(slog.DiscardHandler), headerguard.DefaultPolicy(), noAuth, noLimits, spyStore{asked: &asked})
+	for _, id := range []string{
+		"widget", "new-item", "x_1", strings.Repeat("a", 128), strings.Repeat("a", 129),
+		".", "..", "%2E%2E", "..%2F..%2Fadmin", "a%2Fb", "a%20b", "x%3Fq", "%C3%A9",
+	} {
+		for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
+			t.Run(method+" "+truncate(id), func(t *testing.T) {
+				asked = false
+				req := httptest.NewRequest(method, "/items/"+id, strings.NewReader(`{"name":"x"}`))
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				decoded, err := url.PathUnescape(id)
+				if err != nil {
+					t.Fatal(err)
+				}
+				// A literal "." or ".." never reaches the handlers: the router
+				// redirects to the cleaned path first, which is as safe.
+				want := http.StatusNotFound
+				if id == "." || id == ".." {
+					want = http.StatusTemporaryRedirect
+				}
+				switch {
+				case pattern.MatchString(decoded) && !asked:
+					t.Errorf("the spec accepts %q, but the store wasn't asked (status %d)", decoded, rec.Code)
+				case !pattern.MatchString(decoded) && (asked || rec.Code != want):
+					t.Errorf("the spec rejects %q: want %d without asking the store; got %d, store asked: %v", decoded, want, rec.Code, asked)
+				}
+			})
+		}
+	}
+}
+
+// spyStore notes that it was asked anything, and has no items.
+type spyStore struct{ asked *bool }
+
+func (s spyStore) List(context.Context) ([]item.Item, error) { *s.asked = true; return nil, nil }
+func (s spyStore) Get(context.Context, string) (item.Item, error) {
+	*s.asked = true
+	return item.Item{}, item.ErrNotFound
+}
+func (s spyStore) Create(context.Context, item.Item) (item.Item, error) {
+	*s.asked = true
+	return item.Item{}, nil
+}
+func (s spyStore) Update(context.Context, item.Item) (item.Item, error) {
+	*s.asked = true
+	return item.Item{}, item.ErrNotFound
+}
+func (s spyStore) Delete(context.Context, string) error { *s.asked = true; return item.ErrNotFound }
+
+// blockingStore holds every call until release is closed, after saying on
+// entered that one has arrived.
+type blockingStore struct{ entered, release chan struct{} }
+
+func (s blockingStore) wait() { s.entered <- struct{}{}; <-s.release }
+func (s blockingStore) List(context.Context) ([]item.Item, error) {
+	s.wait()
+	return nil, nil
+}
+func (s blockingStore) Get(context.Context, string) (item.Item, error) {
+	s.wait()
+	return item.Item{}, item.ErrNotFound
+}
+func (s blockingStore) Create(context.Context, item.Item) (item.Item, error) {
+	s.wait()
+	return item.Item{}, nil
+}
+func (s blockingStore) Update(context.Context, item.Item) (item.Item, error) {
+	s.wait()
+	return item.Item{}, nil
+}
+func (s blockingStore) Delete(context.Context, string) error { s.wait(); return nil }

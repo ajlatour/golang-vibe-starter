@@ -20,6 +20,10 @@
 #
 # Environment:
 #   API_URL         where the API is (default http://localhost:8080)
+#   API_KEY         the API key to send (Authorization: Bearer). Without it,
+#                   and only for the default API_URL, the local stack's
+#                   development key, so a local call needs no setup and that
+#                   key is never sent anywhere else
 #   CORRELATION_ID  sent as Client-Correlation-Id, to find this call in the
 #                   logs; without it the API makes one up and returns it
 #
@@ -41,6 +45,12 @@ case $1 in -h | --help) usage ;; esac
 method=$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')
 path=$2
 shift 2
+# The local stack's development key (compose.yaml), for the local stack only.
+key=${API_KEY:-}
+if [ -z "$key" ] && [ -z "${API_URL:-}" ]; then
+	case $path in http://* | https://*) ;; *) key=gvs_local-development-only ;; esac
+fi
+
 case $path in
 http://* | https://*) url=$path ;;
 /*) url=${API_URL:-http://localhost:8080}$path ;;
@@ -56,6 +66,9 @@ if [ $# -gt 0 ] && [ "${1#-}" = "$1" ] || [ "${1:-}" = - ]; then
 	shift
 	[ "$body" = - ] && body=@-
 	args+=(-H 'Content-Type: application/json' --data-binary "$body")
+fi
+if [ -n "$key" ]; then
+	args+=(-H "Authorization: Bearer $key")
 fi
 if [ -n "${CORRELATION_ID:-}" ]; then
 	args+=(-H "Client-Correlation-Id: $CORRELATION_ID")

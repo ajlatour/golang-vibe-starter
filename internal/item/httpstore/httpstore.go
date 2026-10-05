@@ -75,6 +75,9 @@ func (s *Store) List(ctx context.Context) ([]item.Item, error) {
 }
 
 func (s *Store) Get(ctx context.Context, id string) (item.Item, error) {
+	if !item.ValidID(id) {
+		return item.Item{}, item.ErrNotFound
+	}
 	var it item.Item
 	err := s.do(ctx, http.MethodGet, itemPath(id), nil, http.StatusOK, &it)
 	return it, err
@@ -87,12 +90,18 @@ func (s *Store) Create(ctx context.Context, it item.Item) (item.Item, error) {
 }
 
 func (s *Store) Update(ctx context.Context, it item.Item) (item.Item, error) {
+	if !item.ValidID(it.ID) {
+		return item.Item{}, item.ErrNotFound
+	}
 	var out item.Item
 	err := s.do(ctx, http.MethodPut, itemPath(it.ID), itemInput{Name: it.Name, Description: it.Description}, http.StatusOK, &out)
 	return out, err
 }
 
 func (s *Store) Delete(ctx context.Context, id string) error {
+	if !item.ValidID(id) {
+		return item.ErrNotFound
+	}
 	return s.do(ctx, http.MethodDelete, itemPath(id), nil, http.StatusNoContent, nil)
 }
 
@@ -103,6 +112,8 @@ type itemInput struct {
 	Description string `json:"description"`
 }
 
+// itemPath is the upstream path of the item with id. Callers check the ID
+// with item.ValidID first, so the escaping is a second line of defence.
 func itemPath(id string) string {
 	return "/items/" + url.PathEscape(id)
 }

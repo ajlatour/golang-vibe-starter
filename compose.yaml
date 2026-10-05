@@ -19,7 +19,10 @@ services:
         #   VERSION=$(git rev-parse --short HEAD) docker compose up --build
         VERSION: ${VERSION:-devel}
     ports:
-      - "8080:8080"
+      # Published on this machine's loopback only, like every port here: on a
+      # shared network, nobody else can reach the stack, least of all
+      # WireMock's unauthenticated admin API.
+      - "127.0.0.1:8080:8080"
       # The runtime profiles (pprof), published on this machine's loopback
       # only: they expose the program's internals. docs/performance.md.
       - "127.0.0.1:6061:6061"
@@ -38,6 +41,15 @@ services:
       UPSTREAM_TIMEOUT: ${UPSTREAM_TIMEOUT:-5s}
       LOG_FORMAT: ${LOG_FORMAT:-text}
       HEADER_GUARD_MODE: ${HEADER_GUARD_MODE:-enforce}
+      # API keys (docs/curl.md#api-keys): by default two local development
+      # keys, gvs_local-development-only, which may write, and
+      # gvs_local-read-only, which may only read. They're in this file, so
+      # they're no secret: they work only because the stack is published on
+      # loopback. Set API_KEYS in .env (make api-key) to use your own.
+      # Per-client rate limit: off locally, so the load tests in perf/ measure
+      # the API rather than the limiter. Set RATE_LIMIT in .env to try it.
+      RATE_LIMIT: ${RATE_LIMIT:-0}
+      API_KEYS: ${API_KEYS:-dev:write:1f0d1e72ef1251a015cbec8ae3ad6880002ffe8ad4de82f4f496db34dc3e91dc,dev-reader:read:1cf20667ccf4aa0982ca024c319ee0cf77cadf20e85bd2fc51264075af57b2d4}
       # All interfaces inside the container, so the port above can reach it.
       PPROF_ADDR: 0.0.0.0:6061
     depends_on:
@@ -57,13 +69,21 @@ services:
     # Longer than the default SHUTDOWN_TIMEOUT (10s) so in-flight requests
     # can drain before Docker sends SIGKILL.
     stop_grace_period: 15s
+    # Least privilege: the API writes nothing to disk, needs no Linux
+    # capabilities, and can't gain privileges (setuid binaries, for one), so
+    # a compromised process has as little as possible to work with. The image
+    # already runs as a non-root user.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
 
   mock:
     # Multi-arch: runs natively on arm64 and amd64. The -alpine tag is
     # amd64-only and would run emulated on Apple Silicon, skewing timings.
-    image: wiremock/wiremock:3.13.2
+    image: wiremock/wiremock:3.13.2@sha256:0d4ecb3e4dc8213fd7a4d37d6a78f6e6b553a6d2e15bd51b0999781282ac61b3
     ports:
-      - "8081:8080"
+      - "127.0.0.1:8081:8080"
     volumes:
       # Happy-path stubs only. Fault stubs in wiremock/faults are added at
       # runtime through the admin API; see docs/local-stack.md.
@@ -92,9 +112,9 @@ services:
   flagd:
     # OpenFeature sidecar. The API evaluates flags over OFREP (HTTP, port
     # 8016); no OpenFeature SDK or gRPC dependency is needed.
-    image: ghcr.io/open-feature/flagd:v0.12.9
+    image: ghcr.io/open-feature/flagd:v0.12.9@sha256:e6cca86b29629a06806aa7954b4a9b5f291c30839c6ae4f815dc4ddcee4a0746
     ports:
-      - "8016:8016"
+      - "127.0.0.1:8016:8016"
     volumes:
       # The directory is mounted, not the file, so an editor that saves by
       # replacing the file still works. flagd watches the file and reloads on
@@ -112,7 +132,7 @@ services:
     # The load generator for the performance tests in perf/. Not started by
     # `up`: `make perf PROFILE=<name>` runs it on demand (the perf profile),
     # on this network, so it reaches the API container directly.
-    image: grafana/k6:2.3.0
+    image: grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34
     profiles: [perf]
     volumes:
       - ./perf:/perf:ro
@@ -128,7 +148,7 @@ services:
   # API's runtime metrics and k6's results, in Prometheus, on a Grafana
   # dashboard. Published on this machine's loopback only.
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    image: gcr.io/cadvisor/cadvisor:v0.55.1@sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57
     profiles: [monitoring]
     # cAdvisor reads the Docker engine's cgroups, which takes the host's
     # filesystems, read-only, and privileged mode. On macOS, "host" is Docker
@@ -150,7 +170,7 @@ services:
       - --disable_metrics=advtcp,cpu_topology,cpuset,disk,diskIO,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp
 
   prometheus:
-    image: prom/prometheus:v3.15.0
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
     profiles: [monitoring]
     ports:
       - "127.0.0.1:9090:9090"
@@ -163,7 +183,7 @@ services:
       - --web.enable-remote-write-receiver
 
   grafana:
-    image: grafana/grafana:13.2.3
+    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
     profiles: [monitoring]
     ports:
       - "127.0.0.1:3000:3000"

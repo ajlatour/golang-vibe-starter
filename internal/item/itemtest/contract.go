@@ -2,6 +2,7 @@ package itemtest
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -86,6 +87,22 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 		for i := 1; i < len(list); i++ {
 			if list[i].CreatedAt.Before(list[i-1].CreatedAt) {
 				t.Errorf("List not oldest first: %+v", list)
+			}
+		}
+	})
+
+	t.Run("invalid IDs are never found", func(t *testing.T) {
+		ctx := t.Context()
+		s := newStore(t)
+		for _, id := range []string{"", ".", "..", "../x", "a/b", "%2E%2E", "a b", strings.Repeat("a", item.MaxIDLen+1)} {
+			if _, err := s.Get(ctx, id); !errors.Is(err, item.ErrNotFound) {
+				t.Errorf("Get(%q) error = %v, want ErrNotFound", id, err)
+			}
+			if _, err := s.Update(ctx, item.Item{ID: id, Name: "x"}); !errors.Is(err, item.ErrNotFound) {
+				t.Errorf("Update(%q) error = %v, want ErrNotFound", id, err)
+			}
+			if err := s.Delete(ctx, id); !errors.Is(err, item.ErrNotFound) {
+				t.Errorf("Delete(%q) error = %v, want ErrNotFound", id, err)
 			}
 		}
 	})

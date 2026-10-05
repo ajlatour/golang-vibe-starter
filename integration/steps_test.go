@@ -25,6 +25,7 @@ type world struct {
 
 	reqHeader     http.Header // sent with every request in the scenario
 	noContentType bool        // send a body without a Content-Type
+	noKey         bool        // send no API key
 	sentID        string      // the correlation ID the scenario sent, if any
 
 	status     int
@@ -69,11 +70,14 @@ func initScenario(sc *godog.ScenarioContext, s stack) {
 	sc.Step(`^I (POST|PUT) "([^"]*)" as "([^"]+)" with body:$`, w.sendBodyAs)
 	sc.Step(`^I (POST|PUT) "([^"]*)" without a content type, with body:$`, w.sendBodyWithoutContentType)
 	sc.Step(`^I send the header "([^"]+)" with value "([^"]*)"$`, w.addHeader)
+	sc.Step(`^I send no API key$`, func() error { w.noKey = true; return nil })
+	sc.Step(`^I use the API key "([^"]*)"$`, func(key string) error { return w.addHeader("Authorization", "Bearer "+key) })
 	sc.Step(`^I send a header "([^"]+)" of (\d+) bytes$`, w.addHeaderOfSize)
 	sc.Step(`^I send (\d+) extra headers$`, w.addExtraHeaders)
 
 	sc.Step(`^the response status is (\d+)$`, w.statusIs)
 	sc.Step(`^the response header "([^"]*)" is "([^"]*)"$`, w.headerIs)
+	sc.Step(`^the response header "([^"]*)" starts with "([^"]*)"$`, w.headerStartsWith)
 	sc.Step(`^the response body is empty$`, w.bodyIsEmpty)
 	sc.Step(`^the JSON field "([^"]*)" is "([^"]*)"$`, w.fieldIsString)
 	sc.Step(`^the JSON field "([^"]*)" is (-?\d+)$`, w.fieldIsNumber)
@@ -128,6 +132,10 @@ func (w *world) setFlag(key, state string) error {
 
 // --- requests ----------------------------------------------------------------
 
+// devKey is the compose stack's development API key, which may read and
+// write (compose.yaml, docs/curl.md#api-keys).
+const devKey = "gvs_local-development-only"
+
 func (w *world) do(method, path string, body io.Reader) error {
 	req, err := http.NewRequest(method, w.stack.api+path, body)
 	if err != nil {
@@ -137,6 +145,11 @@ func (w *world) do(method, path string, body io.Reader) error {
 	// (or none), which the headers below then set.
 	if body != nil && !w.noContentType {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	// Every request carries the stack's development key unless the scenario
+	// says otherwise; one set with a step below replaces it.
+	if !w.noKey {
+		req.Header.Set("Authorization", "Bearer "+devKey)
 	}
 	for k, v := range w.reqHeader {
 		req.Header[k] = v
@@ -210,6 +223,13 @@ func (w *world) statusIs(want int) error {
 func (w *world) headerIs(name, want string) error {
 	if got := w.header.Get(name); got != want {
 		return fmt.Errorf("header %s = %q, want %q", name, got, want)
+	}
+	return nil
+}
+
+func (w *world) headerStartsWith(name, prefix string) error {
+	if got := w.header.Get(name); !strings.HasPrefix(got, prefix) {
+		return fmt.Errorf("header %s = %q, want it to start with %q", name, got, prefix)
 	}
 	return nil
 }

@@ -10,13 +10,30 @@ get the same statuses. The stack's upstream is WireMock, which keeps no state: i
 `widget`, `gadget` and `gizmo`, and a deleted item comes back. See
 [WireMock stubs](local-stack.md#wiremock-stubs).
 
+## API keys
+
+Every route but `/healthz` needs an API key, sent as `Authorization: Bearer <key>`. The local stack
+has two, set in `compose.yaml`: `gvs_local-development-only` may read and write, and
+`gvs_local-read-only` may only read. They're no secret, and work only because the stack is
+reachable from this machine alone; never use them anywhere else. `scripts/api` sends the first one
+for you when it talks to the local stack. With plain curl, export it once:
+
+```sh
+export API_KEY=gvs_local-development-only
+```
+
+For a real deployment, `make api-key NAME=<who> SCOPE=read|write` generates a key and the
+`API_KEYS` entry that goes with it; see [Configuration](../README.md#configuration).
+
 ## scripts/api
 
 ```
 scripts/api METHOD PATH [BODY] [curl options...]
 ```
 
-`BODY` is JSON, `@file` to read it from a file, or `-` to read it from stdin. It is sent with
+`BODY` is JSON, `@file` to read it from a file, or `-` to read it from stdin.
+The script sends `$API_KEY` if it's set, and otherwise, for the local stack only, the development
+key. It is sent with
 `Content-Type: application/json`, which the API requires of every request with a body. Anything
 after the body goes to curl unchanged: `-v` to see the whole exchange, `-H` to add a header.
 `scripts/api --help` prints the details.
@@ -83,6 +100,12 @@ scripts/api GET /items/no-such-item
 scripts/api POST /items '{"name": "   "}'
 # 422 Unprocessable Entity
 
+API_KEY=gvs_local-read-only scripts/api DELETE /items/widget
+# 403 Forbidden
+
+API_KEY=gvs_wrong scripts/api GET /items
+# 401 Unauthorized
+
 scripts/api POST /items '{"name": "Sprocket", "colour": "red"}'
 # 400 Bad Request
 
@@ -118,27 +141,28 @@ the shell session.
 
 ## Plain curl
 
-The same calls with curl alone. `-i` prints the status line and headers before the body.
+The same calls with curl alone, with `$API_KEY` exported as above. `-i` prints the status line and
+headers before the body.
 
 ```sh
-curl -i localhost:8080/items
+curl -i -H "Authorization: Bearer $API_KEY" localhost:8080/items
 # 200 OK
 
-curl -i localhost:8080/items/widget
+curl -i -H "Authorization: Bearer $API_KEY" localhost:8080/items/widget
 # 200 OK
 
-curl -i localhost:8080/items -H 'Content-Type: application/json' \
+curl -i -H "Authorization: Bearer $API_KEY" localhost:8080/items -H 'Content-Type: application/json' \
   -d '{"name": "Sprocket", "description": "Spins."}'
 # 201 Created
 
-curl -i -X PUT localhost:8080/items/widget -H 'Content-Type: application/json' \
+curl -i -X PUT -H "Authorization: Bearer $API_KEY" localhost:8080/items/widget -H 'Content-Type: application/json' \
   -d '{"name": "Widget", "description": "Now in blue."}'
 # 200 OK
 
-curl -i -X DELETE localhost:8080/items/gadget
+curl -i -X DELETE -H "Authorization: Bearer $API_KEY" localhost:8080/items/gadget
 # 204 No Content
 
-curl -i localhost:8080/items -H 'Client-Correlation-Id: debug-list-1'
+curl -i -H "Authorization: Bearer $API_KEY" localhost:8080/items -H 'Client-Correlation-Id: debug-list-1'
 # 200 OK
 ```
 
@@ -146,11 +170,11 @@ Two mistakes the API refuses:
 
 ```sh
 # curl -d sends Content-Type: application/x-www-form-urlencoded unless told otherwise.
-curl -i localhost:8080/items -d '{"name": "Sprocket"}'
+curl -i -H "Authorization: Bearer $API_KEY" localhost:8080/items -d '{"name": "Sprocket"}'
 # 415 Unsupported Media Type
 
 # Content-Type, Authorization and Client-Correlation-Id may each appear only once.
-curl -i localhost:8080/items -H 'Client-Correlation-Id: a' -H 'Client-Correlation-Id: b'
+curl -i -H "Authorization: Bearer $API_KEY" localhost:8080/items -H 'Client-Correlation-Id: a' -H 'Client-Correlation-Id: b'
 # 400 Bad Request
 ```
 

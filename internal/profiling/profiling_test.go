@@ -90,3 +90,18 @@ func TestServeStreamsALongProfile(t *testing.T) {
 		t.Errorf("logs = %v, want one profiling server started with the address", recs)
 	}
 }
+
+func TestSecondsAreCapped(t *testing.T) {
+	srv := httptest.NewServer(profiling.Handler())
+	defer srv.Close()
+	for _, path := range []string{"/debug/pprof/profile", "/debug/pprof/trace"} {
+		resp, err := http.Get(srv.URL + path + "?seconds=61")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s?seconds=61: status %d, want 400", path, resp.StatusCode)
+		}
+	}
+}

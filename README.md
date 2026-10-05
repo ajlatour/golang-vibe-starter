@@ -73,11 +73,21 @@ the code.
 `items` is a placeholder resource standing in for the real domain. Request bodies are JSON
 (`{"name": "...", "description": "..."}`). `name` is required, at most 200 characters, and
 trimmed of surrounding whitespace. Bodies are limited to 1 MiB, and unknown fields are rejected.
+An item ID is 1 to 128 letters, digits, `-` and `_`; no item has any other ID, so any other ID is a
+404, answered by the API without asking the upstream.
+
+Every route but `/healthz` needs an API key, sent as `Authorization: Bearer <key>`. A key may read,
+or read and write. `make api-key NAME=<who> SCOPE=read|write` generates one, with the `API_KEYS`
+entry that configures it; the local stack comes with two development keys
+([Calling the API](docs/curl.md#api-keys)).
 
 Errors are JSON, `{"error":"..."}`:
 
 - 400: malformed body, or a header sent twice that may appear only once
+- 401: no API key, or not a valid one (with `WWW-Authenticate: Bearer`)
+- 403: a write with a read-only API key
 - 404: unknown ID
+- 429: over the client's rate limit (with `Retry-After`)
 - 415: a request body not sent as `Content-Type: application/json`
 - 422: validation failure
 - 431: request headers over a size limit
@@ -85,10 +95,16 @@ Errors are JSON, `{"error":"..."}`:
 - 502: the upstream couldn't give a usable answer: connection refused or reset, an error status,
   or a body that won't decode. The body is just `{"error":"bad gateway"}`; the upstream's message
   is logged, not returned
+- 503: the service is serving as many requests as it takes at once (with `Retry-After`)
 - 504: the upstream didn't answer within `UPSTREAM_TIMEOUT` (`{"error":"gateway timeout"}`)
 
 Every response carries a `Client-Correlation-Id` header. Send your own to tie the service's log
 lines to yours, or quote the one returned when reporting a problem.
+
+Every response also carries `X-Content-Type-Options: nosniff`, so a browser never treats a body as
+anything but its declared type, and `Cache-Control: no-store`, so nothing keeps a copy of it. An
+error body describes the problem in JSON's terms (`field "name" must be a string`), never the
+service's internals.
 
 ### Request headers
 
@@ -107,7 +123,9 @@ actually in force at startup (`using header guard`). Which headers are single-us
 configurable: those are security decisions, kept in code where changes are reviewed and tested. To roll the rules out without
 blocking anyone, set `HEADER_GUARD_MODE=report`: requests are let through and logged as
 `request headers would be rejected` instead. Removing headers happens in both modes. Go's HTTP
-server already rejects malformed headers, and more than 1 MiB of them, before this runs.
+server already rejects malformed headers before this runs, and anything over twice
+`HEADER_MAX_TOTAL_BYTES` (request line included) with a plain 431 of its own, so no connection can
+make it hold more.
 
 The full contract is in [`docs/openapi.json`](docs/openapi.json), an OpenAPI 3.0 spec: every route,
 request and response schema, status code and header. `make spec` renders it as a web page,
@@ -131,6 +149,12 @@ The API reads these environment variables:
 | `LOG_LEVEL`           | `info`     | `debug`, `info`, `warn`, or `error`.                       |
 | `LOG_FORMAT`          | `json`     | `json` or `text`.                                          |
 | `SHUTDOWN_TIMEOUT`    | `10s`      | How long in-flight requests get to finish on SIGTERM.      |
+| `API_KEYS`            | (required) | API keys: comma-separated `name:scope:sha256` entries, scope `read` or `write`. `make api-key NAME=<who> SCOPE=read\|write` generates one. Only the key's hash goes here. Required unless `API_AUTH=off`. |
+| `API_AUTH`            | `on`       | `off` lets every request through without a key: local development only, and logged as a warning. |
+| `API_AUTH_READS`      | `required` | `open` lets reads (`GET`) through without a key; a key that is sent must still be valid. |
+| `MAX_IN_FLIGHT`       | `512`      | The most requests served at once; more get 503 with `Retry-After`. `0` is no cap. |
+| `RATE_LIMIT`          | `100`      | Requests per second each client may make on average; more get 429 with `Retry-After`. A client is its API key, or its IP address without one. `0` is no limit. |
+| `RATE_BURST`          | `200`      | Requests a client may make at once after a quiet spell. |
 | `PPROF_ADDR`          |            | Where to serve the runtime profiles (pprof) and metrics (`/metrics`), e.g. `127.0.0.1:6061`. Unset serves neither. Keep it private: see [Performance](docs/performance.md#profiling). |
 | `HEADER_GUARD_MODE`   | `enforce`  | `enforce` rejects requests that break a [header rule](#request-headers); `report` only logs them. |
 | `HEADER_MAX_COUNT`    | `100`      | The most request headers allowed.                          |

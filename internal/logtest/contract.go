@@ -29,12 +29,16 @@ var Contract = map[string]Message{
 	"using upstream":      {[]string{"INFO"}, []string{"url", "timeout"}},
 	"using feature flags": {[]string{"INFO"}, []string{"url", "timeout"}},
 	"using header guard":  {[]string{"INFO"}, []string{"mode", "max_headers", "max_header_bytes", "max_total_bytes"}},
+	"using API keys":      {[]string{"INFO"}, []string{"api_keys", "reads"}},
+	"using limits":        {[]string{"INFO"}, []string{"max_in_flight", "rate_limit", "rate_burst"}},
+	"authentication is off: every request is allowed":        {[]string{"WARN"}, nil},
 	"feature flags: no FLAGS_URL, using default values only": {[]string{"INFO"}, nil},
 	"server started":           {[]string{"INFO"}, []string{"addr"}},
 	"shutting down":            {[]string{"INFO"}, []string{"timeout"}},
 	"server stopped":           {[]string{"INFO"}, nil},
 	"profiling server started": {[]string{"INFO"}, []string{"addr"}},
 	"profiling server failed":  {[]string{"ERROR"}, []string{"error"}},
+	"profiling server is reachable beyond this machine; keep its port private": {[]string{"WARN"}, []string{"addr"}},
 
 	// The four ends of a request, in order.
 	"request received":           {[]string{"INFO", "DEBUG"}, []string{"method", "path", "content_length"}},
@@ -54,6 +58,9 @@ var Contract = map[string]Message{
 	"request headers would be rejected": {[]string{"INFO"}, []string{"reason", "status"}},
 	"request headers stripped":          {[]string{"DEBUG"}, []string{"headers"}},
 
+	// Authentication (internal/apikey).
+	"request refused by authentication": {[]string{"INFO"}, []string{"reason", "status"}},
+
 	// Feature flags.
 	"flag service unavailable, using default flag values": {[]string{"WARN"}, []string{"flag", "error"}},
 	"flag service recovered":                              {[]string{"INFO"}, []string{"fallbacks", "duration_ms"}},
@@ -64,6 +71,8 @@ var Contract = map[string]Message{
 // OutsideRequests lists the messages that are logged outside any request, and
 // so legitimately have no request_id. Every other message has one.
 var OutsideRequests = []string{
-	"using upstream", "using feature flags", "using header guard", "feature flags: no FLAGS_URL, using default values only",
+	"using upstream", "using feature flags", "using header guard", "using API keys", "using limits",
+	"authentication is off: every request is allowed", "feature flags: no FLAGS_URL, using default values only",
 	"server started", "shutting down", "server stopped", "profiling server started", "profiling server failed",
+	"profiling server is reachable beyond this machine; keep its port private",
 }

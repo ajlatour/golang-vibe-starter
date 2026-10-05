@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
@@ -24,6 +25,7 @@ import (
 // below. None may ever appear in a log line.
 var secrets = []string{
 	"BODYSECRET", "QUERYSECRET", "HEADERSECRET", "COOKIESECRET", "UPPASS", "FLAGPASS", "FWDSECRET",
+	testWriteKey, testReadKey, "KEYSECRET",
 }
 
 // TestLogContract runs the whole service and drives it through success,
@@ -68,6 +70,7 @@ func TestLogContract(t *testing.T) {
 		"FLAGS_TIMEOUT": "200ms",
 		"LOG_LEVEL":     "debug", // so debug lines are checked too
 		"LOG_FORMAT":    "json",
+		"API_KEYS":      "tests:write:" + apikey.HashHex(testWriteKey) + ",reader:read:" + apikey.HashHex(testReadKey),
 	})
 	base := "http://" + addr
 
@@ -80,7 +83,12 @@ func TestLogContract(t *testing.T) {
 		if body != "" {
 			req.Header.Set("Content-Type", "application/json")
 		}
+		req.Header.Set("Authorization", "Bearer "+testWriteKey)
 		for k, v := range hdr {
+			if v == "" {
+				req.Header.Del(k)
+				continue
+			}
 			req.Header.Set(k, v)
 		}
 		resp, err := http.DefaultClient.Do(req)
@@ -108,8 +116,13 @@ func TestLogContract(t *testing.T) {
 	do("GET", "/items", "", nil) // a second list: flag evaluation falls back again
 	do("POST", "/items?x=QUERYSECRET", `{"name":"BODYSECRET-ok","description":"BODYSECRET"}`, secretHeaders("client-corr-2"))
 	do("POST", "/items", `{"name":"","description":"BODYSECRET"}`, nil) // 422
-	do("POST", "/items", `{"name": BODYSECRET`, nil)                    // 400
-	do("GET", "/items/missing", "", nil)                                // 404
+	// Authentication refusals: no key, a wrong one, and a read-only key's
+	// write. None of the keys may be logged.
+	do("GET", "/items", "", map[string]string{"Authorization": ""})                           // 401
+	do("GET", "/items", "", map[string]string{"Authorization": "Bearer gvs_KEYSECRET"})       // 401
+	do("DELETE", "/items/x", "", map[string]string{"Authorization": "Bearer " + testReadKey}) // 403
+	do("POST", "/items", `{"name": BODYSECRET`, nil)                                          // 400
+	do("GET", "/items/missing", "", nil)                                                      // 404
 	do("GET", "/items/boom", "", map[string]string{httpx.RequestIDHeader: "client-boom"})
 	do("GET", "/items/dropme", "", nil) // transport error naming the credentialed URL
 	do("GET", "/items/"+strings.Repeat("a", 3000), "", nil)

@@ -1,8 +1,8 @@
 // Package jsoncall makes one JSON-over-HTTP call to another service and
 // reports failures in a consistent, log-safe way. It holds the steps every
 // outbound client here repeats: encode the request, send it, redact the URL in
-// transport errors, cap and drain the response, check the status, and decode
-// the body. Each client supplies only what differs: how to describe itself in
+// transport errors, refuse redirects, cap and drain the response, check the
+// status, and decode the body. Each client supplies only what differs: how to describe itself in
 // errors, what an error body looks like, and any status with special meaning.
 package jsoncall
 
@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
@@ -118,7 +119,7 @@ func (c Call) Do(ctx context.Context) (status int, err error) {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	resp, err := c.Client.Do(req)
+	resp, err := noRedirects(c.Client).Do(req)
 	if err != nil {
 		return fail(KindTransport, 0, "%w", logx.RedactURLError(err))
 	}
@@ -152,4 +153,24 @@ func (c Call) Do(ctx context.Context) (status int, err error) {
 		return fail(KindDecode, resp.StatusCode, "decode response: %w", err)
 	}
 	return resp.StatusCode, nil
+}
+
+// clients maps each client a Call has used to its copy that never follows a
+// redirect, so the copy is made once per client rather than on every call.
+var clients sync.Map // *http.Client -> *http.Client
+
+// noRedirects returns a copy of client that never follows a redirect, whatever
+// it was configured with: the 3xx comes back as an unexpected status instead.
+// A compromised or misconfigured service could otherwise send a call to any
+// address it can name, internal ones included, and on a 307 or 308 the request
+// body would go along too. The copy shares the Transport, and so its
+// connections. A client's settings are read once, on its first call.
+func noRedirects(client *http.Client) *http.Client {
+	if c, ok := clients.Load(client); ok {
+		return c.(*http.Client)
+	}
+	c := *client
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	actual, _ := clients.LoadOrStore(client, &c)
+	return actual.(*http.Client)
 }

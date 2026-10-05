@@ -11,13 +11,16 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
+	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
 	"github.com/ajlatour/golang-vibe-starter/internal/featureflag"
 	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
+	"github.com/ajlatour/golang-vibe-starter/internal/limit"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 	"github.com/ajlatour/golang-vibe-starter/internal/profiling"
 )
@@ -67,6 +70,10 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		return fmt.Errorf("unexpected arguments %q (want none, or \"healthcheck\")", args)
 	}
 
+	if err := cfg.Auth.Validate(); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
+
 	logger := cfg.NewLogger(stdout, "api", buildVersion())
 	logger.Info("using upstream", logx.KeyURL, cfg.UpstreamURL.Redacted(), logx.KeyTimeout, cfg.UpstreamTimeout.String())
 	logger.Info("using header guard",
@@ -74,6 +81,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		logx.KeyMaxHeaders, cfg.HeaderGuard.MaxHeaders,
 		logx.KeyMaxHeaderBytes, cfg.HeaderGuard.MaxHeaderBytes,
 		logx.KeyMaxTotalBytes, cfg.HeaderGuard.MaxTotalBytes)
+	logAuth(logger, cfg.Auth)
+	logger.Info("using limits", logx.KeyMaxInFlight, cfg.Limits.MaxInFlight,
+		logx.KeyRateLimit, cfg.Limits.Rate, logx.KeyRateBurst, cfg.Limits.Burst)
 	store := httpstore.New(cfg.UpstreamURL.String(), &http.Client{Timeout: cfg.UpstreamTimeout}, httpstore.WithLogger(logger))
 
 	evaluator, err := newFlags(logger, cfg)
@@ -89,7 +99,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		go profiling.Serve(ctx, logger, ln)
 	}
 
-	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, newHandler(logger, cfg.HeaderGuard, store, item.WithFlags(evaluator)))
+	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, newHandler(logger, cfg.HeaderGuard, cfg.Auth, cfg.Limits, store, item.WithFlags(evaluator)),
+		httpx.MaxHeaderBytes(serverHeaderLimit(cfg.HeaderGuard)))
 }
 
 // newFlags returns the feature flag evaluator: flagd when FLAGS_URL is set,
@@ -113,13 +124,47 @@ func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
 	return featureflag.NewOFREP(cfg.FlagsURL.String(), &http.Client{Timeout: cfg.FlagsTimeout}, logger, defaults), nil
 }
 
-// newHandler builds the API's root handler: routes, the header guard, and
-// the standard middleware around them. The guard sits inside the middleware,
-// so a request it rejects still gets a correlation ID and its log lines.
-func newHandler(logger *slog.Logger, guard headerguard.Policy, items item.Store, opts ...item.Option) http.Handler {
+// newHandler builds the API's root handler. From the outside in: the standard
+// middleware (correlation ID, logging), the cap on requests in flight, the
+// header guard, authentication, the per-client rate limit, and the routes.
+// The cap comes first so it bounds floods of requests with no valid key too;
+// the guard runs before authentication, so a doubled Authorization header is
+// refused before either copy is read; the rate limit comes after it, so a
+// client is its key. All sit inside the middleware, so a request they refuse
+// still gets a correlation ID and its log lines.
+func newHandler(logger *slog.Logger, guard headerguard.Policy, auth apikey.Policy, limits limit.Policy, items item.Store, opts ...item.Option) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+httpx.HealthzPath, httpx.Healthz)
 	item.RegisterRoutes(mux, logger, items, opts...)
 
-	return httpx.Middleware(logger, headerguard.Middleware(logger, guard, mux))
+	return httpx.Middleware(logger, limit.InFlight(limits,
+		headerguard.Middleware(logger, guard, apikey.Middleware(logger, auth, limit.PerClient(limits, mux)))))
+}
+
+// serverHeaderLimit is how much of a request's line and headers Go's server
+// reads before refusing the request itself: twice the header guard's total.
+// The guard measures headers alone, and a request line can be long, so the
+// slack leaves it to answer most oversized requests with its JSON 431; only
+// a request far over the limit gets Go's plain one. The point is the cap:
+// Go's default of 1 MiB is far more than the guard ever lets through.
+func serverHeaderLimit(guard headerguard.Policy) int {
+	return 2 * guard.MaxTotalBytes
+}
+
+// logAuth says at startup who may call the API: the keys' names (never the
+// keys) and whether reads need one, or loudly, that nobody is checked.
+func logAuth(logger *slog.Logger, auth apikey.Policy) {
+	if auth.Off {
+		logger.Warn("authentication is off: every request is allowed")
+		return
+	}
+	names := make([]string, len(auth.Keys))
+	for i, k := range auth.Keys {
+		names[i] = k.Name + " (" + k.Scope.String() + ")"
+	}
+	reads := "required"
+	if auth.OpenReads {
+		reads = "open"
+	}
+	logger.Info("using API keys", logx.KeyAPIKeys, strings.Join(names, ", "), logx.KeyReads, reads)
 }
