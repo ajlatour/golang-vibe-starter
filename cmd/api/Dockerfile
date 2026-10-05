@@ -1,6 +1,11 @@
 # syntax=docker/dockerfile:1
 # Build from the repo root: docker build -f cmd/api/Dockerfile .
 
+# A Go build cache to start from: empty, unless the build is given one with
+# --build-context gocache=<dir>. CI does (scripts/build-api-image.sh), with
+# the cache it kept from earlier runs, so only changed packages recompile.
+FROM scratch AS gocache
+
 FROM golang:1.27-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS build
 WORKDIR /src
 ENV CGO_ENABLED=0 GOTOOLCHAIN=local
@@ -17,7 +22,18 @@ COPY cmd/api/ cmd/api/
 ARG VERSION=devel
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=bind,from=gocache,target=/tmp/gocache-seed \
+    cp -a /tmp/gocache-seed/. /root/.cache/go-build/ && \
     go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/api ./cmd/api
+
+# The Go build cache after the build, for CI to keep for the next run:
+#   docker build --target gocache-export --output type=local,dest=<dir> ...
+# It sits before the final stage, which a plain build produces.
+FROM build AS gocache-filled
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    mkdir /out-cache && cp -a /root/.cache/go-build/. /out-cache/
+FROM scratch AS gocache-export
+COPY --from=gocache-filled /out-cache /
 
 # Static, no shell, runs as an unprivileged user. Healthchecks use the
 # binary's own "healthcheck" subcommand since there is no curl/wget.

@@ -33,9 +33,11 @@ echo "Starting WireMock and flagd, and building the API at $base and in the work
 # their Go builds side by side, while the other containers start.
 docker compose up -d --wait mock flagd >/dev/null 2>&1 &
 stack=$!
-docker build --quiet -f "$basesrc/cmd/api/Dockerfile" -t golang-vibe-starter-api:base "$basesrc" >/dev/null &
+# With GOCACHE_DIR set (CI), both start from the kept Go build cache, and
+# only the working tree's build writes it back.
+GOCACHE_KEEP=no sh scripts/build-api-image.sh golang-vibe-starter-api:base "$basesrc" &
 basebuild=$!
-docker build --quiet -f cmd/api/Dockerfile -t golang-vibe-starter-api:head . >/dev/null
+sh scripts/build-api-image.sh golang-vibe-starter-api:head .
 wait "$basebuild"
 wait "$stack"
 cleanup

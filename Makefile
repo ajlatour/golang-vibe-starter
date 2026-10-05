@@ -146,8 +146,8 @@ integration: ## Start the test stack, run the suite, and always stop it again
 	if [ $$status -ne 0 ]; then $(MAKE) integration-logs; fi; \
 	$(MAKE) integration-down; exit $$status
 
-integration-up: ## Start the stack with the integration overrides
-	$(COMPOSE_INTEGRATION) up -d --build --wait
+integration-up: ## Start the stack with the integration overrides (BUILD=--no-build to use a built image)
+	$(COMPOSE_INTEGRATION) up -d $(or $(BUILD),--build) --wait
 
 integration-test: ## Run the suite against a running stack (TAGS=@smoke, ARGS=...)
 	go test -C integration ./... -v -count=1 $(if $(TAGS),-godog.tags=$(TAGS)) $(ARGS)

@@ -233,6 +233,10 @@ Ideas considered but not planned are listed under
 
 ### Changed
 
+- CI keeps Go's build cache between runs for the Docker image builds (`scripts/build-api-image.sh`,
+  with `actions/cache`), so the integration job's build and the load comparison's two builds
+  recompile only what changed instead of everything. The Dockerfile takes the cache as an
+  optional build context; a plain `docker build` or compose is unchanged.
 - A request with a body sent as anything but `application/json`, or with no `Content-Type`, is now
   refused with 415; before, any body was parsed as JSON whatever its declared type. Clients that
   omit `Content-Type` need to send it.

@@ -57,10 +57,24 @@ jobs:
           go-version-file: integration/go.mod
           cache-dependency-path: integration/go.sum
 
+      # Go's build cache from earlier runs, so the image build recompiles only
+      # what changed (scripts/build-api-image.sh). Keyed on the Dockerfile
+      # (its Go version) and go.mod; pull requests read main's.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/docker-gobuild
+          key: docker-gobuild-${{ hashFiles('cmd/api/Dockerfile', 'go.mod') }}-${{ github.run_id }}
+          restore-keys: docker-gobuild-${{ hashFiles('cmd/api/Dockerfile', 'go.mod') }}-
+
+      - name: Build the API image
+        env:
+          GOCACHE_DIR: ${{ runner.temp }}/docker-gobuild
+        run: sh scripts/build-api-image.sh golang-vibe-starter-api
+
       # `make integration` in steps, so the logs and teardown run as their
       # own steps whatever happens.
       - name: Start the stack
-        run: make integration-up
+        run: make integration-up BUILD=--no-build
 
       - name: Integration tests
         run: make integration-test

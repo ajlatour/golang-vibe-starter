@@ -81,7 +81,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Go's build cache from earlier runs, so the image build recompiles only
+      # what changed (scripts/build-api-image.sh). Keyed on the Dockerfile
+      # (its Go version) and go.mod; pull requests read main's.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/docker-gobuild
+          key: docker-gobuild-${{ hashFiles('cmd/api/Dockerfile', 'go.mod') }}-${{ github.run_id }}
+          restore-keys: docker-gobuild-${{ hashFiles('cmd/api/Dockerfile', 'go.mod') }}-
+
       - name: Load test, interleaved with the base
+        env:
+          GOCACHE_DIR: ${{ runner.temp }}/docker-gobuild
         run: |
           status=0
           sh perf/load-ab.sh "origin/$BASE_REF" 2 bin/perf/compare compare || status=$?
