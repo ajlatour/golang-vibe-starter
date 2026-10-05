@@ -220,6 +220,6 @@ func (s *Store) Reachable(ctx context.Context) error {
 	if err != nil {
 		return logx.RedactURLError(err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close() // only the answer mattered, not its body
 	return nil
 }

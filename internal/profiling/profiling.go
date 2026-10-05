@@ -78,7 +78,7 @@ func Serve(ctx context.Context, logger *slog.Logger, ln net.Listener, extra ...f
 	}
 	go func() {
 		<-ctx.Done()
-		srv.Close()
+		_ = srv.Close() // shutting down: nothing to do about an error
 	}()
 	logger.Info("profiling server started", logx.KeyAddr, ln.Addr().String())
 	if !loopbackOnly(ln.Addr()) {

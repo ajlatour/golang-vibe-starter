@@ -37,7 +37,7 @@ func Drop(w http.ResponseWriter, _ *http.Request) {
 	if err != nil {
 		return
 	}
-	conn.Close()
+	_ = conn.Close() // the point is to drop it; an error changes nothing
 }
 
 // Status returns a handler that replies with the given status and body. An

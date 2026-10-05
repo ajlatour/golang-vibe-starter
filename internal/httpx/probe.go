@@ -33,7 +33,7 @@ func Probe(ctx context.Context, addr string) error {
 	if err != nil {
 		return fmt.Errorf("probe: %w", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close() // only the status matters
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("probe: %s returned %d", url, resp.StatusCode)
 	}

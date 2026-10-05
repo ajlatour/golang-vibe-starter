@@ -54,6 +54,10 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Static analysis: `make lint` and a CI job run staticcheck and gosec on all three modules, at
+  pinned versions. Their first run found a test condition that only worked by accident, an
+  unchecked hex decode in `apikey.ParseKeys`, and five unhandled `Close` errors, all fixed. (CodeQL
+  would need GitHub Advanced Security on this private repository; ADR-0026.)
 - Architecture documentation. [Architecture](docs/architecture.md) covers the context and scope,
   the request path, the packages and their dependency rules, runtime behaviour, deployment, and 36
   requirements, each naming what verifies it. [Architecture decisions](docs/decisions.md) has 25

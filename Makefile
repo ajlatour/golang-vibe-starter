@@ -47,7 +47,7 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .DEFAULT_GOAL := help
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
-	api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint \
+	lint api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint \
 	perf perf-profile bench bench-compare load-compare perf-compare perf-trends monitor
 
 ##@ Help
@@ -112,6 +112,20 @@ test-race: ## Unit tests with the race detector
 	go test -C perf/report -race ./...
 
 check: fmt-check vet test-race ## Everything CI's fast job runs
+
+# Static analysis, at pinned versions (docs/decisions.md, ADR-0026).
+STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.1
+GOSEC       := github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+
+lint: ## staticcheck (bugs) and gosec (security mistakes) on all three modules
+	go run $(STATICCHECK) ./...
+	go run -C integration $(STATICCHECK) ./...
+	go run -C perf/report $(STATICCHECK) ./...
+	go run $(GOSEC) -quiet ./...
+	go run -C integration $(GOSEC) -quiet ./...
+	@# The report tool's job is reading the files named on its command line,
+	@# which is all G304 (file inclusion via a variable) would flag there.
+	go run -C perf/report $(GOSEC) -quiet -exclude=G304 ./...
 
 api-key: ## Generate an API key and its API_KEYS entry: make api-key NAME=ci SCOPE=write
 	@if [ -z "$(NAME)" ] || [ -z "$(SCOPE)" ]; then echo "usage: make api-key NAME=<who> SCOPE=read|write"; exit 2; fi

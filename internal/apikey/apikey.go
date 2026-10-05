@@ -117,7 +117,9 @@ func ParseKeys(s string) ([]Key, error) {
 		if !hashRE.MatchString(hash) {
 			return nil, fmt.Errorf("entry %d (%s): want the key's SHA-256 as 64 lower-case hex digits, not the key itself", i+1, name)
 		}
-		hex.Decode(k.Hash[:], []byte(hash))
+		if _, err := hex.Decode(k.Hash[:], []byte(hash)); err != nil {
+			return nil, fmt.Errorf("entry %d (%s): %w", i+1, name, err)
+		}
 		keys = append(keys, k)
 	}
 	return keys, nil
