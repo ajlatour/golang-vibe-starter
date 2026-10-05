@@ -10,6 +10,13 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+### Changed
+
+- The documentation site's navigation, and the README's Documentation section, group the pages
+  by theme: Start, Use the API, Run it, Build and ship, and Architecture. A guide in `docs/`
+  that isn't in a theme fails the site build, and a test keeps the README's groups matching
+  the site's. Long inline code wraps on a phone instead of widening the page.
+
 ## [0.1.0] - 2026-10-05
 
 ### Security

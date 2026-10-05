@@ -19,32 +19,63 @@ cp docs/site/site.css "$out/site.css"
 # Linked from the README; .txt so a browser shows it rather than downloading it.
 cp .env.example "$out/env.example.txt"
 
-# Every page, as source:output, in navigation order. Guides added to docs/ are
-# picked up automatically.
-pages="README.md:index.html"
+# The navigation, by theme: one "theme|source|output" line per page, in
+# order. "-" as the source is a page built elsewhere (Redocly's API spec).
+# Every guide in docs/ must be listed: the build stops on one that isn't, so a
+# new guide is placed in a theme on purpose.
+navigation='Start|README.md|index.html
+Start|CHANGELOG.md|changelog.html
+Use the API|docs/curl.md|curl.html
+Use the API|-|api.html
+Run it|docs/local-stack.md|local-stack.html
+Run it|docs/feature-flags.md|feature-flags.html
+Run it|docs/logging.md|logging.html
+Build and ship|docs/development.md|development.html
+Build and ship|docs/performance.md|performance.html
+Build and ship|docs/releasing.md|releasing.html
+Architecture|docs/architecture.md|architecture.html
+Architecture|docs/decisions.md|decisions.html'
+
 for guide in docs/*.md; do
-	pages="$pages $guide:$(basename "$guide" .md).html"
+	if ! echo "$navigation" | grep -q "|$guide|"; then
+		echo "build.sh: $guide isn't in the navigation; add it to a theme in docs/site/build.sh" >&2
+		exit 1
+	fi
 done
-pages="$pages CHANGELOG.md:changelog.html"
+
+# The pages this script renders, as source:output.
+pages=$(echo "$navigation" | awk -F'|' '$2 != "-" { printf "%s:%s ", $2, $3 }')
 
 # A page's title is its first top-level heading.
 title() { sed -n 's/^# //p' "$1" | head -n 1; }
 
-# The navigation bar, with the current page marked. POSIX sh has no local
-# variables, so these names must not be reused by the main loop below.
+# The navigation bar, a group per theme, with the current page marked. POSIX
+# sh has no local variables, so these names must not be reused by the main
+# loop below.
 nav() {
 	printf '<nav class="site-nav">\n'
-	for nav_page in $pages; do
-		nav_src=${nav_page%%:*} nav_dest=${nav_page#*:}
-		nav_label=$(title "$nav_src")
-		[ "$nav_src" = README.md ] && nav_label=Overview
-		if [ "$nav_dest" = "$1" ]; then
-			printf '  <a href="%s" aria-current="page">%s</a>\n' "$nav_dest" "$nav_label"
-		else
-			printf '  <a href="%s">%s</a>\n' "$nav_dest" "$nav_label"
-		fi
-	done
-	printf '  <a href="api.html">API spec</a>\n</nav>\n'
+	nav_theme=
+	echo "$navigation" | {
+		while IFS='|' read -r theme nav_src nav_dest; do
+			if [ "$theme" != "$nav_theme" ]; then
+				[ -n "$nav_theme" ] && printf '  </div>\n'
+				printf '  <div class="nav-group"><span class="nav-theme">%s</span>\n' "$theme"
+				nav_theme=$theme
+			fi
+			case $nav_src in
+			-) nav_label="API spec" ;;
+			README.md) nav_label=Overview ;;
+			*) nav_label=$(title "$nav_src") ;;
+			esac
+			if [ "$nav_dest" = "$1" ]; then
+				printf '    <a href="%s" aria-current="page">%s</a>\n' "$nav_dest" "$nav_label"
+			else
+				printf '    <a href="%s">%s</a>\n' "$nav_dest" "$nav_label"
+			fi
+		done
+		printf '  </div>\n'
+	}
+	printf '</nav>\n'
 }
 
 for page in $pages; do

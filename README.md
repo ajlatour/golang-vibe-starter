@@ -184,29 +184,43 @@ start otherwise, so a typo can't switch a limit off.
 
 ## Documentation
 
-`make docs-open` renders all of this as a local website and opens it in your browser: these
-pages, the changelog and the API spec, with links between them. `make godoc` serves the Go package
+`make docs-open` renders all of this as a local website and opens it in your browser, with the
+pages grouped by the same themes as below. `make godoc` serves the Go package
 documentation (the code's doc comments) at http://localhost:6060.
 
-- [Releasing](docs/releasing.md): cutting a version, and the image, SBOM and provenance it
-  publishes.
-- [Architecture](docs/architecture.md): how the service is built, from its context to its
-  packages, and its requirements, each with the test that verifies it.
-- [Architecture decisions](docs/decisions.md): why it's built that way, one record per decision.
+**Start**
+
+- [`CHANGELOG.md`](CHANGELOG.md): what changed, release by release.
+
+**Use the API**
+
 - [Calling the API](docs/curl.md): `scripts/api` and plain curl examples for every route, error
   and header rule.
-- [Performance](docs/performance.md): Go benchmarks, k6 load, stress, spike and soak tests,
-  watching CPU and memory (with a live dashboard), and profiling with pprof.
+- [`docs/openapi.json`](docs/openapi.json): the API spec.
+
+**Run it**
+
 - [The local stack](docs/local-stack.md): the compose stack, WireMock's stubs, fault injection,
   and load-test tuning.
 - [Feature flags](docs/feature-flags.md): the flags, what happens when flagd can't answer, and
   adding a flag.
 - [Logging](docs/logging.md): every field and message, how to read a request's log lines, and the
   rules for adding a log line.
+
+**Build and ship**
+
 - [Development](docs/development.md): the ground rules, what to update when you change something,
   and the unit, integration and CI tests.
-- [`docs/openapi.json`](docs/openapi.json): the API spec.
-- [`CHANGELOG.md`](CHANGELOG.md): what changed.
+- [Performance](docs/performance.md): Go benchmarks, k6 load, stress, spike and soak tests,
+  watching CPU and memory (with a live dashboard), and profiling with pprof.
+- [Releasing](docs/releasing.md): cutting a version, and the image, SBOM and provenance it
+  publishes.
+
+**Architecture**
+
+- [Architecture](docs/architecture.md): how the service is built, from its context to its
+  packages, and its requirements, each with the test that verifies it.
+- [Architecture decisions](docs/decisions.md): why it's built that way, one record per decision.
 
 ## Layout
 
