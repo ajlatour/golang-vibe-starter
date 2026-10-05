@@ -23,7 +23,7 @@ import (
 // secrets are planted in request bodies, query strings, headers and URLs
 // below. None may ever appear in a log line.
 var secrets = []string{
-	"BODYSECRET", "QUERYSECRET", "HEADERSECRET", "COOKIESECRET", "UPPASS", "FLAGPASS",
+	"BODYSECRET", "QUERYSECRET", "HEADERSECRET", "COOKIESECRET", "UPPASS", "FLAGPASS", "FWDSECRET",
 }
 
 // TestLogContract runs the whole service and drives it through success,
@@ -77,6 +77,9 @@ func TestLogContract(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
 		for k, v := range hdr {
 			req.Header.Set(k, v)
 		}
@@ -111,6 +114,10 @@ func TestLogContract(t *testing.T) {
 	do("GET", "/items/dropme", "", nil) // transport error naming the credentialed URL
 	do("GET", "/items/"+strings.Repeat("a", 3000), "", nil)
 	do("GET", "/healthz", "", nil)
+	// Header screening: a body that isn't JSON is rejected, and a proxy header
+	// is stripped (its value, a secret, must not be logged; only its name).
+	do("POST", "/items", `{"name":"x"}`, map[string]string{"Content-Type": "text/plain"})
+	do("GET", "/items", "", map[string]string{"X-Forwarded-For": "FWDSECRET"})
 
 	cancel()
 	waitForShutdown(t, errc)
@@ -178,6 +185,8 @@ func TestLogContract(t *testing.T) {
 		"flag evaluation failed, using default",
 		"upstream request sent",
 		"upstream response received",
+		"request headers rejected",
+		"request headers stripped",
 	} {
 		if !slices.Contains(all, want) {
 			t.Errorf("no %q line logged; the scenario no longer exercises it", want)

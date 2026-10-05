@@ -53,6 +53,9 @@ include `.git`; without it, container logs show `version=devel`.
 | `url`         | `using upstream`, `using feature flags` | A configured base URL, credentials redacted.  |
 | `timeout`     | startup and shutdown lines | A configured timeout, e.g. `5s`.                          |
 | `addr`        | `server started`       | The address the server is listening on.                      |
+| `reason`      | `request headers rejected`, `request headers would be rejected` | Which header rule was broken: `header too large`, `too many headers`, `headers too large`, `duplicate header`, `missing content type` or `unsupported content type`. |
+| `header`      | the same lines, when one header is to blame | The header's name, e.g. `Content-Type`.      |
+| `headers`     | `request headers stripped` | The names of the headers removed, comma-separated.       |
 | `flag`        | flag lines             | Feature flag key.                                            |
 | `fallbacks`   | `flag service recovered` | Evaluations served from defaults during the outage.        |
 
@@ -72,6 +75,9 @@ upstream, comes back, and leaves the API.
 | `internal error` | ERROR | `method`, `route`, `path`, `error` | A request failed with a 5xx. When an upstream call caused it, the `upstream*` fields are on this line too. |
 | `client disconnected` | INFO | `method`, `route`, `path`, `error` | The client left mid-request; it is answered with 499, not an error. |
 | `panic serving request` | ERROR | `method`, `route`, `path`, `panic`, `stack` | A handler panicked; the client gets a 500. |
+| `request headers rejected` | INFO | `reason`, `status` | A request broke a header rule and was answered with `status` (400, 415 or 431); `header` names the header when one is to blame. See [request headers](../README.md#request-headers). |
+| `request headers would be rejected` | INFO | `reason`, `status` | The same, with `HEADER_GUARD_MODE=report`: logged, but let through. |
+| `request headers stripped` | DEBUG | `headers` | Proxy or method-override headers were removed before the handlers ran. |
 | `upstream request failed` | WARN | `upstream`, `upstream_duration_ms`, `error` | An upstream call failed: no response, an unexpected status, or a body that won't decode. `upstream_status` is also present if a response arrived. |
 | `upstream request cancelled` | DEBUG | `upstream`, `upstream_duration_ms`, `error` | The client left during an upstream call, so it isn't the upstream's failure. |
 | `flag service unavailable, using default flag values` | WARN | `flag`, `error` | flagd stopped answering. Logged once per outage. |

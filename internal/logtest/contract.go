@@ -46,6 +46,11 @@ var Contract = map[string]Message{
 	"upstream request failed":    {[]string{"WARN"}, []string{"upstream", "upstream_duration_ms", "error"}},
 	"upstream request cancelled": {[]string{"DEBUG"}, []string{"upstream", "upstream_duration_ms", "error"}},
 
+	// Header screening (internal/headerguard).
+	"request headers rejected":          {[]string{"INFO"}, []string{"reason", "status"}},
+	"request headers would be rejected": {[]string{"INFO"}, []string{"reason", "status"}},
+	"request headers stripped":          {[]string{"DEBUG"}, []string{"headers"}},
+
 	// Feature flags.
 	"flag service unavailable, using default flag values": {[]string{"WARN"}, []string{"flag", "error"}},
 	"flag service recovered":                              {[]string{"INFO"}, []string{"fallbacks", "duration_ms"}},

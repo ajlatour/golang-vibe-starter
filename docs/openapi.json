@@ -3,7 +3,7 @@
   "info": {
     "title": "golang-vibe-starter API",
     "version": "0.1.0",
-    "description": "A small HTTP API over a placeholder `items` resource. Item data comes from an upstream service, so a failure to reach or understand the upstream is reported as 502 or 504, never as a 500. Every response carries a `Client-Correlation-Id` header; send one to tie the service's log lines to your own, or quote the one returned when reporting a problem.\n\nThis file is checked against the running handlers by tests (`cmd/api/openapi_test.go`): routes, status codes, response bodies, headers and the limits stated here must match what the service actually does."
+    "description": "A small HTTP API over a placeholder `items` resource. Item data comes from an upstream service, so a failure to reach or understand the upstream is reported as 502 or 504, never as a 500. Every response carries a `Client-Correlation-Id` header; send one to tie the service's log lines to your own, or quote the one returned when reporting a problem. Every request's headers are screened first: a request with a body must send `Content-Type: application/json` (415 otherwise), headers have size limits (431), some may appear only once (400), and proxy and method-override headers (`X-Forwarded-*`, `Forwarded`, `X-Real-IP`, `X-HTTP-Method-Override`) are ignored.\n\nThis file is checked against the running handlers by tests (`cmd/api/openapi_test.go`): routes, status codes, response bodies, headers and the limits stated here must match what the service actually does."
   },
   "security": [],
   "servers": [
@@ -23,7 +23,9 @@
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Health" } }
             }
-          }
+          },
+          "400": { "$ref": "#/components/responses/DuplicateHeader" },
+          "431": { "$ref": "#/components/responses/HeadersTooLarge" }
         }
       }
     },
@@ -41,6 +43,8 @@
               "application/json": { "schema": { "$ref": "#/components/schemas/ItemList" } }
             }
           },
+          "400": { "$ref": "#/components/responses/DuplicateHeader" },
+          "431": { "$ref": "#/components/responses/HeadersTooLarge" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
           "504": { "$ref": "#/components/responses/GatewayTimeout" }
@@ -73,6 +77,8 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "422": { "$ref": "#/components/responses/Unprocessable" },
+          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
+          "431": { "$ref": "#/components/responses/HeadersTooLarge" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
           "504": { "$ref": "#/components/responses/GatewayTimeout" }
@@ -96,6 +102,8 @@
             }
           },
           "404": { "$ref": "#/components/responses/NotFound" },
+          "400": { "$ref": "#/components/responses/DuplicateHeader" },
+          "431": { "$ref": "#/components/responses/HeadersTooLarge" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
           "504": { "$ref": "#/components/responses/GatewayTimeout" }
@@ -121,6 +129,8 @@
           "400": { "$ref": "#/components/responses/BadRequest" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "422": { "$ref": "#/components/responses/Unprocessable" },
+          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
+          "431": { "$ref": "#/components/responses/HeadersTooLarge" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
           "504": { "$ref": "#/components/responses/GatewayTimeout" }
@@ -135,6 +145,8 @@
             "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } }
           },
           "404": { "$ref": "#/components/responses/NotFound" },
+          "400": { "$ref": "#/components/responses/DuplicateHeader" },
+          "431": { "$ref": "#/components/responses/HeadersTooLarge" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
           "504": { "$ref": "#/components/responses/GatewayTimeout" }
@@ -224,7 +236,22 @@
     },
     "responses": {
       "BadRequest": {
-        "description": "The body isn't usable: malformed JSON, the wrong shape or types, an unknown field, an empty body, or over 1 MiB.",
+        "description": "The body isn't usable (malformed JSON, the wrong shape or types, an unknown field, an empty body, or over 1 MiB), or a header that may appear only once (Content-Type, Authorization, Client-Correlation-Id) appears more than once.",
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "DuplicateHeader": {
+        "description": "A header that may appear only once (Content-Type, Authorization, Client-Correlation-Id) appears more than once.",
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "UnsupportedMediaType": {
+        "description": "The request has a body, but not Content-Type: application/json (parameters such as charset are fine).",
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "HeadersTooLarge": {
+        "description": "The request's headers are over a limit: more than 100 headers, more than 8 KiB for any one header (name and value), or more than 32 KiB in total.",
         "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },

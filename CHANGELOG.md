@@ -11,6 +11,15 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Request header screening (`internal/headerguard`), on every request before the handlers run: a
+  request with a body must send `Content-Type: application/json` (415), headers are limited to 100,
+  8 KiB each and 32 KiB in total (431), `Content-Type`, `Authorization` and
+  `Client-Correlation-Id` may appear only once (400), and proxy and method-override headers
+  (`X-Forwarded-*`, `Forwarded`, `X-Real-IP`, `X-HTTP-Method-Override` and similar) are removed.
+  Rejections get a JSON error, a correlation ID and a `request headers rejected` log line.
+  `HEADER_GUARD_MODE=report` logs instead of rejecting, for rolling the rules out. The OpenAPI spec
+  documents the new statuses on every operation.
+
 - `make docs-check` builds the documentation website and checks that every page exists and that
   every link and section reference in it resolves (`docs/site/site_test.go`, skipped by a plain
   `go test ./...`). CI runs it as a third job. `make docs` now starts from an empty `bin/docs`, so
@@ -117,6 +126,9 @@ Ideas considered but not planned are listed under
 
 ### Changed
 
+- A request with a body sent as anything but `application/json`, or with no `Content-Type`, is now
+  refused with 415; before, any body was parsed as JSON whatever its declared type. Clients that
+  omit `Content-Type` need to send it.
 - Package structure, with no change in behavior:
   - `internal/flags` is renamed `internal/featureflag`, so it no longer reads like the standard
     library's `flag` (command-line flags), and so `flags` stops being shadowed by a variable of

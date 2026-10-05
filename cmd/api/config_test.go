@@ -1,8 +1,11 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -105,6 +108,33 @@ func TestLoadConfigFlags(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if _, err := loadConfig(getenv); err == nil {
 				t.Error("loadConfig() error = nil, want error")
+			}
+		})
+	}
+}
+
+func TestLoadConfigHeaderGuardMode(t *testing.T) {
+	for _, tt := range []struct {
+		value   string
+		want    headerguard.Mode
+		wantErr bool
+	}{
+		{value: "", want: headerguard.Enforce},
+		{value: "enforce", want: headerguard.Enforce},
+		{value: "report", want: headerguard.Report},
+		{value: "off", wantErr: true},
+	} {
+		t.Run("HEADER_GUARD_MODE="+tt.value, func(t *testing.T) {
+			env := map[string]string{"UPSTREAM_URL": "http://mock", "HEADER_GUARD_MODE": tt.value}
+			got, err := loadConfig(func(k string) string { return env[k] })
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "HEADER_GUARD_MODE") {
+					t.Errorf("loadConfig() error = %v, want one naming HEADER_GUARD_MODE", err)
+				}
+				return
+			}
+			if err != nil || got.HeaderGuardMode != tt.want {
+				t.Errorf("HeaderGuardMode = %v, err = %v; want %v", got.HeaderGuardMode, err, tt.want)
 			}
 		})
 	}

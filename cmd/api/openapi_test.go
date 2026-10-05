@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -19,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
@@ -223,15 +225,15 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return newHandler(logger, store, item.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID
+		return newHandler(logger, headerguard.Enforce, store, item.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID
 	case "internal":
-		return newHandler(logger, errStore{}), ""
+		return newHandler(logger, headerguard.Enforce, errStore{}), ""
 	case "badgw":
-		return newHandler(logger, httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})), ""
+		return newHandler(logger, headerguard.Enforce, httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})), ""
 	case "timeout":
 		upstream := httptest.NewServer(http.HandlerFunc(nettest.Hang))
 		t.Cleanup(upstream.Close)
-		return newHandler(logger, httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})), ""
+		return newHandler(logger, headerguard.Enforce, httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})), ""
 	}
 	t.Fatalf("unknown environment %q", env)
 	return nil, ""
@@ -246,6 +248,10 @@ type scenario struct {
 	body         string
 	want         int
 	check        func(t *testing.T, body []byte)
+
+	// header is added to the request. A request with a body gets
+	// Content-Type: application/json unless header sets one.
+	header http.Header
 
 	// exempt says why a body the schema calls valid is refused anyway, for a
 	// rule the schema can't express. Empty for every other scenario.
@@ -307,6 +313,39 @@ func scenarios(t *testing.T, s *spec) []scenario {
 
 		{name: "delete", env: "ok", method: "DELETE", path: "/items/" + seededPlaceholder, op: "DELETE /items/{id}", want: 204},
 		{name: "delete unknown", env: "ok", method: "DELETE", path: "/items/nope", op: "DELETE /items/{id}", want: 404},
+	}
+
+	// The header rules (internal/headerguard), for every operation: too many
+	// headers (431), a duplicated single-use header (400), and for a body sent
+	// as anything but JSON (415).
+	tooMany := http.Header{}
+	for i := range 101 {
+		tooMany.Set(fmt.Sprintf("X-Extra-%d", i), "v")
+	}
+	for _, o := range s.operations(t) {
+		path := strings.ReplaceAll(o.Path, "{id}", "x")
+		method := strings.ToUpper(o.Method)
+		body := ""
+		if _, has := o.Op["requestBody"]; has {
+			body = okBody
+		}
+		list = append(list,
+			scenario{
+				name: o.Key() + " with too many headers", env: "ok", method: method, path: path, op: o.Key(),
+				body: body, header: tooMany, want: http.StatusRequestHeaderFieldsTooLarge,
+			},
+			scenario{
+				name: o.Key() + " with two correlation IDs", env: "ok", method: method, path: path, op: o.Key(),
+				body: body, header: http.Header{"Client-Correlation-Id": {"a", "b"}}, want: http.StatusBadRequest,
+				exempt: "refused for its headers, not its body",
+			},
+		)
+		if body != "" {
+			list = append(list, scenario{
+				name: o.Key() + " with a text/plain body", env: "ok", method: method, path: path, op: o.Key(),
+				body: body, header: http.Header{"Content-Type": {"text/plain"}}, want: http.StatusUnsupportedMediaType,
+			})
+		}
 	}
 
 	// The three ways the service itself or its upstream can fail, for every
@@ -381,6 +420,12 @@ func TestOpenAPIMatchesBehavior(t *testing.T) {
 			}
 
 			req := httptest.NewRequest(sc.method, path, strings.NewReader(sc.body))
+			if sc.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			for name, values := range sc.header {
+				req.Header[name] = values
+			}
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 

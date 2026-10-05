@@ -13,6 +13,7 @@ import (
 	"syscall"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/featureflag"
+	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
@@ -73,7 +74,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		return err
 	}
 
-	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, newHandler(logger, store, item.WithFlags(evaluator)))
+	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, newHandler(logger, cfg.HeaderGuardMode, store, item.WithFlags(evaluator)))
 }
 
 // newFlags returns the feature flag evaluator: flagd when FLAGS_URL is set,
@@ -97,10 +98,15 @@ func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
 	return featureflag.NewOFREP(cfg.FlagsURL.String(), &http.Client{Timeout: cfg.FlagsTimeout}, logger, defaults), nil
 }
 
-// newHandler builds the API's root handler: routes plus middleware.
-func newHandler(logger *slog.Logger, items item.Store, opts ...item.Option) http.Handler {
+// newHandler builds the API's root handler: routes, the header guard, and
+// the standard middleware around them. The guard sits inside the middleware,
+// so a request it rejects still gets a correlation ID and its log lines.
+func newHandler(logger *slog.Logger, guard headerguard.Mode, items item.Store, opts ...item.Option) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+httpx.HealthzPath, httpx.Healthz)
 	item.RegisterRoutes(mux, logger, items, opts...)
-	return httpx.Middleware(logger, mux)
+
+	policy := headerguard.DefaultPolicy()
+	policy.Mode = guard
+	return httpx.Middleware(logger, headerguard.Middleware(logger, policy, mux))
 }

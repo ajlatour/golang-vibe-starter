@@ -23,8 +23,9 @@ type world struct {
 	stack  stack
 	client *http.Client
 
-	reqHeader http.Header // sent with every request in the scenario
-	sentID    string      // the correlation ID the scenario sent, if any
+	reqHeader     http.Header // sent with every request in the scenario
+	noContentType bool        // send a body without a Content-Type
+	sentID        string      // the correlation ID the scenario sent, if any
 
 	status     int
 	header     http.Header
@@ -65,6 +66,11 @@ func initScenario(sc *godog.ScenarioContext, s stack) {
 	sc.Step(`^I (GET|DELETE) "([^"]*)"$`, w.send)
 	sc.Step(`^I (POST|PUT) "([^"]*)" with body:$`, w.sendBody)
 	sc.Step(`^I (POST|PUT) "([^"]*)" with a name of (\d+) characters$`, w.sendNameOfLength)
+	sc.Step(`^I (POST|PUT) "([^"]*)" as "([^"]+)" with body:$`, w.sendBodyAs)
+	sc.Step(`^I (POST|PUT) "([^"]*)" without a content type, with body:$`, w.sendBodyWithoutContentType)
+	sc.Step(`^I send the header "([^"]+)" with value "([^"]*)"$`, w.addHeader)
+	sc.Step(`^I send a header "([^"]+)" of (\d+) bytes$`, w.addHeaderOfSize)
+	sc.Step(`^I send (\d+) extra headers$`, w.addExtraHeaders)
 
 	sc.Step(`^the response status is (\d+)$`, w.statusIs)
 	sc.Step(`^the response header "([^"]*)" is "([^"]*)"$`, w.headerIs)
@@ -127,11 +133,13 @@ func (w *world) do(method, path string, body io.Reader) error {
 	if err != nil {
 		return err
 	}
+	// A body is sent as JSON unless the scenario chose another Content-Type
+	// (or none), which the headers below then set.
+	if body != nil && !w.noContentType {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	for k, v := range w.reqHeader {
 		req.Header[k] = v
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
 	}
 	start := time.Now()
 	resp, err := w.client.Do(req)
@@ -152,6 +160,37 @@ func (w *world) send(method, path string) error {
 
 func (w *world) sendBody(method, path string, doc *godog.DocString) error {
 	return w.do(method, path, strings.NewReader(doc.Content))
+}
+
+func (w *world) sendBodyAs(method, path, contentType string, doc *godog.DocString) error {
+	w.reqHeader.Set("Content-Type", contentType)
+	defer w.reqHeader.Del("Content-Type")
+	return w.do(method, path, strings.NewReader(doc.Content))
+}
+
+func (w *world) sendBodyWithoutContentType(method, path string, doc *godog.DocString) error {
+	w.noContentType = true
+	defer func() { w.noContentType = false }()
+	return w.do(method, path, strings.NewReader(doc.Content))
+}
+
+// addHeader adds a header to every request in the scenario; adding the same
+// name twice sends it twice.
+func (w *world) addHeader(name, value string) error {
+	w.reqHeader.Add(name, value)
+	return nil
+}
+
+func (w *world) addHeaderOfSize(name string, n int) error {
+	w.reqHeader.Set(name, strings.Repeat("a", n))
+	return nil
+}
+
+func (w *world) addExtraHeaders(n int) error {
+	for i := range n {
+		w.reqHeader.Set(fmt.Sprintf("X-Extra-%d", i), "v")
+	}
+	return nil
 }
 
 func (w *world) sendNameOfLength(method, path string, n int) error {

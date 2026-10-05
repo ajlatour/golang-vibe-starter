@@ -72,9 +72,11 @@ trimmed of surrounding whitespace. Bodies are limited to 1 MiB, and unknown fiel
 
 Errors are JSON, `{"error":"..."}`:
 
-- 400: malformed body
+- 400: malformed body, or a header sent twice that may appear only once
 - 404: unknown ID
+- 415: a request body not sent as `Content-Type: application/json`
 - 422: validation failure
+- 431: request headers over a size limit
 - 500: unexpected failure in the API itself; details are logged, not returned
 - 502: the upstream couldn't give a usable answer: connection refused or reset, an error status,
   or a body that won't decode. The body is just `{"error":"bad gateway"}`; the upstream's message
@@ -83,6 +85,23 @@ Errors are JSON, `{"error":"..."}`:
 
 Every response carries a `Client-Correlation-Id` header. Send your own to tie the service's log
 lines to yours, or quote the one returned when reporting a problem.
+
+### Request headers
+
+Every request's headers are screened before the handlers see them (`internal/headerguard`):
+
+| Rule | Otherwise |
+| ---- | --------- |
+| A request with a body sends `Content-Type: application/json` (parameters such as `charset` are fine) | 415 |
+| At most 100 headers, 8 KiB for any one header (name and value), 32 KiB in total | 431 |
+| `Content-Type`, `Authorization` and `Client-Correlation-Id` appear at most once | 400 |
+| Proxy and method-override headers (`X-Forwarded-For`, `-Host`, `-Proto`, `Forwarded`, `X-Real-IP`, `X-HTTP-Method-Override`, `X-Method-Override`, `X-HTTP-Method`) | Removed: nothing here may trust them |
+
+A rejected request gets a JSON error and a `Client-Correlation-Id` like any other, and a
+`request headers rejected` log line saying which rule it broke. To roll the rules out without
+blocking anyone, set `HEADER_GUARD_MODE=report`: requests are let through and logged as
+`request headers would be rejected` instead. Removing headers happens in both modes. Go's HTTP
+server already rejects malformed headers, and more than 1 MiB of them, before this runs.
 
 The full contract is in [`docs/openapi.json`](docs/openapi.json), an OpenAPI 3.0 spec: every route,
 request and response schema, status code and header. `make spec` renders it as a web page,
@@ -106,6 +125,7 @@ The API reads these environment variables:
 | `LOG_LEVEL`           | `info`     | `debug`, `info`, `warn`, or `error`.                       |
 | `LOG_FORMAT`          | `json`     | `json` or `text`.                                          |
 | `SHUTDOWN_TIMEOUT`    | `10s`      | How long in-flight requests get to finish on SIGTERM.      |
+| `HEADER_GUARD_MODE`   | `enforce`  | `enforce` rejects requests that break a [header rule](#request-headers); `report` only logs them. |
 
 ## Documentation
 
@@ -133,6 +153,8 @@ internal/item/httpstore/ The production Store: items on the upstream over HTTP,
                          and UpstreamError (502/504) when the upstream fails
 internal/httpx/          HTTP plumbing: graceful Serve, middleware (correlation IDs,
                          request logging), JSON helpers, healthcheck probe
+internal/headerguard/    Screens every request's headers: limits, duplicates, JSON
+                         bodies, and stripping proxy and override headers
 internal/envconfig/      Reading configuration from environment variables, and the
                          settings every service shares (address, logging, shutdown)
 internal/logx/           Logging toolkit: logger, the Key field names, request-ID

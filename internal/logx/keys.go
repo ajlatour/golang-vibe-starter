@@ -31,6 +31,11 @@ const (
 	KeyUpstreamStatus     = "upstream_status"
 	KeyUpstreamDurationMS = "upstream_duration_ms"
 
+	// Header screening (internal/headerguard).
+	KeyReason  = "reason"  // why a request was rejected, e.g. "header too large"
+	KeyHeader  = "header"  // the header concerned
+	KeyHeaders = "headers" // header names, comma-separated
+
 	// Feature flags.
 	KeyFlag      = "flag"
 	KeyDefault   = "default"
