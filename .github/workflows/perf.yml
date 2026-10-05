@@ -67,8 +67,8 @@ jobs:
           DOCS_URL: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.event.pull_request.head.sha }}/docs/performance.md#pull-request-reports
         run: |
           set -- -base-name "$BASE_REF" -details-url "$RUN_URL" -docs-url "$DOCS_URL" \
-            -bench-base ../../bin/bench/base.txt -bench-head ../../bin/bench/head.txt \
-            -load ../../bin/perf/compare
+            -bench-base bin/bench/base.txt -bench-head bin/bench/head.txt \
+            -load bin/perf/compare
           [ "$LOAD_FAILED" = true ] && set -- "$@" -load-failed
           [ "$ACCEPT_ALLOCS" = true ] && set -- "$@" -accept-allocs
           # Built and then run, not go run, which turns every failure into
