@@ -156,7 +156,10 @@ The API serves Go's runtime profiles (`net/http/pprof`), and its runtime metrics
 is set, on that address only, never on the API's port. It's off by default. The compose stack sets it and publishes it as
 `127.0.0.1:6061`, on this machine's loopback only, since profiles expose the program's internals
 (function names, stacks, what holds memory). If you enable it anywhere else, keep the port private
-the same way.
+the same way. The API logs a WARN at startup when the listener is reachable from other machines,
+which inside a container is expected (the port's publishing decides who can reach it) and anywhere
+else a mistake. A CPU profile or trace may run for at most 60 seconds (`?seconds=`), since both
+cost CPU for as long as they run.
 
 `make perf-profile` runs a k6 profile and, after a 40s warm-up, captures heap and goroutine
 snapshots, a 30s CPU profile and an allocation profile. When the run ends it captures heap and

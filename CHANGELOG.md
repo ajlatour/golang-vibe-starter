@@ -22,6 +22,9 @@ Ideas considered but not planned are listed under
 - Calls to the upstream and to flagd never follow redirects (`jsoncall`): a 3xx is a failed call,
   so the API answers 502. Before, a compromised or misconfigured upstream could redirect the API to
   any address, internal ones included, and on a 307 or 308 the request body went along.
+- The profiling listener (`PPROF_ADDR`) logs a WARN at startup when other machines can reach it,
+  and a CPU profile or trace is limited to 60 seconds, since pprof itself sets no limit on how
+  long a caller can keep the CPU busy.
 
 ### Added
 

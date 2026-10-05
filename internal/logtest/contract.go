@@ -35,6 +35,7 @@ var Contract = map[string]Message{
 	"server stopped":           {[]string{"INFO"}, nil},
 	"profiling server started": {[]string{"INFO"}, []string{"addr"}},
 	"profiling server failed":  {[]string{"ERROR"}, []string{"error"}},
+	"profiling server is reachable beyond this machine; keep its port private": {[]string{"WARN"}, []string{"addr"}},
 
 	// The four ends of a request, in order.
 	"request received":           {[]string{"INFO", "DEBUG"}, []string{"method", "path", "content_length"}},
@@ -66,4 +67,5 @@ var Contract = map[string]Message{
 var OutsideRequests = []string{
 	"using upstream", "using feature flags", "using header guard", "feature flags: no FLAGS_URL, using default values only",
 	"server started", "shutting down", "server stopped", "profiling server started", "profiling server failed",
+	"profiling server is reachable beyond this machine; keep its port private",
 }

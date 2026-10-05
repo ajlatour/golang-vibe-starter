@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/pprof"
+	"strconv"
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
@@ -31,11 +32,33 @@ func Handler() http.Handler {
 	mux.Handle("GET "+MetricsPath, MetricsHandler())
 	mux.HandleFunc("GET /debug/pprof/", pprof.Index) // also serves the named profiles
 	mux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
-	mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)
+	mux.Handle("GET /debug/pprof/profile", capSeconds(http.HandlerFunc(pprof.Profile)))
 	mux.HandleFunc("GET /debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("POST /debug/pprof/symbol", pprof.Symbol)
-	mux.HandleFunc("GET /debug/pprof/trace", pprof.Trace)
+	mux.Handle("GET /debug/pprof/trace", capSeconds(http.HandlerFunc(pprof.Trace)))
 	return mux
+}
+
+// MaxSeconds is the longest CPU profile or trace a caller may ask for. Both
+// cost CPU for as long as they run, and pprof itself sets no limit.
+const MaxSeconds = 60
+
+// capSeconds refuses a ?seconds= over MaxSeconds with 400. Anything else,
+// including a value that isn't a number, is left to pprof.
+func capSeconds(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s, err := strconv.ParseFloat(r.URL.Query().Get("seconds"), 64); err == nil && s > MaxSeconds {
+			http.Error(w, "seconds must be at most "+strconv.Itoa(MaxSeconds), http.StatusBadRequest)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+// loopbackOnly reports whether addr can only be reached from this machine.
+func loopbackOnly(addr net.Addr) bool {
+	tcp, ok := addr.(*net.TCPAddr)
+	return ok && tcp.IP.IsLoopback()
 }
 
 // Serve serves Handler on ln until ctx is cancelled. It has no write timeout,
@@ -57,6 +80,11 @@ func Serve(ctx context.Context, logger *slog.Logger, ln net.Listener) {
 		srv.Close()
 	}()
 	logger.Info("profiling server started", logx.KeyAddr, ln.Addr().String())
+	if !loopbackOnly(ln.Addr()) {
+		// Inside a container that's how it has to be, and the port's
+		// publishing decides who can reach it; anywhere else it's a mistake.
+		logger.Warn("profiling server is reachable beyond this machine; keep its port private", logx.KeyAddr, ln.Addr().String())
+	}
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("profiling server failed", logx.KeyError, err)
 	}
