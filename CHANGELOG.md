@@ -11,6 +11,17 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Resource monitoring ([watching resources](docs/performance.md#watching-resources)):
+  - The API serves its Go runtime metrics, and the process's CPU time and memory, at `/metrics`
+    on `PPROF_ADDR`, in Prometheus's text format, with the standard library alone.
+  - Every `make perf` run samples each container's CPU and memory with `docker stats` and reads
+    the API's metrics before and after, and prints what the run cost. The pull request report
+    compares the API's CPU per request, peak memory, and allocations and GC cycles per request,
+    base against PR, and warns on a large increase.
+  - `make monitor` starts cAdvisor, Prometheus and Grafana (the `monitoring` compose profile,
+    published on loopback only) with a dashboard of k6's load, every container's CPU, memory and
+    network, and the API's runtime, on one timeline; k6 sends its results there while it's up.
+    `make down` stops the profiles too.
 - Performance testing ([Performance](docs/performance.md)):
   - Go benchmarks for the request path (`BenchmarkAPI` through the whole service, and the
     middleware, header guard and logger on their own). `make bench` runs them;
@@ -214,6 +225,10 @@ Ideas considered but not planned are listed under
 
 ### Fixed
 
+- The pull request load comparison measured the pull request against itself: `docker compose run`
+  restarted the API on compose's default image before every k6 run, replacing the base's image.
+  k6 now runs with `--no-deps`, and `perf/load-ab.sh` checks after every run that the API ran the
+  image it chose.
 - The integration tests could leave flagd serving a stale flag value for the rest of the run.
   They replaced the flags file by writing a temporary file and renaming it, and flagd, which
   watches the file, sometimes failed to re-attach its watch to the new file ("error restoring

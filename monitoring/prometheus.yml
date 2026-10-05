@@ -1,0 +1,30 @@
+# Prometheus for the local monitoring stack (make monitor; see
+# docs/performance.md#watching-resources). It scrapes every 2s, since load
+# runs are minutes long, and keeps a day: this is for watching runs, not for
+# history.
+global:
+  scrape_interval: 2s
+  evaluation_interval: 2s
+
+scrape_configs:
+  # The API's runtime metrics (internal/profiling), on its PPROF_ADDR.
+  - job_name: api
+    static_configs:
+      - targets: ["api:6061"]
+
+  # Every container's CPU, memory and network, from cAdvisor.
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+    metric_relabel_configs:
+      # Only this project's containers, and only the series the dashboard
+      # uses: cAdvisor reports a great deal more.
+      - source_labels: [name]
+        regex: golang-vibe-starter-.*
+        action: keep
+      - source_labels: [__name__]
+        regex: container_(cpu_usage_seconds_total|memory_working_set_bytes|network_(receive|transmit)_bytes_total)
+        action: keep
+
+# k6 sends its own metrics here as it runs (remote write), when perf/run.sh
+# sees this stack running; Prometheus is started with the receiver enabled.

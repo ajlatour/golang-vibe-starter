@@ -8,8 +8,9 @@
 # Builds an API image for each version, then for each round runs the profile
 # (default compare) against each, alternating which goes first, with the same
 # WireMock and flagd throughout. A first run against the working tree warms
-# up the stack (WireMock's JIT above all) and is thrown away. Summaries are
-# written as <output dir>/base-<n>.json and head-<n>.json.
+# up the stack (WireMock's JIT above all) and is thrown away. Each run leaves
+# <output dir>/<side>-<n>.json (k6's summary), .txt (k6's output), and what
+# perf/resources.sh recorded: .stats.tsv and .metrics-{start,end}.prom.
 #
 # Exits 1 if any run against the working tree crossed the profile's
 # thresholds, after every run is done; the base's results are only compared.
@@ -52,7 +53,17 @@ measure() {
 	serve "$side"
 	status=0
 	sh perf/run.sh "$profile" "ab-$name.json" >"$out/$name.txt" 2>&1 || status=$?
-	mv "bin/perf/ab-$name.json" "$out/$name.json"
+	# Measuring the wrong version would compare a version with itself and
+	# report no change, so check the API was this side's throughout.
+	image=$(docker inspect --format '{{.Config.Image}}' "$(docker compose ps -q api)")
+	if [ "$image" != "golang-vibe-starter-api:$side" ]; then
+		echo "The API ran $image during $name, not golang-vibe-starter-api:$side; the comparison is invalid." >&2
+		exit 2
+	fi
+	# The k6 summary, and what perf/resources.sh recorded alongside it.
+	for f in json stats.tsv metrics-start.prom metrics-end.prom; do
+		if [ -f "bin/perf/ab-$name.$f" ]; then mv "bin/perf/ab-$name.$f" "$out/$name.$f"; fi
+	done
 	echo "  $name: k6 exit $status"
 	if [ "$side" = head ] && [ "$status" -ne 0 ]; then headfailed=1; fi
 }
@@ -60,7 +71,7 @@ measure() {
 echo "Warming up the stack..."
 serve head
 sh perf/run.sh "$profile" ab-warmup.json >/dev/null 2>&1 || true
-rm -f bin/perf/ab-warmup.json
+rm -f bin/perf/ab-warmup.*
 
 i=1
 while [ "$i" -le "$rounds" ]; do

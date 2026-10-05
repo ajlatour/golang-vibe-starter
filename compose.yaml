@@ -122,3 +122,62 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+  # The monitoring stack (make monitor; docs/performance.md#watching-resources).
+  # Not started by `up`. Every container's CPU and memory from cAdvisor, the
+  # API's runtime metrics and k6's results, in Prometheus, on a Grafana
+  # dashboard. Published on this machine's loopback only.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    profiles: [monitoring]
+    # cAdvisor reads the Docker engine's cgroups, which takes the host's
+    # filesystems, read-only, and privileged mode. On macOS, "host" is Docker
+    # Desktop's Linux VM, which is what the containers run in.
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      # Docker's API names the containers; containerd, which Docker Desktop
+      # stores images in, has their details.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=2s
+      - --store_container_labels=false
+      # Leave out the per-process and per-disk detail nobody here reads.
+      - --disable_metrics=advtcp,cpu_topology,cpuset,disk,diskIO,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp
+
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    profiles: [monitoring]
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=1d
+      # k6 pushes its results (perf/run.sh adds -o experimental-prometheus-rw).
+      - --web.enable-remote-write-receiver
+
+  grafana:
+    image: grafana/grafana:13.2.3
+    profiles: [monitoring]
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      # Local and loopback-only, so no login: anyone who can reach it is you.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/performance.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    depends_on:
+      - prometheus

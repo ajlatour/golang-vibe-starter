@@ -224,3 +224,69 @@ func TestNoBenchmarksAtTheBase(t *testing.T) {
 	}
 	mustContain(t, report, "✅ No regressions found.", "New benchmarks, with nothing to compare against yet: `cmd/api.API/GET`.")
 }
+
+// withResources adds perf/resources.sh's files to every run in a k6Dir: the
+// API container at cpu% and memMiB in docker stats (with another project's
+// container and an ANSI clear-screen in the mix, as docker stats writes),
+// and metrics where the run cost cpuSec of CPU and allocBytes, for the 1000
+// requests k6Dir records.
+func withResources(t *testing.T, dir, side string, cpu, memMiB, cpuSec, allocBytes float64) {
+	t.Helper()
+	for i := 1; i <= 2; i++ {
+		stem := filepath.Join(dir, fmt.Sprintf("%s-%d", side, i))
+		stats := fmt.Sprintf("\x1b[2J\x1b[Hgolang-vibe-starter-api-1\t%.1f%%\t%.1fMiB / 7.6GiB\n"+
+			"other-project-db-1\t99.0%%\t2GiB / 7.6GiB\n"+
+			"golang-vibe-starter-api-1\t%.1f%%\t%.1fMiB / 7.6GiB\n", cpu, memMiB-1, cpu, memMiB)
+		start := "# TYPE process_cpu_seconds_total counter\nprocess_cpu_seconds_total 10\ngo_gc_heap_allocs_bytes_total 1000\ngo_gc_cycles_total_gc_cycles_total 5\n"
+		end := fmt.Sprintf("process_cpu_seconds_total %g\ngo_gc_heap_allocs_bytes_total %g\ngo_gc_cycles_total_gc_cycles_total 7\ngo_sched_goroutines_goroutines 12\ngo_info{version=\"go1.27.0\"} 1\n", 10+cpuSec, 1000+allocBytes)
+		for name, content := range map[string]string{".stats.tsv": stats, ".metrics-start.prom": start, ".metrics-end.prom": end} {
+			if err := os.WriteFile(stem+name, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+func TestResources(t *testing.T) {
+	t.Run("both sides recorded", func(t *testing.T) {
+		dir := k6Dir(t, [3]float64{1, 2, 0}, [3]float64{1, 2, 0})
+		withResources(t, dir, "base", 10, 15, 0.1, 2048*1000)
+		withResources(t, dir, "head", 11, 15.5, 0.1, 2048*1000)
+		report, blocking := render(t, options{baseName: "main", loadDir: dir})
+		if blocking {
+			t.Error("resource numbers blocked")
+		}
+		mustContain(t, report, "✅ No regressions found.", "### Resources (the API, during the load test)",
+			"| CPU per request | 100µs | 100µs | +0.0% |", "| CPU, container average | 10.0% | 11.0% | +10.0% |",
+			"| Memory, container peak | 15.0 MiB | 15.5 MiB |", "| Allocated per request | 2048B | 2048B |",
+			"| GC cycles per 1,000 requests | 2.00 | 2.00 |", "| Goroutines at the end | 12 | 12 | |")
+		if strings.Contains(report, "2048.0 MiB") || strings.Contains(report, "99.0%") {
+			t.Errorf("another project's container was counted:\n%s", report)
+		}
+	})
+	t.Run("more CPU per request warns", func(t *testing.T) {
+		dir := k6Dir(t, [3]float64{1, 2, 0}, [3]float64{1, 2, 0})
+		withResources(t, dir, "base", 10, 15, 0.1, 1000)
+		withResources(t, dir, "head", 14, 15, 0.14, 1000)
+		report, blocking := render(t, options{baseName: "main", loadDir: dir})
+		if blocking {
+			t.Error("more CPU blocked; it should only warn")
+		}
+		mustContain(t, report, "⚠️ **Possible regression:** more CPU per request")
+	})
+	t.Run("more memory warns", func(t *testing.T) {
+		dir := k6Dir(t, [3]float64{1, 2, 0}, [3]float64{1, 2, 0})
+		withResources(t, dir, "base", 10, 15, 0.1, 1000)
+		withResources(t, dir, "head", 10, 40, 0.1, 1000)
+		report, _ := render(t, options{baseName: "main", loadDir: dir})
+		mustContain(t, report, "⚠️ **Possible regression:** more memory")
+	})
+	t.Run("a base without them", func(t *testing.T) {
+		dir := k6Dir(t, [3]float64{1, 2, 0}, [3]float64{1, 2, 0})
+		withResources(t, dir, "head", 10, 15, 0.1, 1000)
+		report, _ := render(t, options{baseName: "main", loadDir: dir})
+		if strings.Contains(report, "### Resources") {
+			t.Errorf("a resources table with nothing to compare against:\n%s", report)
+		}
+	})
+}

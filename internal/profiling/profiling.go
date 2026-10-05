@@ -1,5 +1,6 @@
-// Package profiling serves Go's runtime profiles (net/http/pprof) on a
-// listener of their own, never on the API's.
+// Package profiling serves Go's runtime profiles (net/http/pprof), and the
+// runtime's metrics for Prometheus, on a listener of their own, never on the
+// API's.
 //
 // Profiles reveal the program's internals: function names, goroutine stacks,
 // and in a heap profile, what holds memory. So the endpoints are opt-in (the
@@ -23,9 +24,11 @@ import (
 
 // Handler serves the pprof index at /debug/pprof/ and every profile under it:
 // profile (CPU), heap, allocs, goroutine, block, mutex, threadcreate, cmdline,
-// symbol and trace.
+// symbol and trace. It also serves the runtime metrics at /metrics; see
+// MetricsHandler.
 func Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("GET "+MetricsPath, MetricsHandler())
 	mux.HandleFunc("GET /debug/pprof/", pprof.Index) // also serves the named profiles
 	mux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
 	mux.HandleFunc("GET /debug/pprof/profile", pprof.Profile)

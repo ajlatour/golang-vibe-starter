@@ -144,8 +144,8 @@ func TestNewFlags(t *testing.T) {
 	})
 }
 
-// TestProfiling checks the runtime profiles are served on PPROF_ADDR when it's
-// set, and never on the API's own port, set or not.
+// TestProfiling checks the runtime profiles and metrics are served on
+// PPROF_ADDR when it's set, and never on the API's own port, set or not.
 func TestProfiling(t *testing.T) {
 	get := func(t *testing.T, url string) int {
 		t.Helper()
@@ -160,8 +160,10 @@ func TestProfiling(t *testing.T) {
 	t.Run("off by default", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		addr, logs, errc := startApp(t, ctx, map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock"})
-		if code := get(t, "http://"+addr+"/debug/pprof/"); code != http.StatusNotFound {
-			t.Errorf("the API port answers /debug/pprof/ with %d, want 404", code)
+		for _, path := range []string{"/debug/pprof/", "/metrics"} {
+			if code := get(t, "http://"+addr+path); code != http.StatusNotFound {
+				t.Errorf("the API port answers %s with %d, want 404", path, code)
+			}
 		}
 		if strings.Contains(logs.String(), "profiling server started") {
 			t.Error("a profiling server started without PPROF_ADDR")
@@ -188,8 +190,13 @@ func TestProfiling(t *testing.T) {
 		if code := get(t, "http://"+pprofAddr+"/debug/pprof/heap?debug=1"); code != http.StatusOK {
 			t.Errorf("PPROF_ADDR answers the heap profile with %d, want 200", code)
 		}
-		if code := get(t, "http://"+addr+"/debug/pprof/"); code != http.StatusNotFound {
-			t.Errorf("the API port answers /debug/pprof/ with %d, want 404", code)
+		if code := get(t, "http://"+pprofAddr+"/metrics"); code != http.StatusOK {
+			t.Errorf("PPROF_ADDR answers /metrics with %d, want 200", code)
+		}
+		for _, path := range []string{"/debug/pprof/", "/metrics"} {
+			if code := get(t, "http://"+addr+path); code != http.StatusNotFound {
+				t.Errorf("the API port answers %s with %d, want 404", path, code)
+			}
 		}
 		if code := get(t, "http://"+pprofAddr+"/items"); code != http.StatusNotFound {
 			t.Errorf("PPROF_ADDR answers /items with %d, want 404: it serves profiles only", code)

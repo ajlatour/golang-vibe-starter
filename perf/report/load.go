@@ -15,7 +15,25 @@ type loadSide struct {
 	p99       float64 // ms
 	errorRate float64
 	requests  int
+
+	// What the runs cost the API, from perf/resources.sh, over the runs that
+	// recorded it: the container's average CPU and peak memory from docker
+	// stats, and from the API's own metrics, its CPU time, allocations and
+	// GC cycles, with the requests of those runs to divide them by.
+	statsRuns     int
+	cpuPercent    float64
+	memoryPeakMiB float64
+	metricRuns    int
+	cpuSeconds    float64
+	allocBytes    float64
+	gcCycles      float64
+	goroutinesMax float64
+	metricReqs    float64
 }
+
+func (s loadSide) cpuPerRequest() float64    { return s.cpuSeconds / s.metricReqs }      // seconds
+func (s loadSide) allocsPerRequest() float64 { return s.allocBytes / s.metricReqs }      // bytes
+func (s loadSide) gcPer1000() float64        { return s.gcCycles * 1000 / s.metricReqs } // cycles
 
 type loadComparison struct {
 	base, head loadSide
@@ -31,6 +49,27 @@ const (
 
 func (c loadComparison) p99Regressed() bool {
 	return c.head.p99 > c.base.p99*(1+p99Noticeable) && c.head.p99-c.base.p99 > minP99Change
+}
+
+// Resource increases reported as regressions: CPU per request up by more
+// than this fraction, or the container's peak memory up by more than this
+// fraction and more than minMemoryChange.
+const (
+	cpuNoticeable    = 0.25
+	memoryNoticeable = 0.25
+	minMemoryChange  = 10.0 // MiB
+)
+
+func (c loadComparison) hasStats() bool   { return c.base.statsRuns > 0 && c.head.statsRuns > 0 }
+func (c loadComparison) hasMetrics() bool { return c.base.metricRuns > 0 && c.head.metricRuns > 0 }
+
+func (c loadComparison) cpuRegressed() bool {
+	return c.hasMetrics() && c.head.cpuPerRequest() > c.base.cpuPerRequest()*(1+cpuNoticeable)
+}
+
+func (c loadComparison) memoryRegressed() bool {
+	return c.hasStats() && c.head.memoryPeakMiB > c.base.memoryPeakMiB*(1+memoryNoticeable) &&
+		c.head.memoryPeakMiB-c.base.memoryPeakMiB > minMemoryChange
 }
 
 // k6Summary is the part of a k6 --summary-export file the report reads.
@@ -90,11 +129,29 @@ func readLoad(dir string) (loadComparison, error) {
 			side.into.p99 += p99
 			side.into.errorRate += rate
 			side.into.requests += int(reqs)
+
+			res := readResources(f)
+			if res.hasStats {
+				side.into.statsRuns++
+				side.into.cpuPercent += res.cpuPercent
+				side.into.memoryPeakMiB = max(side.into.memoryPeakMiB, res.memoryPeakMiB)
+			}
+			if res.hasMetrics {
+				side.into.metricRuns++
+				side.into.cpuSeconds += res.cpuSeconds
+				side.into.allocBytes += res.allocBytes
+				side.into.gcCycles += res.gcCycles
+				side.into.goroutinesMax = max(side.into.goroutinesMax, res.goroutines)
+				side.into.metricReqs += reqs
+			}
 		}
 		n := float64(side.into.runs)
 		side.into.median /= n
 		side.into.p99 /= n
 		side.into.errorRate /= n
+		if side.into.statsRuns > 0 {
+			side.into.cpuPercent /= float64(side.into.statsRuns)
+		}
 	}
 	return c, nil
 }

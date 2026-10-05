@@ -8,6 +8,10 @@ Three tools, from the cheapest to the most realistic:
   and error thresholds: smoke, load, stress, spike and soak.
 - **pprof** profiles show where the running service spends its CPU and memory, captured under load.
 
+Alongside them, every load run records what it cost in CPU and memory, and `make monitor` puts
+load, containers and the Go runtime on one live dashboard: see
+[watching resources](#watching-resources).
+
 | Command | What it does |
 | ------- | ------------ |
 | `make bench` | Runs the Go benchmarks, 6 times each, into `bin/bench/current.txt` |
@@ -16,6 +20,7 @@ Three tools, from the cheapest to the most realistic:
 | `make perf-compare` | Both, written up as the comment CI posts on a pull request: `bin/perf/report.md` |
 | `make perf PROFILE=<name>` | Starts the stack and runs a k6 profile (default `smoke`) |
 | `make perf-profile PROFILE=<name>` | Runs a k6 profile (default `load`) and captures pprof profiles during and after it |
+| `make monitor` | Starts the stack with Prometheus, Grafana and cAdvisor: a live dashboard at http://localhost:3000 |
 
 Nothing to install beyond Go and Docker: k6 runs from its image, and benchstat through `go run`.
 
@@ -86,10 +91,69 @@ The local stack is a measurement of your laptop, not of production:
 Use local runs to compare before and after a change, on the same machine, and keep absolute
 numbers for an environment shaped like production.
 
+## Watching resources
+
+Three layers, from the lightest. None adds a dependency to the service.
+
+**The API's runtime metrics.** With `PPROF_ADDR` set, the API also serves `/metrics` there:
+every scalar measurement in Go's `runtime/metrics` (goroutines, heap, allocations, GC cycles, CPU
+spent in GC, and more), with the process's CPU time and, on Linux, its resident memory. They're
+in Prometheus's text format, written with the standard library alone
+(`internal/profiling/metrics.go`) and named as the Prometheus Go client names them, so
+`go_sched_goroutines_goroutines` or `go_gc_heap_allocs_bytes_total`. Read them with curl while the
+stack runs:
+
+```sh
+curl -s localhost:6061/metrics | grep -E '^(go_sched_goroutines_goroutines|go_memory_classes_heap_objects_bytes|process_cpu_seconds_total) '
+```
+
+**Every load run's cost.** `perf/run.sh`, behind every `make perf`, samples `docker stats` about
+once a second during the run and reads the API's `/metrics` just before and just after it
+(`perf/resources.sh`). At the end it prints each container's average and peak CPU and peak memory,
+and what the API process spent:
+
+```text
+Resources during the run (docker stats, about once a second):
+  container    CPU avg  CPU peak  memory peak
+  api             3.8%      6.4%     15.0 MiB
+  flagd           0.8%      1.9%     21.7 MiB
+  mock           16.0%     26.5%    330.8 MiB
+  k6              3.7%      5.5%     22.1 MiB
+  (100% is one CPU core.)
+The API process (its /metrics, before and after):
+  CPU time 1.15s, allocated 20.3 MiB in 8 GC cycles; at the end 0.9 MiB of heap and 32 goroutines
+```
+
+The other rows matter as much as the API's: on one machine, a busy WireMock or k6 can be the real
+limit on what the API is asked to do. The raw samples are saved next to the k6 summary in
+`bin/perf/`. The pull request report compares the same numbers, base against PR (see
+[pull request reports](#pull-request-reports)).
+
+**A live dashboard.** `make monitor` starts the stack with three more containers, under the
+`monitoring` compose profile:
+
+| Container | What it does |
+| --------- | ------------ |
+| cAdvisor | Measures every container's CPU, memory and network |
+| Prometheus, `localhost:9090` | Scrapes cAdvisor and the API's `/metrics` every 2s, and receives k6's results as they happen |
+| Grafana, `localhost:3000` | Shows the performance dashboard, with no login: it listens on this machine's loopback only |
+
+While the stack is up, `make perf` (any profile) sends k6's results to Prometheus too, so the
+dashboard shows requests per second, latency and errors by route, each container's CPU, memory and
+network, and the API's CPU, heap, allocation rate, GC and goroutines, on one timeline. A soak run
+(`make perf PROFILE=soak`) is where it pays off: memory or goroutines that climb and don't come
+back down. `make down` stops it all.
+
+The dashboard is `monitoring/grafana/dashboards/performance.json`, loaded read-only: edit the JSON,
+or change it in Grafana and export it over the file. `monitoring/monitoring_test.go` checks every
+Go runtime metric it plots exists in `/metrics`, and that the k6 percentiles it plots are ones
+`perf/run.sh` asks k6 to send. On macOS, cAdvisor runs inside Docker Desktop's Linux VM and sees
+the containers there, which is what matters; the Mac itself isn't measured.
+
 ## Profiling
 
-The API serves Go's runtime profiles (`net/http/pprof`) when `PPROF_ADDR` is set, on that address
-only, never on the API's port. It's off by default. The compose stack sets it and publishes it as
+The API serves Go's runtime profiles (`net/http/pprof`), and its runtime metrics, when `PPROF_ADDR`
+is set, on that address only, never on the API's port. It's off by default. The compose stack sets it and publishes it as
 `127.0.0.1:6061`, on this machine's loopback only, since profiles expose the program's internals
 (function names, stacks, what holds memory). If you enable it anywhere else, keep the port private
 the same way.
@@ -137,7 +201,9 @@ jobs on separate runners, and a third job writes the report from their results; 
 write to the pull request. Changes to Markdown and `docs/` alone don't run the workflow.
 
 **What the comment shows.** First the verdict, then the changes that matter, then the load test's
-latency and errors for each version. Every benchmark is in a collapsed table, with full benchstat
+latency and errors for each version, and what the API cost while it ran: CPU per request (from
+its own CPU time, so it doesn't depend on how busy the runner was), its container's average CPU
+and peak memory, and bytes allocated and GC cycles per request. Every benchmark is in a collapsed table, with full benchstat
 output and k6's output in the run, which the comment links to.
 
 | Change | Effect |
@@ -146,6 +212,7 @@ output and k6's output in the run, which the comment links to.
 | The load test crosses the `compare` profile's thresholds | ❌ **Fails the check.** Errors, or a p99 far over budget: the service is broken. No label accepts this |
 | Time per operation up more than 15%, or bytes per operation up more than 10%, and statistically significant | ⚠️ Reported, never failed on |
 | p99 under load up more than 25% and more than 1ms | ⚠️ Reported, never failed on |
+| CPU per request up more than 25%, or peak memory up more than 25% and 10 MiB | ⚠️ Reported, never failed on |
 | Anything smaller, or not significant (`~`) | Shown in the full table only |
 
 A ⚠️ on a shared runner is a lead, not a verdict: confirm it on a quiet machine with

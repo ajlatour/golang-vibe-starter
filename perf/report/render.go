@@ -49,6 +49,20 @@ func (r report) changes(v verdict) []benchDelta {
 
 func (r report) loadRegressed() bool { return r.load != nil && r.load.p99Regressed() }
 
+func (r report) resourcesRegressed() []string {
+	if r.load == nil {
+		return nil
+	}
+	var out []string
+	if r.load.cpuRegressed() {
+		out = append(out, "more CPU per request")
+	}
+	if r.load.memoryRegressed() {
+		out = append(out, "more memory")
+	}
+	return out
+}
+
 func (r report) blocking() bool {
 	return r.loadFailed || (len(r.allocIncreases()) > 0 && !r.acceptAllocs)
 }
@@ -73,7 +87,7 @@ func (r report) write(out io.Writer) error {
 	case len(allocs) > 0:
 		p("❌ **Blocking:** %s more per operation. Allocation counts are exact, so this is a real change, not noise. If it's intended, add the `%s` label.", allocate(len(allocs)), AcceptLabel)
 	}
-	if n := len(slower); n > 0 || r.loadRegressed() {
+	if n := len(slower); n > 0 || r.loadRegressed() || len(r.resourcesRegressed()) > 0 {
 		var what []string
 		if n > 0 {
 			what = append(what, count(n, "benchmark")+" slower or larger")
@@ -81,9 +95,10 @@ func (r report) write(out io.Writer) error {
 		if r.loadRegressed() {
 			what = append(what, "a higher p99 under load")
 		}
+		what = append(what, r.resourcesRegressed()...)
 		p("⚠️ **Possible regression:** %s. Timings vary on shared runners, so this doesn't block; confirm it on a quiet machine with `make perf-compare`.", strings.Join(what, ", and "))
 	}
-	if !r.loadFailed && len(allocs) == 0 && len(slower) == 0 && !r.loadRegressed() {
+	if !r.loadFailed && len(allocs) == 0 && len(slower) == 0 && !r.loadRegressed() && len(r.resourcesRegressed()) == 0 {
 		p("✅ No regressions found.")
 	}
 	if n := len(r.changes(improved)); n > 0 {
@@ -119,6 +134,34 @@ func (r report) write(out io.Writer) error {
 		p("| p99 latency | %.2fms | %.2fms | %s |", l.base.p99, l.head.p99, pct(l.base.p99, l.head.p99))
 		p("| Errors | %.2f%% | %.2f%% | |", l.base.errorRate*100, l.head.errorRate*100)
 		p("| Requests | %d | %d | |", l.base.requests, l.head.requests)
+
+		if l.hasStats() || l.hasMetrics() {
+			p("")
+			p("### Resources (the API, during the load test)")
+			p("")
+			p("| | %s | This PR | Change |", r.baseName)
+			p("| --- | ---: | ---: | ---: |")
+			if l.hasMetrics() {
+				b, h := l.base.cpuPerRequest()*1e6, l.head.cpuPerRequest()*1e6
+				p("| CPU per request | %.0fµs | %.0fµs | %s |", b, h, pct(b, h))
+			}
+			if l.hasStats() {
+				p("| CPU, container average | %.1f%% | %.1f%% | %s |", l.base.cpuPercent, l.head.cpuPercent, pct(l.base.cpuPercent, l.head.cpuPercent))
+				p("| Memory, container peak | %.1f MiB | %.1f MiB | %s |", l.base.memoryPeakMiB, l.head.memoryPeakMiB, pct(l.base.memoryPeakMiB, l.head.memoryPeakMiB))
+			}
+			if l.hasMetrics() {
+				b, h := l.base.allocsPerRequest(), l.head.allocsPerRequest()
+				p("| Allocated per request | %s | %s | %s |", formatValue(unitBytes, b), formatValue(unitBytes, h), pct(b, h))
+				p("| GC cycles per 1,000 requests | %.2f | %.2f | %s |", l.base.gcPer1000(), l.head.gcPer1000(), pct(l.base.gcPer1000(), l.head.gcPer1000()))
+				p("| Goroutines at the end | %.0f | %.0f | |", l.base.goroutinesMax, l.head.goroutinesMax)
+			}
+			p("")
+			if l.hasMetrics() {
+				p("CPU per request is the API process's own CPU time divided by the requests it served, so it doesn't depend on how busy the runner was. 100%% CPU is one core.")
+			} else {
+				p("100%% CPU is one core. %s's API doesn't serve its runtime metrics, so the comparisons that need them start once this lands.", r.baseName)
+			}
+		}
 	}
 
 	if len(r.bench.deltas) > 0 {

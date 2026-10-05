@@ -131,7 +131,7 @@ The API reads these environment variables:
 | `LOG_LEVEL`           | `info`     | `debug`, `info`, `warn`, or `error`.                       |
 | `LOG_FORMAT`          | `json`     | `json` or `text`.                                          |
 | `SHUTDOWN_TIMEOUT`    | `10s`      | How long in-flight requests get to finish on SIGTERM.      |
-| `PPROF_ADDR`          |            | Where to serve the runtime profiles (pprof), e.g. `127.0.0.1:6061`. Unset serves none. Keep it private: see [Performance](docs/performance.md#profiling). |
+| `PPROF_ADDR`          |            | Where to serve the runtime profiles (pprof) and metrics (`/metrics`), e.g. `127.0.0.1:6061`. Unset serves neither. Keep it private: see [Performance](docs/performance.md#profiling). |
 | `HEADER_GUARD_MODE`   | `enforce`  | `enforce` rejects requests that break a [header rule](#request-headers); `report` only logs them. |
 | `HEADER_MAX_COUNT`    | `100`      | The most request headers allowed.                          |
 | `HEADER_MAX_BYTES`    | `8192`     | The largest any one request header may be, name and value, in bytes. |
@@ -153,8 +153,8 @@ documentation (the code's doc comments) at http://localhost:6060.
 
 - [Calling the API](docs/curl.md): `scripts/api` and plain curl examples for every route, error
   and header rule.
-- [Performance](docs/performance.md): Go benchmarks, k6 load, stress, spike and soak tests, and
-  profiling with pprof.
+- [Performance](docs/performance.md): Go benchmarks, k6 load, stress, spike and soak tests,
+  watching CPU and memory (with a live dashboard), and profiling with pprof.
 - [The local stack](docs/local-stack.md): the compose stack, WireMock's stubs, fault injection,
   and load-test tuning.
 - [Feature flags](docs/feature-flags.md): the flags, what happens when flagd can't answer, and
@@ -187,11 +187,12 @@ internal/featureflag/    OFREP client for the flagd sidecar, flag declarations,
 internal/jsoncall/       One JSON-over-HTTP call: encode, send, redact, cap, decode, and
                          classify failures. Used by httpstore and featureflag.
 internal/item/itemtest/  MemStore (an in-memory Store) and StoreContract, for tests
-internal/profiling/      Serves pprof on its own listener when PPROF_ADDR is set
+internal/profiling/      Serves pprof and runtime metrics on their own listener (PPROF_ADDR)
 internal/logtest/        Capture and parse JSON logs in tests; the log contract
 internal/nettest/        Dead, hanging, dropping and failing upstream stubs for tests
 scripts/api              Calls the API with curl; see docs/curl.md
-perf/                    k6 load profiles and the scripts that run them
+perf/                    k6 load profiles, the scripts that run them, and the PR report
+monitoring/              Prometheus and Grafana config for make monitor
 flagd/                   Feature flag definitions: served by flagd, and embedded
                          in the API as its fallback values
 wiremock/mappings/       WireMock stubs (mounted)

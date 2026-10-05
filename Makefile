@@ -48,7 +48,7 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
 	live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint \
-	perf perf-profile bench bench-compare load-compare perf-compare
+	perf perf-profile bench bench-compare load-compare perf-compare monitor
 
 ##@ Help
 
@@ -66,8 +66,9 @@ up: ## Start the API, WireMock and flagd in the background (rebuilds the API)
 	$(COMPOSE) up -d --build --wait
 	@echo "API: $(API_URL)   WireMock: $(WIREMOCK_URL)   flagd: $(FLAGD_URL)"
 
-down: ## Stop the local stack
-	$(COMPOSE) down
+down: ## Stop the local stack, monitoring included
+	@# Naming the profiles stops their containers too, which a plain down leaves running.
+	$(COMPOSE) --profile monitoring --profile perf down
 
 logs: ## Follow the stack's logs (Ctrl-C to stop)
 	$(COMPOSE) logs -f
@@ -137,6 +138,11 @@ integration-down: ## Stop the test stack
 	$(COMPOSE_INTEGRATION) down
 
 ##@ Performance (see docs/performance.md)
+
+monitor: ## Start the stack with monitoring: a Grafana dashboard of load, containers and the Go runtime
+	$(COMPOSE) --profile monitoring up -d --build --wait
+	@echo "Grafana: http://localhost:3000 (the performance dashboard)   Prometheus: http://localhost:9090"
+	@echo "Load runs (make perf PROFILE=load) show up on the dashboard as they happen. make down stops it all."
 
 perf: ## Start the stack and run a k6 profile (default PROFILE=smoke): make perf PROFILE=load
 	$(COMPOSE) up -d --build --wait

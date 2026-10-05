@@ -45,6 +45,7 @@ don't, and its message says what to fix.
 | A route, status or header rule a caller would hit, or `scripts/api` | `docs/curl.md`, which needs a successful call of every route | `cmd/api/curl_test.go` runs every command on the page, and the script, against the real handlers |
 | A benchmarked path, adding allocations on purpose | Nothing: add the `perf-ok` label to the pull request | The Performance workflow fails a pull request that allocates more per operation; see [pull request reports](performance.md#pull-request-reports) |
 | A route (new or removed) | The traffic mix in `perf/k6.js` | `perf/profiles_test.go` checks the mix covers every operation in `docs/openapi.json` |
+| A Go runtime metric's name, or a k6 percentile on the dashboard | `monitoring/grafana/dashboards/performance.json` | `monitoring/monitoring_test.go` checks the dashboard's metrics exist in `/metrics` and its k6 percentiles are ones `perf/run.sh` sends |
 | A k6 profile or threshold | `perf/profiles.json`, and its row in `docs/performance.md` | `perf/profiles_test.go` checks phases, durations and threshold syntax |
 | An environment variable (or its default) | `.env.example` and the Configuration table in the README | `cmd/api/envexample_test.go`: the variables the code reads, the two lists and their defaults must all agree |
 
