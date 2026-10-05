@@ -199,6 +199,7 @@ func TestBadInput(t *testing.T) {
 	for name, opts := range map[string]options{
 		"missing file":    {benchBase: "nope.txt", benchHead: "nope.txt"},
 		"no results":      {benchBase: empty, benchHead: empty},
+		"no head results": {benchBase: benchOutput(t, "cmd/api", 1, map[string][3]float64{"A": {1, 0, 0}}), benchHead: empty},
 		"no k6 summaries": {loadDir: t.TempDir()},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -207,4 +208,19 @@ func TestBadInput(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestNoBenchmarksAtTheBase covers the first pull request to add benchmarks:
+// the base has none, so every one is new and nothing blocks.
+func TestNoBenchmarksAtTheBase(t *testing.T) {
+	empty := filepath.Join(t.TempDir(), "empty.txt")
+	if err := os.WriteFile(empty, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, blocking := render(t, options{baseName: "main", benchBase: empty,
+		benchHead: benchOutput(t, "cmd/api", 8, map[string][3]float64{"API/GET": {40000, 17000, 138}})})
+	if blocking {
+		t.Error("new benchmarks blocked")
+	}
+	mustContain(t, report, "✅ No regressions found.", "New benchmarks, with nothing to compare against yet: `cmd/api.API/GET`.")
 }

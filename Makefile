@@ -161,9 +161,9 @@ load-compare: ## Run the k6 smoke profile against this tree and BENCH_BASE, inte
 perf-compare: ## Both comparisons, written up as the pull request comment CI posts: bin/perf/report.md
 	$(MAKE) bench-compare
 	@status=0; $(MAKE) load-compare || status=$$?; \
-	go run -C perf/report . -base-name $(BENCH_BASE) \
-		-bench-base ../../$(BENCH_OUT)/base.txt -bench-head ../../$(BENCH_OUT)/head.txt \
-		-load ../../$(LOAD_OUT) $$([ $$status -ne 0 ] && echo -load-failed) > bin/perf/report.md || status=$$?; \
+	go build -C perf/report -o $(CURDIR)/bin/perf-report . && bin/perf-report -base-name $(BENCH_BASE) \
+		-bench-base $(BENCH_OUT)/base.txt -bench-head $(BENCH_OUT)/head.txt \
+		-load $(LOAD_OUT) $$([ $$status -ne 0 ] && echo -load-failed) > bin/perf/report.md || status=$$?; \
 	echo "The report is in bin/perf/report.md"; exit $$status
 
 ##@ Documentation (rendered in Docker; nothing to install)

@@ -30,7 +30,7 @@ mkdir -p "$bins/base" "$bins/head"
 # The packages with benchmarks, as directories relative to a tree's root
 # (cmd/api), each named in bin/ with its slashes as underscores.
 benchdirs() {
-	(cd "$1" && grep -rl --include='*_test.go' --exclude-dir=bin '^func Benchmark' . | xargs -n1 dirname | sed 's|^\./||' | sort -u)
+	(cd "$1" && grep -rl --include='*_test.go' --exclude-dir=bin '^func Benchmark' . | sed -e 's|/[^/]*$||' -e 's|^\./||' | sort -u)
 }
 
 # Compile each package's test binary once, so the rounds below time the

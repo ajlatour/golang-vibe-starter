@@ -71,8 +71,11 @@ jobs:
             -load ../../bin/perf/compare
           [ "$LOAD_FAILED" = true ] && set -- "$@" -load-failed
           [ "$ACCEPT_ALLOCS" = true ] && set -- "$@" -accept-allocs
+          # Built and then run, not go run, which turns every failure into
+          # exit status 1 and so would hide which kind this is.
+          go build -C perf/report -o "$RUNNER_TEMP/report" .
           status=0
-          go run -C perf/report . "$@" > report.md || status=$?
+          "$RUNNER_TEMP/report" "$@" > report.md || status=$?
           # 1 is a blocking regression, reported below; anything else is a
           # broken input, which fails here.
           [ "$status" -le 1 ] || exit "$status"

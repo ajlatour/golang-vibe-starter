@@ -77,6 +77,9 @@ func run(w io.Writer, opts options) (blocking bool, err error) {
 		if err != nil {
 			return false, err
 		}
+		if len(head.order) == 0 {
+			return false, fmt.Errorf("%s: no benchmark results", opts.benchHead)
+		}
 		r.bench = compareBench(base, head)
 	}
 	if opts.loadDir != "" {

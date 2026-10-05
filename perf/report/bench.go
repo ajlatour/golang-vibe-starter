@@ -36,7 +36,8 @@ type benchRuns struct {
 
 var procsSuffix = regexp.MustCompile(`-\d+$`)
 
-// readBenchFile reads Go benchmark output. The package path is shortened to
+// readBenchFile reads Go benchmark output. A file with no results is valid:
+// the base has none before the first benchmark is added. The package path is shortened to
 // what follows the module path, and the -N GOMAXPROCS suffix dropped, so the
 // two sides match even if they ran with different CPU counts.
 func readBenchFile(path string) (benchRuns, error) {
@@ -67,9 +68,6 @@ func readBenchFile(path string) (benchRuns, error) {
 	}
 	if err := rd.Err(); err != nil {
 		return runs, fmt.Errorf("%s: %w", path, err)
-	}
-	if len(runs.order) == 0 {
-		return runs, fmt.Errorf("%s: no benchmark results", path)
 	}
 	return runs, nil
 }
