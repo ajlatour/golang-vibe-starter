@@ -10,13 +10,10 @@ import (
 	"time"
 )
 
-// changelog runs scripts/changelog.sh on a copy of CHANGELOG.md (or content,
-// if given) and returns its output, exit code, and the file afterwards.
+// changelog runs scripts/changelog.sh on a file holding content and returns
+// its output, exit code, and the file afterwards.
 func changelog(t *testing.T, content string, args ...string) (string, int, string) {
 	t.Helper()
-	if content == "" {
-		content = read(t, "../CHANGELOG.md")
-	}
 	file := filepath.Join(t.TempDir(), "CHANGELOG.md")
 	if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -58,23 +55,52 @@ func TestChangelogIsReleasable(t *testing.T) {
 	}
 }
 
+// sample is a changelog with something unreleased and one release before,
+// so the tests don't depend on the state of the real one, which every
+// release changes.
+const sample = `# Changelog
+
+## Unreleased
+
+### Added
+
+- Something new.
+
+### Fixed
+
+- Something broken.
+
+## [0.0.1] - 2026-01-01
+
+### Added
+
+- The start.
+`
+
 func TestChangelogCutAndNotes(t *testing.T) {
-	out, code, after := changelog(t, "", "cut", "v0.1.0")
+	out, code, after := changelog(t, sample, "cut", "v0.1.0")
 	if code != 0 {
 		t.Fatalf("cut: exit %d: %s", code, out)
 	}
 	today := time.Now().UTC().Format("2006-01-02")
-	if !strings.Contains(after, "\n## Unreleased\n\n## [0.1.0] - "+today+"\n") {
-		t.Errorf("after cut, want an empty Unreleased over the release:\n%.400s", after)
+	if !strings.Contains(after, "\n## Unreleased\n\n## [0.1.0] - "+today+"\n\n### Added\n\n- Something new.\n") {
+		t.Errorf("after cut, want an empty Unreleased over the release:\n%s", after)
+	}
+	if !strings.Contains(after, "\n## [0.0.1] - 2026-01-01\n") {
+		t.Error("cut lost the earlier release")
 	}
 
 	notes, code, _ := changelog(t, after, "notes", "v0.1.0")
-	if code != 0 || !strings.HasPrefix(notes, "### ") || strings.Contains(notes, "## [0.1.0]") {
-		t.Errorf("notes: exit %d, want the section's body, starting at its first subsection:\n%.200s", code, notes)
+	if code != 0 || notes != "### Added\n\n- Something new.\n\n### Fixed\n\n- Something broken.\n\n" {
+		t.Errorf("notes: exit %d, got\n%q\nwant the release's body", code, notes)
 	}
-	unreleased, _, _ := changelog(t, "", "notes")
+	unreleased, _, _ := changelog(t, sample, "notes")
 	if unreleased != notes {
 		t.Error("the release's notes differ from what Unreleased held before the cut")
+	}
+	older, _, _ := changelog(t, after, "notes", "v0.0.1")
+	if older != "### Added\n\n- The start.\n" {
+		t.Errorf("notes of the earlier release = %q", older)
 	}
 
 	for name, args := range map[string][]string{
