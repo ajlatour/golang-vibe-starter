@@ -92,6 +92,11 @@ Errors are JSON, `{"error":"..."}`:
 Every response carries a `Client-Correlation-Id` header. Send your own to tie the service's log
 lines to yours, or quote the one returned when reporting a problem.
 
+Every response also carries `X-Content-Type-Options: nosniff`, so a browser never treats a body as
+anything but its declared type, and `Cache-Control: no-store`, so nothing keeps a copy of it. An
+error body describes the problem in JSON's terms (`field "name" must be a string`), never the
+service's internals.
+
 ### Request headers
 
 Every request's headers are screened before the handlers see them (`internal/headerguard`):
@@ -109,7 +114,9 @@ actually in force at startup (`using header guard`). Which headers are single-us
 configurable: those are security decisions, kept in code where changes are reviewed and tested. To roll the rules out without
 blocking anyone, set `HEADER_GUARD_MODE=report`: requests are let through and logged as
 `request headers would be rejected` instead. Removing headers happens in both modes. Go's HTTP
-server already rejects malformed headers, and more than 1 MiB of them, before this runs.
+server already rejects malformed headers before this runs, and anything over twice
+`HEADER_MAX_TOTAL_BYTES` (request line included) with a plain 431 of its own, so no connection can
+make it hold more.
 
 The full contract is in [`docs/openapi.json`](docs/openapi.json), an OpenAPI 3.0 spec: every route,
 request and response schema, status code and header. `make spec` renders it as a web page,

@@ -22,8 +22,9 @@ func TestDecodeJSON(t *testing.T) {
 		{name: "valid with trailing whitespace", body: "{\"name\":\"x\"}\n", wantName: "x"},
 		{name: "empty", body: ``, wantErr: "empty"},
 		{name: "malformed", body: `{"name":`, wantErr: "invalid JSON"},
-		{name: "wrong type", body: `{"name":1}`, wantErr: "invalid JSON"},
-		{name: "unknown field", body: `{"name":"x","extra":1}`, wantErr: "unknown field"},
+		{name: "wrong type", body: `{"name":1}`, wantErr: `invalid JSON: field "name" must be a string`},
+		{name: "not an object", body: `["x"]`, wantErr: "invalid JSON: the body must be an object"},
+		{name: "unknown field", body: `{"name":"x","extra":1}`, wantErr: `invalid JSON: unknown field "extra"`},
 		{name: "trailing data", body: `{"name":"x"}{}`, wantErr: "single JSON object"},
 		{name: "too large", body: `{"name":"` + strings.Repeat("a", MaxBodyBytes) + `"}`, wantErr: "exceeds"},
 	}
@@ -45,6 +46,11 @@ func TestDecodeJSON(t *testing.T) {
 			}
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Errorf("DecodeJSON() error = %v, want it to contain %q", err, tt.wantErr)
+			}
+			// The message goes to the client, so it mustn't describe the
+			// server's Go types.
+			if err != nil && (strings.Contains(err.Error(), "Go ") || strings.Contains(err.Error(), "struct")) {
+				t.Errorf("DecodeJSON() error = %q names Go internals", err)
 			}
 		})
 	}

@@ -12,10 +12,20 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
+// ServeOption changes a setting of the server Serve runs.
+type ServeOption func(*http.Server)
+
+// MaxHeaderBytes caps how much of a request's line and headers the server
+// reads before answering 431 itself, without running the handler. Go's
+// default is 1 MiB, which every connection could make it hold in memory.
+func MaxHeaderBytes(n int) ServeOption {
+	return func(s *http.Server) { s.MaxHeaderBytes = n }
+}
+
 // Serve runs handler on addr until ctx is cancelled, then shuts down
 // gracefully, giving in-flight requests up to shutdownTimeout to finish.
 // It returns nil after a clean shutdown.
-func Serve(ctx context.Context, logger *slog.Logger, addr string, shutdownTimeout time.Duration, handler http.Handler) error {
+func Serve(ctx context.Context, logger *slog.Logger, addr string, shutdownTimeout time.Duration, handler http.Handler, opts ...ServeOption) error {
 	srv := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
@@ -23,6 +33,9 @@ func Serve(ctx context.Context, logger *slog.Logger, addr string, shutdownTimeou
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
+	}
+	for _, opt := range opts {
+		opt(srv)
 	}
 
 	// Listen separately from Serve so bind errors surface immediately and

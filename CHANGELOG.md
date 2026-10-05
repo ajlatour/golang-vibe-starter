@@ -25,6 +25,14 @@ Ideas considered but not planned are listed under
 - The profiling listener (`PPROF_ADDR`) logs a WARN at startup when other machines can reach it,
   and a CPU profile or trace is limited to 60 seconds, since pprof itself sets no limit on how
   long a caller can keep the CPU busy.
+- Error messages for an unusable body describe it in JSON's terms (`field "name" must be a
+  string`); before, a type mismatch quoted encoding/json, naming the service's Go types.
+- Every response carries `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
+- The server reads at most twice `HEADER_MAX_TOTAL_BYTES` of request line and headers (64 KiB by
+  default) before refusing a request with a plain 431 of its own; before, Go's default let every
+  connection send 1 MiB before the header guard saw it.
+- The API container in compose runs with a read-only filesystem, no Linux capabilities and
+  `no-new-privileges`.
 
 ### Added
 

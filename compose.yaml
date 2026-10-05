@@ -60,6 +60,14 @@ services:
     # Longer than the default SHUTDOWN_TIMEOUT (10s) so in-flight requests
     # can drain before Docker sends SIGKILL.
     stop_grace_period: 15s
+    # Least privilege: the API writes nothing to disk, needs no Linux
+    # capabilities, and can't gain privileges (setuid binaries, for one), so
+    # a compromised process has as little as possible to work with. The image
+    # already runs as a non-root user.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
 
   mock:
     # Multi-arch: runs natively on arm64 and amd64. The -alpine tag is

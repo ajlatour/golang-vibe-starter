@@ -89,7 +89,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		go profiling.Serve(ctx, logger, ln)
 	}
 
-	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, newHandler(logger, cfg.HeaderGuard, store, item.WithFlags(evaluator)))
+	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, newHandler(logger, cfg.HeaderGuard, store, item.WithFlags(evaluator)),
+		httpx.MaxHeaderBytes(serverHeaderLimit(cfg.HeaderGuard)))
 }
 
 // newFlags returns the feature flag evaluator: flagd when FLAGS_URL is set,
@@ -122,4 +123,14 @@ func newHandler(logger *slog.Logger, guard headerguard.Policy, items item.Store,
 	item.RegisterRoutes(mux, logger, items, opts...)
 
 	return httpx.Middleware(logger, headerguard.Middleware(logger, guard, mux))
+}
+
+// serverHeaderLimit is how much of a request's line and headers Go's server
+// reads before refusing the request itself: twice the header guard's total.
+// The guard measures headers alone, and a request line can be long, so the
+// slack leaves it to answer most oversized requests with its JSON 431; only
+// a request far over the limit gets Go's plain one. The point is the cap:
+// Go's default of 1 MiB is far more than the guard ever lets through.
+func serverHeaderLimit(guard headerguard.Policy) int {
+	return 2 * guard.MaxTotalBytes
 }

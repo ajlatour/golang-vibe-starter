@@ -9,12 +9,25 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
-// Middleware wraps h with the standard stack: a correlation ID for every
-// request, then request logging around panic recovery, so a recovered panic
-// is still logged as a 500. Log through a handler from logx.NewContextHandler to
-// get request_id on each line.
+// Middleware wraps h with the standard stack: the defensive response headers
+// and a correlation ID for every request, then request logging around panic
+// recovery, so a recovered panic is still logged as a 500. Log through a
+// handler from logx.NewContextHandler to get request_id on each line.
 func Middleware(logger *slog.Logger, h http.Handler) http.Handler {
-	return assignRequestID(logRequests(logger, recoverPanics(logger, h)))
+	return defensiveHeaders(assignRequestID(logRequests(logger, recoverPanics(logger, h))))
+}
+
+// defensiveHeaders sets headers every response gets, errors included:
+// X-Content-Type-Options: nosniff, so a browser never guesses a type other
+// than the declared one (and so can't be led to run a JSON body as script),
+// and Cache-Control: no-store, so neither a browser nor a proxy keeps a copy
+// of what may be a client's data.
+func defensiveHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // StatusClientClosedRequest is the status logged (and sent, though no one is
