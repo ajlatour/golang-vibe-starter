@@ -17,12 +17,21 @@ services:
         VERSION: ${VERSION:-devel}
     ports:
       - "8080:8080"
+    # Your settings, if you've copied .env.example to .env and uncommented
+    # some. The environment block below wins over this file.
+    env_file:
+      - path: .env
+        required: false
     environment:
+      # These two wire the API to the containers below, and always apply.
       UPSTREAM_URL: http://mock:8080
-      UPSTREAM_TIMEOUT: 5s
-      # flagd's OFREP endpoint. Unset this to run with every flag at its default.
+      # flagd's OFREP endpoint. Remove this to run with every flag at its default.
       FLAGS_URL: http://flagd:8016
-      LOG_FORMAT: text
+      # These can be changed in .env or the shell, e.g.
+      #   HEADER_GUARD_MODE=report make up
+      UPSTREAM_TIMEOUT: ${UPSTREAM_TIMEOUT:-5s}
+      LOG_FORMAT: ${LOG_FORMAT:-text}
+      HEADER_GUARD_MODE: ${HEADER_GUARD_MODE:-enforce}
     depends_on:
       mock:
         condition: service_healthy

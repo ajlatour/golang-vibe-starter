@@ -11,6 +11,17 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- `.env.example`, listing every environment variable the API reads with its default, all commented
+  out. Copy it to `.env` and uncomment lines to change settings under docker compose, which now
+  reads `.env` if there is one (the integration stack ignores it). A test keeps the code,
+  `.env.example` and the README's Configuration table in step, defaults included.
+- The header guard's limits are configurable: `HEADER_MAX_COUNT`, `HEADER_MAX_BYTES` and
+  `HEADER_MAX_TOTAL_BYTES`, defaulting to the values in `headerguard.DefaultPolicy` (100, 8192 and
+  32768). Each must be a whole number from 1 to 1048576, with the per-header limit no larger than
+  the total, or the service refuses to start, so a typo can't switch a limit off. The service logs
+  the policy in force at startup (`using header guard`). `HEADER_GUARD_MODE` is now set explicitly
+  in `compose.yaml`, and can be changed from `.env` or the shell.
+
 - Request header screening (`internal/headerguard`), on every request before the handlers run: a
   request with a body must send `Content-Type: application/json` (415), headers are limited to 100,
   8 KiB each and 32 KiB in total (431), `Content-Type`, `Authorization` and

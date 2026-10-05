@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -133,8 +134,58 @@ func TestLoadConfigHeaderGuardMode(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || got.HeaderGuardMode != tt.want {
-				t.Errorf("HeaderGuardMode = %v, err = %v; want %v", got.HeaderGuardMode, err, tt.want)
+			if err != nil || got.HeaderGuard.Mode != tt.want {
+				t.Errorf("HeaderGuard.Mode = %v, err = %v; want %v", got.HeaderGuard.Mode, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigHeaderLimits(t *testing.T) {
+	base := map[string]string{"UPSTREAM_URL": "http://mock"}
+	load := func(extra map[string]string) (config, error) {
+		env := map[string]string{}
+		for k, v := range base {
+			env[k] = v
+		}
+		for k, v := range extra {
+			env[k] = v
+		}
+		return loadConfig(func(k string) string { return env[k] })
+	}
+
+	t.Run("defaults are headerguard.DefaultPolicy", func(t *testing.T) {
+		got, err := load(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got.HeaderGuard, headerguard.DefaultPolicy()) {
+			t.Errorf("HeaderGuard = %+v, want the default policy %+v", got.HeaderGuard, headerguard.DefaultPolicy())
+		}
+	})
+	t.Run("overrides", func(t *testing.T) {
+		got, err := load(map[string]string{"HEADER_MAX_COUNT": "50", "HEADER_MAX_BYTES": "16384", "HEADER_MAX_TOTAL_BYTES": "65536"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		g := got.HeaderGuard
+		if g.MaxHeaders != 50 || g.MaxHeaderBytes != 16384 || g.MaxTotalBytes != 65536 {
+			t.Errorf("limits = %d, %d, %d; want 50, 16384, 65536", g.MaxHeaders, g.MaxHeaderBytes, g.MaxTotalBytes)
+		}
+		if !reflect.DeepEqual(g.Strip, headerguard.DefaultPolicy().Strip) {
+			t.Error("overriding the limits changed the stripped headers")
+		}
+	})
+	for name, env := range map[string]map[string]string{
+		"zero would switch the limit off": {"HEADER_MAX_COUNT": "0"},
+		"negative":                        {"HEADER_MAX_BYTES": "-1"},
+		"not a number":                    {"HEADER_MAX_TOTAL_BYTES": "32KiB"},
+		"above Go's 1 MiB":                {"HEADER_MAX_TOTAL_BYTES": "2000000"},
+		"per-header above the total":      {"HEADER_MAX_BYTES": "40000"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := load(env); err == nil {
+				t.Errorf("loadConfig(%v) = nil error; the service must refuse to start", env)
 			}
 		})
 	}

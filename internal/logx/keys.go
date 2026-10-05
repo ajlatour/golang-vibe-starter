@@ -36,6 +36,11 @@ const (
 	KeyHeader  = "header"  // the header concerned
 	KeyHeaders = "headers" // header names, comma-separated
 
+	KeyMode           = "mode" // enforce or report
+	KeyMaxHeaders     = "max_headers"
+	KeyMaxHeaderBytes = "max_header_bytes"
+	KeyMaxTotalBytes  = "max_total_bytes"
+
 	// Feature flags.
 	KeyFlag      = "flag"
 	KeyDefault   = "default"

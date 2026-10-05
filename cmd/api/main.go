@@ -67,6 +67,11 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 
 	logger := cfg.NewLogger(stdout, "api", buildVersion())
 	logger.Info("using upstream", logx.KeyURL, cfg.UpstreamURL.Redacted(), logx.KeyTimeout, cfg.UpstreamTimeout.String())
+	logger.Info("using header guard",
+		logx.KeyMode, cfg.HeaderGuard.Mode.String(),
+		logx.KeyMaxHeaders, cfg.HeaderGuard.MaxHeaders,
+		logx.KeyMaxHeaderBytes, cfg.HeaderGuard.MaxHeaderBytes,
+		logx.KeyMaxTotalBytes, cfg.HeaderGuard.MaxTotalBytes)
 	store := httpstore.New(cfg.UpstreamURL.String(), &http.Client{Timeout: cfg.UpstreamTimeout}, httpstore.WithLogger(logger))
 
 	evaluator, err := newFlags(logger, cfg)
@@ -74,7 +79,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		return err
 	}
 
-	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, newHandler(logger, cfg.HeaderGuardMode, store, item.WithFlags(evaluator)))
+	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, newHandler(logger, cfg.HeaderGuard, store, item.WithFlags(evaluator)))
 }
 
 // newFlags returns the feature flag evaluator: flagd when FLAGS_URL is set,
@@ -101,12 +106,10 @@ func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
 // newHandler builds the API's root handler: routes, the header guard, and
 // the standard middleware around them. The guard sits inside the middleware,
 // so a request it rejects still gets a correlation ID and its log lines.
-func newHandler(logger *slog.Logger, guard headerguard.Mode, items item.Store, opts ...item.Option) http.Handler {
+func newHandler(logger *slog.Logger, guard headerguard.Policy, items item.Store, opts ...item.Option) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+httpx.HealthzPath, httpx.Healthz)
 	item.RegisterRoutes(mux, logger, items, opts...)
 
-	policy := headerguard.DefaultPolicy()
-	policy.Mode = guard
-	return httpx.Middleware(logger, headerguard.Middleware(logger, policy, mux))
+	return httpx.Middleware(logger, headerguard.Middleware(logger, guard, mux))
 }

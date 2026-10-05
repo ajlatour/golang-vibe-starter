@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
@@ -54,7 +55,42 @@ func ParseMode(s string) (Mode, error) {
 	return Enforce, fmt.Errorf("must be enforce or report, got %q", s)
 }
 
-// Policy is what the guard enforces. A zero limit means no limit.
+// MaxLimit is the largest any header limit may be set to: Go's HTTP server
+// rejects more than 1 MiB of headers before the guard runs, so a higher limit
+// could never take effect.
+const MaxLimit = 1 << 20
+
+// ParseLimit reads a header limit from configuration: a whole number from 1
+// to MaxLimit. Zero and negative values are refused, so a typo can't switch a
+// limit off.
+func ParseLimit(s string) (int, error) {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, fmt.Errorf("must be a whole number, got %q", s)
+	}
+	if n < 1 || n > MaxLimit {
+		return 0, fmt.Errorf("must be between 1 and %d, got %d", MaxLimit, n)
+	}
+	return n, nil
+}
+
+// Validate reports a policy whose limits can't all be honoured: a limit that
+// is zero or negative (which would mean no limit), or a per-header limit above
+// the total.
+func (p Policy) Validate() error {
+	for name, v := range map[string]int{"MaxHeaders": p.MaxHeaders, "MaxHeaderBytes": p.MaxHeaderBytes, "MaxTotalBytes": p.MaxTotalBytes} {
+		if v < 1 || v > MaxLimit {
+			return fmt.Errorf("%s must be between 1 and %d, got %d", name, MaxLimit, v)
+		}
+	}
+	if p.MaxHeaderBytes > p.MaxTotalBytes {
+		return fmt.Errorf("the per-header limit (%d bytes) is larger than the total limit (%d bytes)", p.MaxHeaderBytes, p.MaxTotalBytes)
+	}
+	return nil
+}
+
+// Policy is what the guard enforces. A zero limit means no limit; Validate
+// refuses that for policies built from configuration.
 type Policy struct {
 	Mode Mode
 
@@ -73,10 +109,12 @@ type Policy struct {
 	Strip []string
 }
 
-// DefaultPolicy is the policy the API runs with: limits in line with common
-// proxy defaults (nginx allows 8 KiB per header line), and stripping the proxy
-// and method-override headers, because nothing here sits behind a trusted
-// proxy that would set them.
+// DefaultPolicy is the policy the API runs with unless configuration changes
+// the mode or the limits: limits in line with common proxy defaults (nginx
+// allows 8 KiB per header line), and stripping the proxy and method-override
+// headers, because nothing here sits behind a trusted proxy that would set
+// them. Which headers are single-use or stripped is not configurable: those
+// are security decisions, kept in code where changes are reviewed and tested.
 func DefaultPolicy() Policy {
 	return Policy{
 		Mode:            Enforce,

@@ -40,9 +40,9 @@ don't, and its message says what to fix.
 | A log message (new, renamed, or a level or field changed) | `logtest.Contract` (`internal/logtest/contract.go`) and the Messages table in `docs/logging.md` | `internal/logx/schema_test.go`, and `cmd/api/logcontract_test.go`, which runs the whole service |
 | A log field name | A `Key` constant in `internal/logx/keys.go` and the Fields table in `docs/logging.md` | `internal/logx/schema_test.go`; a raw string key fails the build |
 | A feature flag | `flagd/flags.json`, and `featureflag.Declare` in code | The service won't start if a declared flag is missing; `cmd/api/main_test.go` |
-| A header rule (`headerguard.DefaultPolicy`) | `docs/openapi.json` (the 400, 415 and 431 responses) and the Request headers section of the README | `cmd/api/openapi_test.go` produces each status on every operation; `integration/features/headers.feature` |
+| A header rule or default limit (`headerguard.DefaultPolicy`) | `docs/openapi.json` (the 400, 415 and 431 responses) and the Request headers section of the README | `cmd/api/openapi_test.go` produces each status on every operation; `integration/features/headers.feature` |
 | A store implementation | Nothing: run it through `itemtest.StoreContract` | The same contract `httpstore.Store` and the in-memory fake pass |
-| An environment variable | The Configuration table in the README | Not checked: keep it in step by hand |
+| An environment variable (or its default) | `.env.example` and the Configuration table in the README | `cmd/api/envexample_test.go`: the variables the code reads, the two lists and their defaults must all agree |
 
 Recipes: [adding a log line](logging.md#rules-for-log-lines),
 [adding a flag](feature-flags.md#adding-a-flag), and [adding a scenario](#adding-a-scenario).

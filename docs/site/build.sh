@@ -7,7 +7,8 @@
 #   sh docs/site/build.sh <output directory>
 #
 # Pages work straight from disk: links between documents are rewritten from
-# .md to .html, the link to docs/openapi.json points at api.html, and the CI
+# .md to .html, the link to docs/openapi.json points at api.html, the one to
+# .env.example at a copy of it, and the CI
 # badge becomes a plain link (GitHub serves a private repo's badge only to a
 # signed-in browser, so it would show as a broken image).
 set -eu
@@ -15,6 +16,8 @@ set -eu
 out=${1:?usage: build.sh <output directory>}
 mkdir -p "$out"
 cp docs/site/site.css "$out/site.css"
+# Linked from the README; .txt so a browser shows it rather than downloading it.
+cp .env.example "$out/env.example.txt"
 
 # Every page, as source:output, in navigation order. Guides added to docs/ are
 # picked up automatically.
@@ -55,6 +58,7 @@ for page in $pages; do
 		| sed -E \
 			-e 's#href="(\.\./)?docs/openapi\.json"#href="api.html"#g' \
 			-e 's#href="openapi\.json"#href="api.html"#g' \
+			-e 's#href="(\.\./)?\.env\.example"#href="env.example.txt"#g' \
 			-e 's#href="(\.\./)?README\.md#href="index.html#g' \
 			-e 's#href="(\.\./)?CHANGELOG\.md#href="changelog.html#g' \
 			-e 's#href="docs/([^"/]+)\.md#href="\1.html#g' \

@@ -10,6 +10,8 @@ coverage.*
 # Local env files
 .env
 .env.*
+# The documented template of every setting is meant to be committed.
+!.env.example
 
 # OS / editor
 .DS_Store

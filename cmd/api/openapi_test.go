@@ -225,15 +225,15 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return newHandler(logger, headerguard.Enforce, store, item.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID
+		return newHandler(logger, headerguard.DefaultPolicy(), store, item.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID
 	case "internal":
-		return newHandler(logger, headerguard.Enforce, errStore{}), ""
+		return newHandler(logger, headerguard.DefaultPolicy(), errStore{}), ""
 	case "badgw":
-		return newHandler(logger, headerguard.Enforce, httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})), ""
+		return newHandler(logger, headerguard.DefaultPolicy(), httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})), ""
 	case "timeout":
 		upstream := httptest.NewServer(http.HandlerFunc(nettest.Hang))
 		t.Cleanup(upstream.Close)
-		return newHandler(logger, headerguard.Enforce, httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})), ""
+		return newHandler(logger, headerguard.DefaultPolicy(), httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})), ""
 	}
 	t.Fatalf("unknown environment %q", env)
 	return nil, ""

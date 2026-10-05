@@ -251,7 +251,7 @@
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "HeadersTooLarge": {
-        "description": "The request's headers are over a limit: more than 100 headers, more than 8 KiB for any one header (name and value), or more than 32 KiB in total.",
+        "description": "The request's headers are over a limit. By default: more than 100 headers, more than 8 KiB for any one header (name and value), or more than 32 KiB in total; a deployment can change these (HEADER_MAX_COUNT, HEADER_MAX_BYTES, HEADER_MAX_TOTAL_BYTES).",
         "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },

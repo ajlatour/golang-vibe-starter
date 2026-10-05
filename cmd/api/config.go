@@ -27,9 +27,9 @@ type config struct {
 	// binary. Empty uses the embedded copy.
 	FlagsFallbackFile string
 
-	// HeaderGuardMode is what the header guard does with a request that
-	// breaks a rule: reject it (enforce), or only log it (report).
-	HeaderGuardMode headerguard.Mode
+	// HeaderGuard is the header guard's policy: headerguard.DefaultPolicy,
+	// with the mode and limits overridden by the environment.
+	HeaderGuard headerguard.Policy
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
@@ -49,10 +49,23 @@ func loadConfig(getenv func(string) string) (config, error) {
 		FlagsURL:          envconfig.Optional(env, "FLAGS_URL", nil, parseHTTPURL),
 		FlagsTimeout:      envconfig.Optional(env, "FLAGS_TIMEOUT", 500*time.Millisecond, envconfig.ParsePositiveDuration),
 		FlagsFallbackFile: env.String("FLAGS_FALLBACK_FILE"),
-
-		HeaderGuardMode: envconfig.Optional(env, "HEADER_GUARD_MODE", headerguard.Enforce, headerguard.ParseMode),
 	}
-	return cfg, errors.Join(srvErr, env.Err())
+
+	// The header guard: the defaults live in headerguard.DefaultPolicy, and
+	// only the mode and the three limits can be changed here. Which headers
+	// are single-use or stripped stays in code.
+	guard := headerguard.DefaultPolicy()
+	guard.Mode = envconfig.Optional(env, "HEADER_GUARD_MODE", guard.Mode, headerguard.ParseMode)
+	guard.MaxHeaders = envconfig.Optional(env, "HEADER_MAX_COUNT", guard.MaxHeaders, headerguard.ParseLimit)
+	guard.MaxHeaderBytes = envconfig.Optional(env, "HEADER_MAX_BYTES", guard.MaxHeaderBytes, headerguard.ParseLimit)
+	guard.MaxTotalBytes = envconfig.Optional(env, "HEADER_MAX_TOTAL_BYTES", guard.MaxTotalBytes, headerguard.ParseLimit)
+	cfg.HeaderGuard = guard
+
+	errs := []error{srvErr, env.Err()}
+	if err := guard.Validate(); err != nil && env.Err() == nil {
+		errs = append(errs, fmt.Errorf("HEADER_MAX_BYTES, HEADER_MAX_TOTAL_BYTES: %w", err))
+	}
+	return cfg, errors.Join(errs...)
 }
 
 // parseHTTPURL parses v as an absolute http(s) base URL, without a query

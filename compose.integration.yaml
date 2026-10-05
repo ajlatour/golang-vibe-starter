@@ -5,7 +5,10 @@
 
 services:
   api:
+    # A developer's .env must not change what the tests run against.
+    env_file: !reset []
     environment:
+      HEADER_GUARD_MODE: enforce
       # Short enough that WireMock's timeout fault (8s) produces a 504 quickly,
       # long enough that its slow fault (2s) still succeeds.
       UPSTREAM_TIMEOUT: 3s

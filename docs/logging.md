@@ -56,6 +56,10 @@ include `.git`; without it, container logs show `version=devel`.
 | `reason`      | `request headers rejected`, `request headers would be rejected` | Which header rule was broken: `header too large`, `too many headers`, `headers too large`, `duplicate header`, `missing content type` or `unsupported content type`. |
 | `header`      | the same lines, when one header is to blame | The header's name, e.g. `Content-Type`.      |
 | `headers`     | `request headers stripped` | The names of the headers removed, comma-separated.       |
+| `mode`        | `using header guard`   | `enforce` or `report` (`HEADER_GUARD_MODE`).                 |
+| `max_headers` | `using header guard`   | The header count limit in force (`HEADER_MAX_COUNT`).        |
+| `max_header_bytes` | `using header guard` | The per-header size limit in force, in bytes (`HEADER_MAX_BYTES`). |
+| `max_total_bytes` | `using header guard` | The total header size limit in force, in bytes (`HEADER_MAX_TOTAL_BYTES`). |
 | `flag`        | flag lines             | Feature flag key.                                            |
 | `fallbacks`   | `flag service recovered` | Evaluations served from defaults during the outage.        |
 
@@ -86,6 +90,7 @@ upstream, comes back, and leaves the API.
 | `flag has no configured default, using false` | ERROR | `flag` | A flag the code reads has no default in the definitions. Logged once per flag. |
 | `using upstream` | INFO | `url`, `timeout` | Startup. |
 | `using feature flags` | INFO | `url`, `timeout` | Startup, with `FLAGS_URL` set. |
+| `using header guard` | INFO | `mode`, `max_headers`, `max_header_bytes`, `max_total_bytes` | Startup: the header rules actually in force, after any overrides. |
 | `feature flags: no FLAGS_URL, using default values only` | INFO | none | Startup, with `FLAGS_URL` unset. |
 | `server started` | INFO | `addr` | The server is listening. |
 | `shutting down` | INFO | `timeout` | A shutdown signal arrived. |

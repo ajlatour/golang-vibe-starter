@@ -93,12 +93,14 @@ Every request's headers are screened before the handlers see them (`internal/hea
 | Rule | Otherwise |
 | ---- | --------- |
 | A request with a body sends `Content-Type: application/json` (parameters such as `charset` are fine) | 415 |
-| At most 100 headers, 8 KiB for any one header (name and value), 32 KiB in total | 431 |
+| By default, at most 100 headers, 8 KiB for any one header (name and value), and 32 KiB in total (`HEADER_MAX_COUNT`, `HEADER_MAX_BYTES`, `HEADER_MAX_TOTAL_BYTES`) | 431 |
 | `Content-Type`, `Authorization` and `Client-Correlation-Id` appear at most once | 400 |
 | Proxy and method-override headers (`X-Forwarded-For`, `-Host`, `-Proto`, `Forwarded`, `X-Real-IP`, `X-HTTP-Method-Override`, `X-Method-Override`, `X-HTTP-Method`) | Removed: nothing here may trust them |
 
 A rejected request gets a JSON error and a `Client-Correlation-Id` like any other, and a
-`request headers rejected` log line saying which rule it broke. To roll the rules out without
+`request headers rejected` log line saying which rule it broke. The service logs the limits
+actually in force at startup (`using header guard`). Which headers are single-use or removed isn't
+configurable: those are security decisions, kept in code where changes are reviewed and tested. To roll the rules out without
 blocking anyone, set `HEADER_GUARD_MODE=report`: requests are let through and logged as
 `request headers would be rejected` instead. Removing headers happens in both modes. Go's HTTP
 server already rejects malformed headers, and more than 1 MiB of them, before this runs.
@@ -126,6 +128,17 @@ The API reads these environment variables:
 | `LOG_FORMAT`          | `json`     | `json` or `text`.                                          |
 | `SHUTDOWN_TIMEOUT`    | `10s`      | How long in-flight requests get to finish on SIGTERM.      |
 | `HEADER_GUARD_MODE`   | `enforce`  | `enforce` rejects requests that break a [header rule](#request-headers); `report` only logs them. |
+| `HEADER_MAX_COUNT`    | `100`      | The most request headers allowed.                          |
+| `HEADER_MAX_BYTES`    | `8192`     | The largest any one request header may be, name and value, in bytes. |
+| `HEADER_MAX_TOTAL_BYTES` | `32768` | The largest the request headers may be in total, in bytes. |
+
+[`.env.example`](.env.example) lists every variable with its default. To change settings when
+running with docker compose, copy it to `.env` (git-ignored) and uncomment the lines you want;
+compose always sets `UPSTREAM_URL` and `FLAGS_URL` itself, to wire the API to its containers.
+A setting can also come from the shell, e.g. `HEADER_GUARD_MODE=report make up`. A test keeps the
+code, `.env.example` and this table in step. The header limits must be whole numbers from 1 to
+1048576, with `HEADER_MAX_BYTES` no larger than `HEADER_MAX_TOTAL_BYTES`; the service refuses to
+start otherwise, so a typo can't switch a limit off.
 
 ## Documentation
 
@@ -176,6 +189,7 @@ docs/                    The documents above, the OpenAPI spec, and site/, which
 Makefile                 Shortcuts for running, testing and checking (make help)
 integration/             Godog end-to-end tests against the composed stack (own Go module)
 compose.yaml             Local stack: api + WireMock + flagd
-compose.integration.yaml Compose overrides for the integration tests
+compose.integration.yaml Compose overrides for the integration tests (ignores .env)
+.env.example             Every setting the API reads, with its default
 .github/workflows/       CI: unit tests, then the integration tests against the stack
 ```

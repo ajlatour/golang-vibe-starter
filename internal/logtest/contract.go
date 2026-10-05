@@ -28,6 +28,7 @@ var Contract = map[string]Message{
 	// Lifecycle: logged outside any request, so no request_id.
 	"using upstream":      {[]string{"INFO"}, []string{"url", "timeout"}},
 	"using feature flags": {[]string{"INFO"}, []string{"url", "timeout"}},
+	"using header guard":  {[]string{"INFO"}, []string{"mode", "max_headers", "max_header_bytes", "max_total_bytes"}},
 	"feature flags: no FLAGS_URL, using default values only": {[]string{"INFO"}, nil},
 	"server started": {[]string{"INFO"}, []string{"addr"}},
 	"shutting down":  {[]string{"INFO"}, []string{"timeout"}},
@@ -61,6 +62,6 @@ var Contract = map[string]Message{
 // OutsideRequests lists the messages that are logged outside any request, and
 // so legitimately have no request_id. Every other message has one.
 var OutsideRequests = []string{
-	"using upstream", "using feature flags", "feature flags: no FLAGS_URL, using default values only",
+	"using upstream", "using feature flags", "using header guard", "feature flags: no FLAGS_URL, using default values only",
 	"server started", "shutting down", "server stopped",
 }

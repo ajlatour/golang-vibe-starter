@@ -193,3 +193,53 @@ func TestParseMode(t *testing.T) {
 		t.Error(`ParseMode("off") = nil error, want one`)
 	}
 }
+
+func TestParseLimit(t *testing.T) {
+	for in, want := range map[string]int{"1": 1, "8192": 8192, "1048576": headerguard.MaxLimit} {
+		if got, err := headerguard.ParseLimit(in); err != nil || got != want {
+			t.Errorf("ParseLimit(%q) = %d, %v; want %d", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"0", "-1", "1048577", "8KiB", "8 192", ""} {
+		if _, err := headerguard.ParseLimit(in); err == nil {
+			t.Errorf("ParseLimit(%q) = nil error, want one: a bad limit must not silently switch it off", in)
+		}
+	}
+}
+
+func TestValidate(t *testing.T) {
+	if err := headerguard.DefaultPolicy().Validate(); err != nil {
+		t.Errorf("the default policy is invalid: %v", err)
+	}
+	for name, change := range map[string]func(*headerguard.Policy){
+		"no header count limit":           func(p *headerguard.Policy) { p.MaxHeaders = 0 },
+		"no per-header limit":             func(p *headerguard.Policy) { p.MaxHeaderBytes = 0 },
+		"no total limit":                  func(p *headerguard.Policy) { p.MaxTotalBytes = 0 },
+		"per-header limit above total":    func(p *headerguard.Policy) { p.MaxHeaderBytes, p.MaxTotalBytes = 9000, 8000 },
+		"total above Go's server maximum": func(p *headerguard.Policy) { p.MaxTotalBytes = headerguard.MaxLimit + 1 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := headerguard.DefaultPolicy()
+			change(&p)
+			if err := p.Validate(); err == nil {
+				t.Error("Validate() = nil, want an error")
+			}
+		})
+	}
+}
+
+// TestConfiguredLimitsApply checks the guard enforces whatever limits the
+// policy carries, not just the defaults.
+func TestConfiguredLimitsApply(t *testing.T) {
+	p := headerguard.DefaultPolicy()
+	p.MaxHeaders, p.MaxHeaderBytes, p.MaxTotalBytes = 3, 20, 50
+	if rec, reached, _, _ := serve(t, p, get(manyHeaders(3))); !reached {
+		t.Errorf("3 headers with a limit of 3: status %d, want let through", rec.Code)
+	}
+	if rec, _, _, _ := serve(t, p, get(manyHeaders(4))); rec.Code != 431 {
+		t.Errorf("4 headers with a limit of 3: status %d, want 431", rec.Code)
+	}
+	if rec, _, _, _ := serve(t, p, get(map[string][]string{"X-A": {strings.Repeat("a", 18)}})); rec.Code != 431 {
+		t.Errorf("a 21-byte header with a limit of 20: status %d, want 431", rec.Code)
+	}
+}
