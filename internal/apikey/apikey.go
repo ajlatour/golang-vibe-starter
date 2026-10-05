@@ -220,17 +220,18 @@ func LoadFile(path string) ([]Key, error) {
 	return ParseKeys(string(b))
 }
 
-// WatchFile reloads the keys in path into ring every interval, until ctx is
-// done, logging each change once. A file that can't be read or parsed, or
-// holds no keys, changes nothing: the keys in force stay, so a bad edit
-// can't lock every client out. It polls rather than waiting for events, which
-// the standard library can't do, and which a mounted secret's in-place swap
-// can escape.
+// WatchFile reloads the keys in path into ring, checking every interval
+// until ctx is done, and logs each change once. A change is acted on only
+// once the file has read the same on two checks in a row, so a file caught
+// half-written (a truncated list would still parse, and revoke keys) is never
+// used. A file that can't be read or parsed, or holds no keys, changes
+// nothing: the keys in force stay, so a bad edit can't lock every client out.
+// It polls rather than waiting for events, which the standard library can't
+// do, and which a mounted secret's in-place swap can escape.
 func WatchFile(ctx context.Context, logger *slog.Logger, path string, ring *Keyring, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
-	var last []byte
-	var lastErr string
+	w := fileWatcher{logger: logger, ring: ring}
 	for {
 		select {
 		case <-ctx.Done():
@@ -238,30 +239,47 @@ func WatchFile(ctx context.Context, logger *slog.Logger, path string, ring *Keyr
 		case <-t.C:
 		}
 		b, err := os.ReadFile(path) // #nosec G304 -- API_KEYS_FILE, the operator's own configuration
-		var keys []Key
-		if err == nil {
-			if bytes.Equal(b, last) {
-				continue
-			}
-			keys, err = ParseKeys(string(b))
-			if err == nil && len(keys) == 0 {
-				err = errors.New("the file holds no keys")
-			}
-		}
-		if err != nil {
-			if err.Error() != lastErr {
-				logger.Error("API keys not reloaded", logx.KeyError, err)
-				lastErr = err.Error()
-			}
-			continue
-		}
-		last, lastErr = b, ""
-		if slices.Equal(keys, ring.Keys()) {
-			continue
-		}
-		ring.Set(keys)
-		logger.Info("API keys reloaded", logx.KeyAPIKeys, Describe(keys))
+		w.check(b, err)
 	}
+}
+
+// fileWatcher decides, one check at a time, what a keys file's content means
+// for the keys in force.
+type fileWatcher struct {
+	logger     *slog.Logger
+	ring       *Keyring
+	last, seen []byte // what was last acted on, and read on the last check
+	lastErr    string
+}
+
+// check takes one reading of the file: its content, or why it couldn't be
+// read.
+func (w *fileWatcher) check(b []byte, err error) {
+	var keys []Key
+	if err == nil {
+		stable := bytes.Equal(b, w.seen)
+		w.seen = b
+		if !stable || bytes.Equal(b, w.last) {
+			return // still changing, or nothing new
+		}
+		keys, err = ParseKeys(string(b))
+		if err == nil && len(keys) == 0 {
+			err = errors.New("the file holds no keys")
+		}
+	}
+	if err != nil {
+		if err.Error() != w.lastErr {
+			w.logger.Error("API keys not reloaded", logx.KeyError, err)
+			w.lastErr = err.Error()
+		}
+		return
+	}
+	w.last, w.lastErr = b, ""
+	if slices.Equal(keys, w.ring.Keys()) {
+		return
+	}
+	w.ring.Set(keys)
+	w.logger.Info("API keys reloaded", logx.KeyAPIKeys, Describe(keys))
 }
 
 // Describe lists keys for the logs: names, scopes and limits, never the keys.
@@ -296,17 +314,22 @@ func HashHex(key string) string {
 }
 
 // lookup returns the key whose hash matches presented, comparing against
-// every key so the time taken doesn't depend on which matched.
-func (p Policy) lookup(presented string) (Key, bool) {
+// every key so the time taken doesn't depend on which matched. It points into
+// the keys in force, which are never changed in place (a reload replaces the
+// whole list), so a request keeps the key it matched.
+func (p Policy) lookup(presented string) (*Key, bool) {
 	h := sha256.Sum256([]byte(presented))
-	var found Key
-	ok := 0
-	for _, k := range p.keys() {
-		if subtle.ConstantTimeCompare(h[:], k.Hash[:]) == 1 {
-			found, ok = k, 1
+	keys := p.keys()
+	found := -1
+	for i := range keys {
+		if subtle.ConstantTimeCompare(h[:], keys[i].Hash[:]) == 1 {
+			found = i
 		}
 	}
-	return found, ok == 1
+	if found < 0 {
+		return nil, false
+	}
+	return &keys[found], true
 }
 
 type keyCtxKey struct{}
@@ -314,15 +337,19 @@ type keyCtxKey struct{}
 // Name returns the name of the key the request was authenticated with, or ""
 // if it had none.
 func Name(ctx context.Context) string {
-	k, _ := ctx.Value(keyCtxKey{}).(Key)
-	return k.Name
+	if k, _ := ctx.Value(keyCtxKey{}).(*Key); k != nil {
+		return k.Name
+	}
+	return ""
 }
 
 // Limits returns the rate limit of the key the request was authenticated
 // with, if it has one of its own.
 func Limits(ctx context.Context) (rate float64, burst int, ok bool) {
-	k, _ := ctx.Value(keyCtxKey{}).(Key)
-	return k.Rate, k.Burst, k.Rate > 0
+	if k, _ := ctx.Value(keyCtxKey{}).(*Key); k != nil && k.Rate > 0 {
+		return k.Rate, k.Burst, true
+	}
+	return 0, 0, false
 }
 
 func safe(method string) bool {

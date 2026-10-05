@@ -79,7 +79,8 @@ func TestWatchFile(t *testing.T) {
 		}
 		t.Fatalf("keys in force = %q, want %q", names(), want)
 	}
-	settle := func() { time.Sleep(60 * time.Millisecond) }
+	// Long enough for a change to be seen on two checks and acted on.
+	settle := func() { time.Sleep(150 * time.Millisecond) }
 
 	write(entry("first", "gvs_one") + entry("second", "gvs_two"))
 	waitFor("first (write), second (write)")
