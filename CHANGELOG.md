@@ -10,6 +10,8 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+## [0.1.0] - 2026-10-05
+
 ### Security
 
 - API keys (`internal/apikey`): every route but `/healthz` needs one, sent as
