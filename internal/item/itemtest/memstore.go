@@ -28,6 +28,17 @@ func NewMemStore() *MemStore {
 	return &MemStore{items: make(map[string]item.Item), now: time.Now}
 }
 
+// Seed stores items exactly as given, IDs and timestamps included, replacing
+// any with the same ID. It lets a test start from known data, such as the
+// items the WireMock stubs serve.
+func (s *MemStore) Seed(items ...item.Item) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, it := range items {
+		s.items[it.ID] = it
+	}
+}
+
 func (s *MemStore) List(_ context.Context) ([]item.Item, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

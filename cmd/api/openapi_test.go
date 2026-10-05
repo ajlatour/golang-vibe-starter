@@ -108,7 +108,9 @@ func TestOpenAPISpecIsWellFormed(t *testing.T) {
 }
 
 // codeRoutes returns every route pattern the non-test code registers on a
-// ServeMux ("GET /items/{id}"), found by reading the source.
+// ServeMux ("GET /items/{id}"), found by reading the source. It skips
+// internal/profiling, whose routes are served on a listener of their own
+// (PPROF_ADDR), not the API's.
 func codeRoutes(t *testing.T) map[string]bool {
 	t.Helper()
 	routeRE := regexp.MustCompile(`^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS) /`)
@@ -116,6 +118,9 @@ func codeRoutes(t *testing.T) map[string]bool {
 	routes := map[string]bool{}
 	for _, root := range []string{"../../internal", "."} {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err == nil && d.IsDir() && path == filepath.Join("..", "..", "internal", "profiling") {
+				return filepath.SkipDir
+			}
 			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 				return err
 			}

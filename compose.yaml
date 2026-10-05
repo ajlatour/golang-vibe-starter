@@ -17,6 +17,9 @@ services:
         VERSION: ${VERSION:-devel}
     ports:
       - "8080:8080"
+      # The runtime profiles (pprof), published on this machine's loopback
+      # only: they expose the program's internals. docs/performance.md.
+      - "127.0.0.1:6061:6061"
     # Your settings, if you've copied .env.example to .env and uncommented
     # some. The environment block below wins over this file.
     env_file:
@@ -32,6 +35,8 @@ services:
       UPSTREAM_TIMEOUT: ${UPSTREAM_TIMEOUT:-5s}
       LOG_FORMAT: ${LOG_FORMAT:-text}
       HEADER_GUARD_MODE: ${HEADER_GUARD_MODE:-enforce}
+      # All interfaces inside the container, so the port above can reach it.
+      PPROF_ADDR: 0.0.0.0:6061
     depends_on:
       mock:
         condition: service_healthy
@@ -99,3 +104,18 @@ services:
       - --uri
       - file:/etc/flagd/flags.json
     stop_grace_period: 5s
+
+  k6:
+    # The load generator for the performance tests in perf/. Not started by
+    # `up`: `make perf PROFILE=<name>` runs it on demand (the perf profile),
+    # on this network, so it reaches the API container directly.
+    image: grafana/k6:2.3.0
+    profiles: [perf]
+    volumes:
+      - ./perf:/perf:ro
+      - ./bin/perf:/out
+    environment:
+      API_URL: http://api:8080
+    depends_on:
+      api:
+        condition: service_healthy

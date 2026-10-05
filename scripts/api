@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Calls the API with curl, filling in what every call needs. See docs/curl.md.
+#
+#   scripts/api METHOD PATH [BODY] [curl options...]
+#
+#   scripts/api GET /items
+#   scripts/api POST /items '{"name":"Sprocket","description":"Spins."}'
+#   scripts/api PUT /items/widget @widget.json
+#   echo '{"name":"Piped"}' | scripts/api POST /items -
+#   scripts/api GET /items -H 'Authorization: Bearer abc' -v
+#
+# BODY is JSON, @file to read it from a file, or - to read it from stdin; it is
+# sent with Content-Type: application/json. Anything after it goes to curl
+# unchanged.
+#
+# The status line, Client-Correlation-Id and Location (when there is one) go
+# to stderr, and the response body to stdout: pretty-printed with jq when jq is
+# installed and stdout is a terminal, and exactly as the API sent it otherwise,
+# so piping the output gives the real bytes.
+#
+# Environment:
+#   API_URL         where the API is (default http://localhost:8080)
+#   CORRELATION_ID  sent as Client-Correlation-Id, to find this call in the
+#                   logs; without it the API makes one up and returns it
+#
+# Exit status: 0 for a 1xx-3xx response, 1 for 4xx or 5xx (the body is still
+# printed), 2 for a usage error, and curl's own status if no response came.
+#
+# Needs only bash (3.2, as macOS ships, or later) and curl.
+set -euo pipefail
+
+# usage prints the comment at the top of this file.
+usage() {
+	awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0" >&2
+	exit 2
+}
+
+[ $# -ge 2 ] || usage
+case $1 in -h | --help) usage ;; esac
+
+method=$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')
+path=$2
+shift 2
+case $path in
+http://* | https://*) url=$path ;;
+/*) url=${API_URL:-http://localhost:8080}$path ;;
+*)
+	echo "api: PATH must start with / (or be a full URL), got: $path" >&2
+	exit 2
+	;;
+esac
+
+args=(-sS -X "$method")
+if [ $# -gt 0 ] && [ "${1#-}" = "$1" ] || [ "${1:-}" = - ]; then
+	body=$1
+	shift
+	[ "$body" = - ] && body=@-
+	args+=(-H 'Content-Type: application/json' --data-binary "$body")
+fi
+if [ -n "${CORRELATION_ID:-}" ]; then
+	args+=(-H "Client-Correlation-Id: $CORRELATION_ID")
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+# "$@" is the caller's extra curl options. Bash before 4.4 treats "$@" as
+# unset when it's empty under set -u, hence the ${@+...} form.
+status=0
+code=$(curl "${args[@]}" ${@+"$@"} -D "$tmp/headers" -o "$tmp/body" -w '%{http_code}' "$url") || status=$?
+if [ "$status" -ne 0 ]; then
+	echo "api: no response from $url (curl exit $status). Is the API running? make up starts it; API_URL points elsewhere." >&2
+	exit "$status"
+fi
+
+# The headers of the final response (curl -L can follow several), without
+# the CRs HTTP puts on every line.
+tr -d '\r' <"$tmp/headers" | awk '/^HTTP\//{block=""} {block=block $0 "\n"} END{printf "%s", block}' >"$tmp/last"
+sed -n '1p' "$tmp/last" >&2
+grep -i -E '^(client-correlation-id|location):' "$tmp/last" >&2 || true
+
+if [ -s "$tmp/body" ]; then
+	if [ -t 1 ] && command -v jq >/dev/null && grep -qi '^content-type: *application/json' "$tmp/last" &&
+		jq . "$tmp/body" 2>/dev/null; then
+		:
+	else
+		cat "$tmp/body"
+		# Keep the shell prompt off the end of a body without a newline.
+		if [ -t 1 ] && [ -n "$(tail -c 1 "$tmp/body")" ]; then echo; fi
+	fi
+fi
+
+[ "$code" -lt 400 ]

@@ -86,3 +86,68 @@ jobs:
 
       - name: Build and check the docs site
         run: make docs-check
+
+  # A short k6 run (the smoke profile in perf/profiles.json) against the whole
+  # stack. It fails on errors or an absurd p99: a broken or deadlocked service,
+  # not a small regression, which shared runners are too noisy to measure.
+  load-smoke:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Start the stack
+        run: make up
+
+      - name: k6 smoke profile
+        run: make perf PROFILE=smoke
+
+      - name: Logs from the stack
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop the stack
+        if: always()
+        run: make down
+
+  # The Go benchmarks, on this pull request and on its base branch, compared
+  # with benchstat and written to the job summary. Report-only: it fails if a
+  # benchmark can't run, never on the numbers, which vary too much between
+  # shared runners to gate on.
+  bench:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The base branch's history, for bench-compare's worktree.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: integration/go.sum
+
+      - name: Benchmarks, against the base branch
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: make bench-compare BENCH_BASE="$BASE"
+
+      - name: Write the comparison to the job summary
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          {
+            echo "## Benchmarks: $BASE_REF against this pull request"
+            echo
+            echo "From shared runners, so treat differences under about 10% as noise."
+            echo "Run \`make bench-compare\` on a quiet machine to confirm a change."
+            echo
+            echo '```'
+            cat bin/bench/compare.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

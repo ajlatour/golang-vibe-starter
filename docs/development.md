@@ -42,6 +42,9 @@ don't, and its message says what to fix.
 | A feature flag | `flagd/flags.json`, and `featureflag.Declare` in code | The service won't start if a declared flag is missing; `cmd/api/main_test.go` |
 | A header rule or default limit (`headerguard.DefaultPolicy`) | `docs/openapi.json` (the 400, 415 and 431 responses) and the Request headers section of the README | `cmd/api/openapi_test.go` produces each status on every operation; `integration/features/headers.feature` |
 | A store implementation | Nothing: run it through `itemtest.StoreContract` | The same contract `httpstore.Store` and the in-memory fake pass |
+| A route, status or header rule a caller would hit, or `scripts/api` | `docs/curl.md`, which needs a successful call of every route | `cmd/api/curl_test.go` runs every command on the page, and the script, against the real handlers |
+| A route (new or removed) | The traffic mix in `perf/k6.js` | `perf/profiles_test.go` checks the mix covers every operation in `docs/openapi.json` |
+| A k6 profile or threshold | `perf/profiles.json`, and its row in `docs/performance.md` | `perf/profiles_test.go` checks phases, durations and threshold syntax |
 | An environment variable (or its default) | `.env.example` and the Configuration table in the README | `cmd/api/envexample_test.go`: the variables the code reads, the two lists and their defaults must all agree |
 
 Recipes: [adding a log line](logging.md#rules-for-log-lines),

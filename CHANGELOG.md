@@ -11,6 +11,27 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Performance testing ([Performance](docs/performance.md)):
+  - Go benchmarks for the request path (`BenchmarkAPI` through the whole service, and the
+    middleware, header guard and logger on their own). `make bench` runs them;
+    `make bench-compare` compares them with `main` using benchstat.
+  - k6 load profiles in `perf/profiles.json`, run in Docker on the stack's network:
+    `make perf PROFILE=smoke|load|stress|spike|soak`. Fixed-rate traffic, per-phase
+    thresholds, and a JSON summary in `bin/perf/`.
+  - `PPROF_ADDR` serves the runtime profiles (pprof) on a listener of its own; off by default.
+    The compose stack sets it, published on `127.0.0.1:6061`. `make perf-profile` captures CPU,
+    heap, allocation and goroutine profiles during and after a load run.
+  - CI runs the smoke profile and a benchmark comparison against the base branch on every pull
+    request. Neither fails on numbers alone.
+- `scripts/api`, for calling the API by hand: `scripts/api POST /items '{"name": "Sprocket"}'`.
+  It wraps curl, adding `Content-Type: application/json` to a body (from the argument, a file or
+  stdin) and an optional `CORRELATION_ID`, prints the status and correlation ID, pretty-prints
+  the body with jq when jq is installed and the output is a terminal, and exits 1 on a 4xx or
+  5xx. `API_URL` points it elsewhere. Needs only bash (3.2 or later) and curl.
+- [Calling the API](docs/curl.md): an example of every route, error and header rule, with
+  `scripts/api` and with plain curl. A test runs every command on the page against the real
+  handlers and checks the status it promises, and that every route is called successfully.
+- `itemtest.MemStore.Seed`, to start a test from items with known IDs.
 - `.env.example`, listing every environment variable the API reads with its default, all commented
   out. Copy it to `.env` and uncomment lines to change settings under docker compose, which now
   reads `.env` if there is one (the integration stack ignores it). A test keeps the code,

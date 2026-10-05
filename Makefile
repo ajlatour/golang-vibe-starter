@@ -19,6 +19,16 @@ export VERSION
 API_URL      ?= http://localhost:8080
 WIREMOCK_URL ?= http://localhost:8081
 FLAGD_URL    ?= http://localhost:8016
+PPROF_URL    ?= http://localhost:6061
+
+# Performance tests. PROFILE picks the k6 profile (perf/profiles.json) for
+# make perf and perf-profile, which have their own defaults. For the
+# benchmarks: how many runs (benchstat wants several), and which commit
+# bench-compare measures against.
+BENCH_COUNT ?= 6
+BENCH_BASE  ?= main
+BENCH_OUT   := bin/bench
+BENCHSTAT   := go run golang.org/x/perf/cmd/benchstat@v0.0.0-20260929162123-406019bb8b68
 
 # The fault stubs that `make fault` can switch on.
 FAULTS := $(notdir $(basename $(wildcard wiremock/faults/*.json)))
@@ -35,7 +45,8 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .DEFAULT_GOAL := help
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
-	live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint
+	live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint \
+	perf perf-profile bench bench-compare
 
 ##@ Help
 
@@ -44,7 +55,8 @@ help: ## List the targets
 		/^##@/ { printf "\n%s\n", substr($$0, 5) } \
 		/^[a-zA-Z_-]+:.*## / { printf "  make %-18s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 	@echo
-	@echo "  Variables: FAULT=<name> for make fault; TAGS=@smoke or ARGS=... for the integration tests."
+	@echo "  Variables: FAULT=<name> for make fault; TAGS=@smoke or ARGS=... for the integration tests;"
+	@echo "  PROFILE=<name> for make perf: $$(sed -n 's/^  "\([a-z-]*\)": {/\1/p' perf/profiles.json | tr '\n' ' ')"
 
 ##@ Local stack
 
@@ -118,6 +130,28 @@ integration-logs: ## Print the test stack's logs
 
 integration-down: ## Stop the test stack
 	$(COMPOSE_INTEGRATION) down
+
+##@ Performance (see docs/performance.md)
+
+perf: ## Start the stack and run a k6 profile (default PROFILE=smoke): make perf PROFILE=load
+	$(COMPOSE) up -d --build --wait
+	sh perf/run.sh $(or $(PROFILE),smoke)
+
+perf-profile: ## Run a k6 profile and capture CPU, heap, allocation and goroutine profiles (default PROFILE=load)
+	$(COMPOSE) up -d --build --wait
+	sh perf/profile.sh $(or $(PROFILE),load) $(PPROF_URL) bin/perf/pprof-$$(date +%Y%m%d-%H%M%S)
+
+bench: ## Run the Go benchmarks, BENCH_COUNT times each, into bin/bench/current.txt
+	@mkdir -p $(BENCH_OUT)
+	go test -run '^$$' -bench . -benchmem -count $(BENCH_COUNT) ./... | tee $(BENCH_OUT)/current.txt
+
+bench-compare: bench ## Compare the benchmarks with BENCH_BASE (default main) using benchstat
+	rm -rf $(BENCH_OUT)/base-src
+	git worktree add --detach $(BENCH_OUT)/base-src $(BENCH_BASE)
+	@# Benchmarks that don't exist at the base just have no comparison.
+	(cd $(BENCH_OUT)/base-src && go test -run '^$$' -bench . -benchmem -count $(BENCH_COUNT) ./...) > $(BENCH_OUT)/base.txt || true
+	git worktree remove --force $(BENCH_OUT)/base-src
+	$(BENCHSTAT) base=$(BENCH_OUT)/base.txt current=$(BENCH_OUT)/current.txt | tee $(BENCH_OUT)/compare.txt
 
 ##@ Documentation (rendered in Docker; nothing to install)
 
