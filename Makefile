@@ -48,7 +48,7 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
 	api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint \
-	perf perf-profile bench bench-compare load-compare perf-compare monitor
+	perf perf-profile bench bench-compare load-compare perf-compare perf-trends monitor
 
 ##@ Help
 
@@ -146,8 +146,8 @@ integration: ## Start the test stack, run the suite, and always stop it again
 	if [ $$status -ne 0 ]; then $(MAKE) integration-logs; fi; \
 	$(MAKE) integration-down; exit $$status
 
-integration-up: ## Start the stack with the integration overrides
-	$(COMPOSE_INTEGRATION) up -d --build --wait
+integration-up: ## Start the stack with the integration overrides (BUILD=--no-build to use a built image)
+	$(COMPOSE_INTEGRATION) up -d $(or $(BUILD),--build) --wait
 
 integration-test: ## Run the suite against a running stack (TAGS=@smoke, ARGS=...)
 	go test -C integration ./... -v -count=1 $(if $(TAGS),-godog.tags=$(TAGS)) $(ARGS)
@@ -176,6 +176,14 @@ perf-profile: ## Run a k6 profile and capture CPU, heap, allocation and goroutin
 bench: ## Run the Go benchmarks, BENCH_COUNT times each, into bin/bench/current.txt
 	@mkdir -p $(BENCH_OUT)
 	go test -run '^$$' -bench . -benchmem -count $(BENCH_COUNT) ./... | tee $(BENCH_OUT)/current.txt
+
+perf-trends: ## Chart main's performance over time from the perf-data branch: bin/perf/trends.html
+	git fetch -q origin perf-data
+	rm -rf bin/perf/trends-data && mkdir -p bin/perf/trends-data
+	git archive FETCH_HEAD records | tar -x -C bin/perf/trends-data
+	go build -C perf/report -o $(CURDIR)/bin/perf-report .
+	bin/perf-report trends -records bin/perf/trends-data/records > bin/perf/trends.html
+	@echo "open bin/perf/trends.html"
 
 bench-compare: ## Run the benchmarks here and at BENCH_BASE (default main), interleaved, and compare them
 	sh perf/bench-ab.sh $(BENCH_BASE) $(BENCH_COUNT) $(BENCH_OUT)

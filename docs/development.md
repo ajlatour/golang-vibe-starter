@@ -168,6 +168,11 @@ step a `make` target:
 - **vuln**: `make vuln`, govulncheck over all three modules: known vulnerabilities in the
   dependencies and the Go standard library that the code can actually reach.
 
+The integration and load jobs build the API's image with `scripts/build-api-image.sh`, which seeds
+the Go compile inside Docker from a build cache kept between runs (`actions/cache`), so only the
+packages a change touches recompile. Pull requests start from the cache `main`'s runs keep. Local
+builds are unaffected: BuildKit keeps its own cache there.
+
 Every action is pinned to a commit SHA (the version is in a comment beside it) and every container
 image to a digest, so a moved tag can't change what CI runs. Dependabot (`.github/dependabot.yml`)
 opens a weekly pull request for each kind of update: Go modules, actions, the Dockerfile's images
@@ -175,6 +180,9 @@ and compose's. The pandoc and Redocly images in the Makefile are outside what De
 their digests are updated by hand.
 
 A newer push to the same branch cancels the run in progress.
+
+`.github/workflows/perf-trends.yml` runs after every merge to `main`, recording its performance on
+the `perf-data` branch; see [trends](performance.md#trends).
 
 `.github/workflows/perf.yml` runs on every pull request too: it compares the pull request's
 performance with its base and keeps the result in a comment on the pull request. See

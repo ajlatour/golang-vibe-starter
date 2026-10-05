@@ -93,65 +93,72 @@ func (s k6Summary) metric(field string, names ...string) (float64, bool) {
 // readLoad reads the base-<n>.json and head-<n>.json summaries in dir.
 func readLoad(dir string) (loadComparison, error) {
 	var c loadComparison
-	for _, side := range []struct {
-		prefix string
-		into   *loadSide
-	}{{"base", &c.base}, {"head", &c.head}} {
-		files, err := filepath.Glob(filepath.Join(dir, side.prefix+"-*.json"))
-		if err != nil {
-			return c, err
-		}
-		if len(files) == 0 {
-			return c, fmt.Errorf("%s: no %s-<n>.json k6 summaries", dir, side.prefix)
-		}
-		slices.Sort(files)
-		for _, f := range files {
-			b, err := os.ReadFile(f)
-			if err != nil {
-				return c, err
-			}
-			var s k6Summary
-			if err := json.Unmarshal(b, &s); err != nil {
-				return c, fmt.Errorf("%s: %w", f, err)
-			}
-			// The steady phase, when the profile has one, so the warm-up is
-			// left out; otherwise the whole run.
-			durations := []string{"http_req_duration{phase:steady}", "http_req_duration"}
-			med, ok1 := s.metric("med", durations...)
-			p99, ok2 := s.metric("p(99)", durations...)
-			rate, ok3 := s.metric("value", "http_req_failed{phase:steady}", "http_req_failed")
-			reqs, ok4 := s.metric("count", "http_reqs")
-			if !ok1 || !ok2 || !ok3 || !ok4 {
-				return c, fmt.Errorf("%s: missing http_req_duration (med, p(99)), http_req_failed or http_reqs", f)
-			}
-			side.into.runs++
-			side.into.median += med
-			side.into.p99 += p99
-			side.into.errorRate += rate
-			side.into.requests += int(reqs)
+	var err error
+	if c.base, err = readLoadSide(dir, "base"); err != nil {
+		return c, err
+	}
+	c.head, err = readLoadSide(dir, "head")
+	return c, err
+}
 
-			res := readResources(f)
-			if res.hasStats {
-				side.into.statsRuns++
-				side.into.cpuPercent += res.cpuPercent
-				side.into.memoryPeakMiB = max(side.into.memoryPeakMiB, res.memoryPeakMiB)
-			}
-			if res.hasMetrics {
-				side.into.metricRuns++
-				side.into.cpuSeconds += res.cpuSeconds
-				side.into.allocBytes += res.allocBytes
-				side.into.gcCycles += res.gcCycles
-				side.into.goroutinesMax = max(side.into.goroutinesMax, res.goroutines)
-				side.into.metricReqs += reqs
-			}
+// readLoadSide reads the <prefix>-<n>.json summaries in dir, and what
+// perf/resources.sh recorded beside them, averaged over the runs.
+func readLoadSide(dir, prefix string) (loadSide, error) {
+	var side loadSide
+	files, err := filepath.Glob(filepath.Join(dir, prefix+"-*.json"))
+	if err != nil {
+		return side, err
+	}
+	if len(files) == 0 {
+		return side, fmt.Errorf("%s: no %s-<n>.json k6 summaries", dir, prefix)
+	}
+	slices.Sort(files)
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return side, err
 		}
-		n := float64(side.into.runs)
-		side.into.median /= n
-		side.into.p99 /= n
-		side.into.errorRate /= n
-		if side.into.statsRuns > 0 {
-			side.into.cpuPercent /= float64(side.into.statsRuns)
+		var s k6Summary
+		if err := json.Unmarshal(b, &s); err != nil {
+			return side, fmt.Errorf("%s: %w", f, err)
+		}
+		// The steady phase, when the profile has one, so the warm-up is
+		// left out; otherwise the whole run.
+		durations := []string{"http_req_duration{phase:steady}", "http_req_duration"}
+		med, ok1 := s.metric("med", durations...)
+		p99, ok2 := s.metric("p(99)", durations...)
+		rate, ok3 := s.metric("value", "http_req_failed{phase:steady}", "http_req_failed")
+		reqs, ok4 := s.metric("count", "http_reqs")
+		if !ok1 || !ok2 || !ok3 || !ok4 {
+			return side, fmt.Errorf("%s: missing http_req_duration (med, p(99)), http_req_failed or http_reqs", f)
+		}
+		side.runs++
+		side.median += med
+		side.p99 += p99
+		side.errorRate += rate
+		side.requests += int(reqs)
+
+		res := readResources(f)
+		if res.hasStats {
+			side.statsRuns++
+			side.cpuPercent += res.cpuPercent
+			side.memoryPeakMiB = max(side.memoryPeakMiB, res.memoryPeakMiB)
+		}
+		if res.hasMetrics {
+			side.metricRuns++
+			side.cpuSeconds += res.cpuSeconds
+			side.allocBytes += res.allocBytes
+			side.gcCycles += res.gcCycles
+			side.goroutinesMax = max(side.goroutinesMax, res.goroutines)
+			side.metricReqs += reqs
 		}
 	}
-	return c, nil
+	n := float64(side.runs)
+	side.median /= n
+	side.p99 /= n
+	side.errorRate /= n
+	if side.statsRuns > 0 {
+		side.cpuPercent /= float64(side.statsRuns)
+	}
+	return side, nil
 }
