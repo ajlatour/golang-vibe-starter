@@ -23,7 +23,8 @@ ARG VERSION=devel
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=bind,from=gocache,target=/tmp/gocache-seed \
-    cp -a /tmp/gocache-seed/. /root/.cache/go-build/ && \
+    { cp -a /tmp/gocache-seed/. /root/.cache/go-build/ || \
+      echo "seeding the Go build cache failed; building without it"; } && \
     go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/api ./cmd/api
 
 # The Go build cache after the build, for CI to keep for the next run:
