@@ -125,10 +125,7 @@ integration: ## Start the test stack, run the suite, and always stop it again
 	$(MAKE) integration-down; exit $$status
 
 integration-up: ## Start the stack with the integration overrides
-	@# Pull WireMock and flagd while the API builds, rather than one after the other.
-	$(COMPOSE_INTEGRATION) pull --quiet --ignore-buildable & pull=$$!; \
-		$(COMPOSE_INTEGRATION) build && wait $$pull
-	$(COMPOSE_INTEGRATION) up -d --wait
+	$(COMPOSE_INTEGRATION) up -d --build --wait
 
 integration-test: ## Run the suite against a running stack (TAGS=@smoke, ARGS=...)
 	go test -C integration ./... -v -count=1 $(if $(TAGS),-godog.tags=$(TAGS)) $(ARGS)

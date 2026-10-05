@@ -29,7 +29,6 @@ Ideas considered but not planned are listed under
     on. `make perf-compare` writes the same report locally. The benchmark and load comparisons run
     as parallel jobs, with many short benchmark samples (300ms, 10 rounds) and a dedicated 20s
     `compare` k6 profile, and the workflow skips changes to Markdown and `docs/` alone.
-- `make integration-up` pulls WireMock and flagd while it builds the API, instead of after.
 - `scripts/api`, for calling the API by hand: `scripts/api POST /items '{"name": "Sprocket"}'`.
   It wraps curl, adding `Content-Type: application/json` to a body (from the argument, a file or
   stdin) and an optional `CORRELATION_ID`, prints the status and correlation ID, pretty-prints
