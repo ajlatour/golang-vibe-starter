@@ -35,7 +35,7 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .DEFAULT_GOAL := help
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
-	live-test fault fault-reset docs docs-open godoc spec spec-lint
+	live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint
 
 ##@ Help
 
@@ -122,6 +122,8 @@ integration-down: ## Stop the test stack
 ##@ Documentation (rendered in Docker; nothing to install)
 
 docs: ## Render the README, guides, changelog and API spec as a local site in bin/docs
+	@# Start empty, so a page the build didn't produce can't survive from an earlier run.
+	rm -rf $(DOCS_OUT)
 	$(PANDOC) docs/site/build.sh $(DOCS_OUT)
 	$(REDOCLY) build-docs docs/openapi.json -o $(DOCS_OUT)/api.html
 	@echo "open $(DOCS_OUT)/index.html, or run make docs-open"
@@ -130,6 +132,9 @@ docs-open: docs ## Build the docs site and open it in your browser
 	@if [ "$$(uname)" = Darwin ]; then open $(DOCS_OUT)/index.html; \
 	elif command -v xdg-open >/dev/null; then xdg-open $(DOCS_OUT)/index.html; \
 	else echo "open $(DOCS_OUT)/index.html in a browser"; fi
+
+docs-check: docs ## Build the docs site and check every page exists and every link resolves
+	DOCS_SITE=$(DOCS_OUT) go test ./docs/site -count=1 -v
 
 godoc: ## Browse the Go package documentation at http://localhost:6060 (Ctrl-C to stop)
 	go run golang.org/x/pkgsite/cmd/pkgsite@v0.5.0 -http=localhost:6060 .

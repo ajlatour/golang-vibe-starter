@@ -24,7 +24,9 @@ How the code is put together, how to change it safely, and how it's tested.
   what passes locally passes in CI.
 - **Preview documentation before you push.** `make docs-open` renders the README, these guides,
   the changelog and the API spec as a local website (`docs/site/build.sh` does the rendering, with
-  pandoc in Docker). `make godoc` serves the Go doc comments at http://localhost:6060.
+  pandoc in Docker). `make docs-check` builds it and checks that every page exists and every
+  link and section reference in it resolves; CI runs that too. `make godoc` serves the Go doc
+  comments at http://localhost:6060.
 
 ## Making a change
 
@@ -134,7 +136,7 @@ value with a double quote in it can't go inside a step's quoted argument; give i
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request, in two jobs, each
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request, in three jobs, each
 step a `make` target:
 
 - **test**: `make fmt-check`, `make vet` and `make test-race` (together, `make check`). Fast, no
@@ -142,6 +144,8 @@ step a `make` target:
 - **integration**: `make integration-up`, `make integration-test`, `make integration-logs` if
   anything failed, and always `make integration-down`. The commit SHA is passed as `VERSION`, so
   the API's log lines say which build they came from.
+- **docs**: `make docs-check`, which builds the documentation website and checks every page and
+  link in it (`docs/site/site_test.go`).
 
 A newer push to the same branch cancels the run in progress.
 

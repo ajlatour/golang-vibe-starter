@@ -11,6 +11,11 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- `make docs-check` builds the documentation website and checks that every page exists and that
+  every link and section reference in it resolves (`docs/site/site_test.go`, skipped by a plain
+  `go test ./...`). CI runs it as a third job. `make docs` now starts from an empty `bin/docs`, so
+  a page the build failed to produce can't survive from an earlier run and hide the failure.
+
 - Local documentation: `make docs` renders the README, the guides in `docs/`, the changelog and
   the API spec into a small website in `bin/docs`, with navigation and working links between
   pages, and `make docs-open` opens it. pandoc and Redocly run in Docker, so there is nothing to

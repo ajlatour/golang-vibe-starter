@@ -70,3 +70,19 @@ jobs:
       - name: Stop the stack
         if: always()
         run: make integration-down
+
+  # Builds the documentation website (pandoc and Redocly, in Docker) and
+  # checks that every page exists and every link in it resolves.
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: integration/go.sum
+
+      - name: Build and check the docs site
+        run: make docs-check
