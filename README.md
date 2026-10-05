@@ -53,6 +53,7 @@ make check          # what CI's fast job runs: gofmt, vet and the race-enabled u
 make integration    # starts the stack, runs the integration tests, stops the stack
 make perf PROFILE=load   # k6 load test against the stack; see docs/performance.md
 make perf-compare   # benchmarks and a load test against main: the report CI posts on a pull request
+make perf-trends    # main's performance over time, from the records CI keeps
 ```
 
 CI runs these same targets on every push to `main` and every pull request.

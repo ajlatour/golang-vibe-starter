@@ -20,6 +20,7 @@ load, containers and the Go runtime on one live dashboard: see
 | `make perf-compare` | Both, written up as the comment CI posts on a pull request: `bin/perf/report.md` |
 | `make perf PROFILE=<name>` | Starts the stack and runs a k6 profile (default `smoke`) |
 | `make perf-profile PROFILE=<name>` | Runs a k6 profile (default `load`) and captures pprof profiles during and after it |
+| `make perf-trends` | Charts `main`'s performance over time, from the records CI keeps: `bin/perf/trends.html` |
 | `make monitor` | Starts the stack with Prometheus, Grafana and cAdvisor: a live dashboard at http://localhost:3000 |
 
 Nothing to install beyond Go and Docker: k6 runs from its image, and benchstat through `go run`.
@@ -240,3 +241,21 @@ the workflow run's summary instead.
 The report is written by `perf/report`, a small Go module of its own (like `integration/`, so the
 service stays standard library only). It uses benchstat's statistics library, so it agrees with
 `make bench-compare`.
+
+## Trends
+
+The pull request report says whether one change made things worse than its base. A slow drift,
+a little worse with each merge, never shows there. So after every merge, the Performance trends
+workflow (`.github/workflows/perf-trends.yml`) measures `main` alone: the Go benchmarks (6 runs
+each) and the `compare` load profile (2 runs, with what they cost in CPU and memory). It saves the
+results as one small JSON file per commit on the `perf-data` branch, so the history lives in git.
+Only `main`'s own code runs in that job, and it's the only one that writes to the repository, and
+only to that branch.
+
+`make perf-trends` fetches the branch and writes `bin/perf/trends.html`: charts of latency under
+load, CPU and allocations per request, the API container's peak memory, and the request path's
+benchmarks (allocations and time per route), one point per commit. Hover a point for its commit.
+The page is drawn by the report tool, with no JavaScript or chart library.
+
+The timings come from shared runners, so a single point means little; look for steps and slopes.
+Allocations are exact, so a step in them is always a real change.

@@ -54,6 +54,10 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Performance over time ([trends](docs/performance.md#trends)): after every merge, a new workflow
+  measures `main` (benchmarks and the `compare` load profile) and saves one JSON record per commit
+  on the `perf-data` branch. `make perf-trends` charts them as a standalone HTML page, drawn by
+  the report tool (`report record`, `report trends`) with no chart library.
 - Fuzz tests for the code that handles untrusted input: JSON request bodies, correlation IDs, the
   header guard, item IDs, `API_KEYS` and the request metrics' labels, each checking a property
   that must hold for any input. `make fuzz` runs them, and a new CI job runs each for 10 seconds.

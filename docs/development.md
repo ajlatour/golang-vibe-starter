@@ -181,6 +181,9 @@ their digests are updated by hand.
 
 A newer push to the same branch cancels the run in progress.
 
+`.github/workflows/perf-trends.yml` runs after every merge to `main`, recording its performance on
+the `perf-data` branch; see [trends](performance.md#trends).
+
 `.github/workflows/perf.yml` runs on every pull request too: it compares the pull request's
 performance with its base and keeps the result in a comment on the pull request. See
 [pull request reports](performance.md#pull-request-reports).

@@ -1,0 +1,96 @@
+name: Performance trends
+
+# Records main's performance after every merge: the Go benchmarks and the k6
+# compare profile, measured on main alone, saved as one small JSON file per
+# commit on the perf-data branch. That branch is the history `make
+# perf-trends` charts. See docs/performance.md#trends.
+#
+# The pull request report says whether a change made things worse than its
+# base; this catches the slow drift that no single pull request shows.
+
+on:
+  push:
+    branches: [main]
+    # Prose can't change performance.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Queued, never cancelled: every merge gets its record.
+concurrency:
+  group: perf-trends
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # To push to perf-data. Only main's own code runs here, never a pull
+      # request's.
+      contents: write
+    env:
+      VERSION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: perf/report/go.sum
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/docker-gobuild
+          key: docker-gobuild-${{ hashFiles('cmd/api/Dockerfile', 'go.mod') }}-${{ github.run_id }}
+          restore-keys: docker-gobuild-${{ hashFiles('cmd/api/Dockerfile', 'go.mod') }}-
+
+      - name: Benchmarks
+        run: |
+          mkdir -p bin/bench
+          go test -run '^$' -bench . -benchmem -count 6 -benchtime 300ms ./... > bin/bench/main.txt
+
+      - name: Load test
+        env:
+          GOCACHE_DIR: ${{ runner.temp }}/docker-gobuild
+        run: sh perf/load-ab.sh - 2 bin/perf/main compare
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down
+
+      - name: Write the record
+        run: |
+          go build -C perf/report -o "$RUNNER_TEMP/report" .
+          "$RUNNER_TEMP/report" record -sha "$GITHUB_SHA" -subject "$(git log -1 --format=%s)" \
+            -bench bin/bench/main.txt -load bin/perf/main > "$RUNNER_TEMP/record.json"
+          cat "$RUNNER_TEMP/record.json"
+
+      - name: Save it to the perf-data branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin perf-data > /dev/null; then
+            git fetch -q --depth 1 origin perf-data
+            git worktree add -q -B perf-data data FETCH_HEAD
+          else
+            git worktree add -q --orphan -b perf-data data
+            printf '%s\n' "# Performance records" "" \
+              "One JSON file per commit on main, written by .github/workflows/perf-trends.yml." \
+              "Run \`make perf-trends\` on main to chart them." > data/README.md
+          fi
+          mkdir -p data/records
+          cp "$RUNNER_TEMP/record.json" "data/records/$(date -u +%Y%m%dT%H%M%S)-${GITHUB_SHA::7}.json"
+          cd data
+          git add -A
+          git commit -q -m "Record the performance of ${GITHUB_SHA::7}"
+          # Another record may have landed meanwhile: rebase onto it and retry.
+          for attempt in 1 2 3; do
+            git push -q origin HEAD:perf-data && exit 0
+            git fetch -q origin perf-data && git rebase -q FETCH_HEAD
+          done
+          exit 1

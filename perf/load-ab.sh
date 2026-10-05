@@ -5,6 +5,8 @@
 #
 #   sh perf/load-ab.sh <base ref> <rounds> <output dir> [profile]
 #
+# A base ref of - measures the working tree alone (the perf-trends workflow
+# records main this way).
 # Builds an API image for each version, then for each round runs the profile
 # (default compare) against each, alternating which goes first, with the same
 # WireMock and flagd throughout. A first run against the working tree warms
@@ -26,7 +28,9 @@ basesrc=$(cd "$out" && pwd)/base-src
 cleanup() { git worktree remove --force "$basesrc" 2>/dev/null || true; }
 trap cleanup EXIT
 cleanup
-git worktree add --quiet --detach "$basesrc" "$base"
+if [ "$base" != - ]; then
+	git worktree add --quiet --detach "$basesrc" "$base"
+fi
 
 echo "Starting WireMock and flagd, and building the API at $base and in the working tree..."
 # All three at once: the two builds share BuildKit's base images and run
@@ -35,10 +39,13 @@ docker compose up -d --wait mock flagd >/dev/null 2>&1 &
 stack=$!
 # With GOCACHE_DIR set (CI), both start from the kept Go build cache, and
 # only the working tree's build writes it back.
-GOCACHE_KEEP=no sh scripts/build-api-image.sh golang-vibe-starter-api:base "$basesrc" &
-basebuild=$!
+basebuild=
+if [ "$base" != - ]; then
+	GOCACHE_KEEP=no sh scripts/build-api-image.sh golang-vibe-starter-api:base "$basesrc" &
+	basebuild=$!
+fi
 sh scripts/build-api-image.sh golang-vibe-starter-api:head .
-wait "$basebuild"
+if [ -n "$basebuild" ]; then wait "$basebuild"; fi
 wait "$stack"
 cleanup
 
@@ -78,7 +85,9 @@ rm -f bin/perf/ab-warmup.*
 i=1
 while [ "$i" -le "$rounds" ]; do
 	echo "round $i of $rounds"
-	if [ $((i % 2)) -eq 1 ]; then
+	if [ "$base" = - ]; then
+		measure head "head-$i"
+	elif [ $((i % 2)) -eq 1 ]; then
 		measure base "base-$i"
 		measure head "head-$i"
 	else

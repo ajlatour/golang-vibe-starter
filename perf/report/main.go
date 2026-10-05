@@ -16,6 +16,9 @@
 // an intended allocation increase. Timing changes are reported, never
 // blocking, because shared CI runners are too noisy to gate on.
 //
+// `report record` and `report trends` keep and chart main's performance
+// over time; see trends.go.
+//
 // This is its own module, like integration/, so that the service itself
 // stays standard library only.
 package main
@@ -28,6 +31,25 @@ import (
 )
 
 func main() {
+	// Subcommands for the history of main's performance (trends.go); with
+	// none, the pull request report.
+	if len(os.Args) > 1 {
+		var run func([]string, io.Writer) error
+		switch os.Args[1] {
+		case "record":
+			run = runRecord
+		case "trends":
+			run = runTrends
+		}
+		if run != nil {
+			if err := run(os.Args[2:], os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, "report:", err)
+				os.Exit(2)
+			}
+			return
+		}
+	}
+
 	var opts options
 	flag.StringVar(&opts.benchBase, "bench-base", "", "the base's benchmark output")
 	flag.StringVar(&opts.benchHead, "bench-head", "", "the pull request's benchmark output")
