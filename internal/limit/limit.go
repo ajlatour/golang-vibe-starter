@@ -99,14 +99,13 @@ func Client(r *http.Request) string {
 }
 
 type bucket struct {
-	tokens float64
-	last   time.Time
+	tokens      float64
+	last        time.Time
+	rate, burst float64 // the client's limit when the bucket was last used
 }
 
 // limiter holds a token bucket per client.
 type limiter struct {
-	rate      float64
-	burst     float64
 	now       func() time.Time
 	mu        sync.Mutex
 	buckets   map[string]*bucket
@@ -115,23 +114,24 @@ type limiter struct {
 
 // take spends one of client's tokens if it has one. If not, it returns how
 // long until it will.
-func (l *limiter) take(client string) (ok bool, wait time.Duration) {
+func (l *limiter) take(client string, rate, burst float64) (ok bool, wait time.Duration) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.now()
 	l.sweep(now)
 	b, found := l.buckets[client]
 	if !found {
-		b = &bucket{tokens: l.burst, last: now}
+		b = &bucket{tokens: burst, last: now}
 		l.buckets[client] = b
 	}
-	b.tokens = math.Min(l.burst, b.tokens+now.Sub(b.last).Seconds()*l.rate)
+	b.rate, b.burst = rate, burst // a reloaded key may have a new limit
+	b.tokens = math.Min(burst, b.tokens+now.Sub(b.last).Seconds()*rate)
 	b.last = now
 	if b.tokens >= 1 {
 		b.tokens--
 		return true, 0
 	}
-	return false, time.Duration((1 - b.tokens) / l.rate * float64(time.Second))
+	return false, time.Duration((1 - b.tokens) / rate * float64(time.Second))
 }
 
 // sweep forgets, at most once a minute, the clients whose buckets have
@@ -142,30 +142,34 @@ func (l *limiter) sweep(now time.Time) {
 	}
 	l.lastSweep = now
 	for c, b := range l.buckets {
-		if b.tokens+now.Sub(b.last).Seconds()*l.rate >= l.burst {
+		if b.tokens+now.Sub(b.last).Seconds()*b.rate >= b.burst {
 			delete(l.buckets, c)
 		}
 	}
 }
 
 // PerClient refuses a request with 429 when its client (see Client) is over
-// its rate. Put it after authentication, so a client is its key.
+// its rate: the key's own limit if it has one, else the policy's. Put it
+// after authentication, so a client is its key.
 func PerClient(p Policy, next http.Handler) http.Handler {
 	return perClient(p, time.Now, next)
 }
 
 func perClient(p Policy, now func() time.Time, next http.Handler) http.Handler {
-	if p.Rate == 0 {
-		return next
-	}
-	l := &limiter{rate: p.Rate, burst: float64(p.Burst), now: now, buckets: map[string]*bucket{}, lastSweep: now()}
+	l := &limiter{now: now, buckets: map[string]*bucket{}, lastSweep: now()}
 	exempt := exemptSet(p.Exempt)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if exempt[r.URL.Path] {
+		// A key's own limit (apikey.Limits) replaces the policy's, and
+		// applies even when the policy sets none.
+		rate, burst := p.Rate, float64(p.Burst)
+		if kr, kb, ok := apikey.Limits(r.Context()); ok {
+			rate, burst = kr, float64(kb)
+		}
+		if rate == 0 || exempt[r.URL.Path] {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if ok, wait := l.take(Client(r)); !ok {
+		if ok, wait := l.take(Client(r), rate, burst); !ok {
 			w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
 			httpx.WriteError(w, http.StatusTooManyRequests, "too many requests; slow down")
 			return

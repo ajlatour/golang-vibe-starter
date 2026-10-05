@@ -55,6 +55,12 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- API keys can be rotated without a restart: `API_KEYS_FILE` names a file of keys, one per line,
+  checked every `API_KEYS_RELOAD` (10s) and swapped in once a change reads the same on two checks,
+  so a half-written file is never used (`API keys reloaded`). A
+  file that can't be read or parsed, or holds no keys, changes nothing (`API keys not reloaded`),
+  so a bad edit can't lock clients out. A key may carry its own rate limit, a fourth field
+  (`ci:write:<hash>:500/1000`), which replaces `RATE_LIMIT` for it.
 - A release process ([Releasing](docs/releasing.md)): `make release-prepare` cuts the changelog
   section in a pull request, and `make release-tag` tags `main`. The tag publishes the image to the
   GitHub Container Registry for linux/amd64 and linux/arm64, with an SBOM and build provenance,

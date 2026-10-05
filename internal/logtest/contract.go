@@ -62,6 +62,8 @@ var Contract = map[string]Message{
 
 	// Authentication (internal/apikey).
 	"request refused by authentication": {[]string{"INFO"}, []string{"reason", "status"}},
+	"API keys reloaded":                 {[]string{"INFO"}, []string{"api_keys"}},
+	"API keys not reloaded":             {[]string{"ERROR"}, []string{"error"}},
 
 	// Feature flags.
 	"flag service unavailable, using default flag values": {[]string{"WARN"}, []string{"flag", "error"}},
@@ -73,7 +75,7 @@ var Contract = map[string]Message{
 // OutsideRequests lists the messages that are logged outside any request, and
 // so legitimately have no request_id. Every other message has one.
 var OutsideRequests = []string{
-	"using upstream", "using feature flags", "using header guard", "using API keys", "using limits",
+	"using upstream", "using feature flags", "using header guard", "using API keys", "using limits", "API keys reloaded", "API keys not reloaded",
 	"authentication is off: every request is allowed", "feature flags: no FLAGS_URL, using default values only",
 	"server started", "shutting down", "server stopped", "not ready", "ready again", "profiling server started", "profiling server failed",
 	"profiling server is reachable beyond this machine; keep its port private",

@@ -1,6 +1,7 @@
 package apikey_test
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -8,12 +9,14 @@ import (
 )
 
 // FuzzParseKeys throws arbitrary API_KEYS values at the parser: it never
-// panics, and what it accepts parses the same way again when written back.
+// panics, and what it accepts, own rate limits included, parses the same way
+// again when written back.
 func FuzzParseKeys(f *testing.F) {
 	h := apikey.HashHex("k")
 	for _, seed := range []string{
 		"ci:write:" + h, " a:read:" + h + " ,, b:write:" + h + ",", "ci:admin:" + h, "ci:write", ":::", ",,,",
 		"ci:write:" + strings.ToUpper(h), "ci:write:" + h + ",ci:read:" + h, "ci:write:gvs_plain",
+		"ci:write:" + h + ":500/1000", "ci:write:" + h + ":2.5", "# comment\nci:read:" + h + "\n", "ci:write:" + h + ":1e3",
 	} {
 		f.Add(seed)
 	}
@@ -27,7 +30,11 @@ func FuzzParseKeys(f *testing.F) {
 			if k.Scope != apikey.Read && k.Scope != apikey.Write {
 				t.Fatalf("parsed scope %v", k.Scope)
 			}
-			entries = append(entries, k.Name+":"+k.Scope.String()+":"+hexOf(k.Hash[:]))
+			entry := k.Name + ":" + k.Scope.String() + ":" + hexOf(k.Hash[:])
+			if k.Rate > 0 {
+				entry += ":" + strconv.FormatFloat(k.Rate, 'g', -1, 64) + "/" + strconv.Itoa(k.Burst)
+			}
+			entries = append(entries, entry)
 		}
 		again, err := apikey.ParseKeys(strings.Join(entries, ","))
 		if err != nil || len(again) != len(keys) {

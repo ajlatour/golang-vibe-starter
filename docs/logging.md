@@ -57,7 +57,7 @@ include `.git`; without it, container logs show `version=devel`.
 | `header`      | the same lines, when one header is to blame | The header's name, e.g. `Content-Type`.      |
 | `headers`     | `request headers stripped` | The names of the headers removed, comma-separated.       |
 | `api_key`     | `request refused by authentication` (a 403), and every line of a request after it was authenticated, `response sent` included | The name of the API key, as configured in `API_KEYS`; never the key. Absent for requests without one (the probes, or with `API_AUTH=off`). |
-| `api_keys`    | `using API keys`       | The configured keys' names and scopes, e.g. `ci (write), dashboard (read)`. |
+| `api_keys`    | `using API keys`, `API keys reloaded` | The keys' names, scopes and own rate limits, e.g. `ci (write, 500/s in bursts of 1000), dashboard (read)`. |
 | `reads`       | `using API keys`       | Whether reads need a key: `required` or `open` (`API_AUTH_READS`). |
 | `max_in_flight` | `using limits`       | The cap on requests being served at once (`MAX_IN_FLIGHT`). |
 | `rate_limit`  | `using limits`         | Requests per second each client may make on average (`RATE_LIMIT`). |
@@ -87,6 +87,8 @@ upstream, comes back, and leaves the API.
 | `panic serving request` | ERROR | `method`, `route`, `path`, `panic`, `stack` | A handler panicked; the client gets a 500. |
 | `request headers rejected` | INFO | `reason`, `status` | A request broke a header rule and was answered with `status` (400, 415 or 431); `header` names the header when one is to blame. See [request headers](../README.md#request-headers). |
 | `request headers would be rejected` | INFO | `reason`, `status` | The same, with `HEADER_GUARD_MODE=report`: logged, but let through. |
+| `API keys reloaded` | INFO | `api_keys` | `API_KEYS_FILE` changed, and its keys are now the ones in force. |
+| `API keys not reloaded` | ERROR | `error` | `API_KEYS_FILE` changed but can't be read, doesn't parse or holds no keys: the keys in force stay. Logged once per problem. |
 | `request refused by authentication` | INFO | `reason`, `status` | A request had no valid API key (401: `missing key`, `not a bearer token`, `unknown key`) or a read-only key tried to write (403: `read-only key`, with `api_key` naming it). The key itself is never logged. |
 | `request headers stripped` | DEBUG | `headers` | Proxy or method-override headers were removed before the handlers ran. |
 | `upstream request failed` | WARN | `upstream`, `upstream_duration_ms`, `error` | An upstream call failed: no response, an unexpected status, or a body that won't decode. `upstream_status` is also present if a response arrived. |

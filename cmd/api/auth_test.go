@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
@@ -97,5 +100,52 @@ func TestRunWithAuthenticationOffWarns(t *testing.T) {
 	waitForShutdown(t, errc)
 	if !strings.Contains(logs.String(), `"msg":"authentication is off: every request is allowed"`) {
 		t.Errorf("no warning that authentication is off:\n%s", logs)
+	}
+}
+
+// TestRunReloadsAPIKeysFile runs the service with API_KEYS_FILE and rotates a
+// key while it runs: the new key works and the old one stops, with no
+// restart.
+func TestRunReloadsAPIKeysFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "keys")
+	write := func(content string) {
+		t.Helper()
+		if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("# the service's clients\nold:read:" + apikey.HashHex("gvs_old") + "\n")
+	ctx, cancel := context.WithCancel(t.Context())
+	addr, logs, errc := startApp(t, ctx, map[string]string{
+		"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://127.0.0.1:1",
+		"API_KEYS_FILE": file, "API_KEYS_RELOAD": "20ms",
+	})
+	defer func() { cancel(); waitForShutdown(t, errc) }()
+
+	status := func(key string) int {
+		req, _ := http.NewRequest("GET", "http://"+addr+"/items", nil)
+		req.Header.Set("Authorization", "Bearer "+key)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	// 502 is the dead upstream: the key was let through.
+	if got := status("gvs_old"); got != http.StatusBadGateway {
+		t.Fatalf("the old key: %d, want it let through", got)
+	}
+	write("new:read:" + apikey.HashHex("gvs_new") + "\n")
+	for deadline := time.Now().Add(5 * time.Second); status("gvs_new") != http.StatusBadGateway; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the new key was never accepted")
+		}
+	}
+	if got := status("gvs_old"); got != http.StatusUnauthorized {
+		t.Errorf("the old key after rotation: %d, want 401", got)
+	}
+	if !strings.Contains(logs.String(), `"msg":"API keys reloaded"`) {
+		t.Errorf("no reload logged:\n%s", logs)
 	}
 }

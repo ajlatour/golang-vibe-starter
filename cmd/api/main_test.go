@@ -93,6 +93,8 @@ func TestRunErrors(t *testing.T) {
 		{name: "missing upstream", env: map[string]string{}},
 		{name: "unknown argument", args: []string{"serve"}, env: map[string]string{"UPSTREAM_URL": "http://mock"}},
 		{name: "authentication on, with no keys", env: map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock"}},
+		{name: "API_KEYS and API_KEYS_FILE both set", env: map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock", "API_KEYS": "ci:write:" + strings.Repeat("a", 64), "API_KEYS_FILE": "keys"}},
+		{name: "an API_KEYS_FILE that doesn't exist", env: map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock", "API_KEYS_FILE": "/no/such/keys"}},
 		{name: "a bad API_KEYS entry", env: map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock", "API_KEYS": "ci:write:gvs_the-key-itself"}},
 		{name: "pprof address unusable", env: map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock", "PPROF_ADDR": "no-such-host.invalid:1", "API_AUTH": "off"}},
 		{name: "healthcheck with nothing listening", args: []string{"healthcheck"}, env: map[string]string{"ADDR": "127.0.0.1:1", "UPSTREAM_URL": "http://mock"}},
