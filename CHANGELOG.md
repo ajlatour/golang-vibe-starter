@@ -11,6 +11,12 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Local documentation: `make docs` renders the README, the guides in `docs/`, the changelog and
+  the API spec into a small website in `bin/docs`, with navigation and working links between
+  pages, and `make docs-open` opens it. pandoc and Redocly run in Docker, so there is nothing to
+  install. `make godoc` serves the Go package documentation with pkgsite (pinned to v0.5.0) at
+  http://localhost:6060.
+
 - A `Makefile` with shortcuts for the commands that were long or easy to forget: running the
   stack (`make up`, `make run`, `make fault FAULT=...`), the checks and tests (`make check`,
   `make integration`, `make live-test`) and the API spec (`make spec`, `make spec-lint`, which run Redocly CLI in Docker, so there is

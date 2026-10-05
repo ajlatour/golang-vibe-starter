@@ -22,6 +22,9 @@ How the code is put together, how to change it safely, and how it's tested.
 - **Tests never call Docker.** The integration tests talk HTTP to a stack you start yourself.
 - **Commands live in the `Makefile`.** `make help` lists them, and CI runs the same targets, so
   what passes locally passes in CI.
+- **Preview documentation before you push.** `make docs-open` renders the README, these guides,
+  the changelog and the API spec as a local website (`docs/site/build.sh` does the rendering, with
+  pandoc in Docker). `make godoc` serves the Go doc comments at http://localhost:6060.
 
 ## Making a change
 

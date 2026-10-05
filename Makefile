@@ -23,6 +23,10 @@ FLAGD_URL    ?= http://localhost:8016
 # The fault stubs that `make fault` can switch on.
 FAULTS := $(notdir $(basename $(wildcard wiremock/faults/*.json)))
 
+# pandoc renders the Markdown docs, run in Docker like Redocly below.
+PANDOC   := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/data" -w /data --entrypoint sh pandoc/core:3.7
+DOCS_OUT := bin/docs
+
 # Redocly CLI for the spec targets, run in Docker (already needed for the stack)
 # so there's nothing else to install. Pinned, so it behaves the same everywhere;
 # run as your user, so files it writes aren't owned by root.
@@ -31,7 +35,7 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .DEFAULT_GOAL := help
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
-	live-test fault fault-reset spec spec-lint
+	live-test fault fault-reset docs docs-open godoc spec spec-lint
 
 ##@ Help
 
@@ -115,7 +119,20 @@ integration-logs: ## Print the test stack's logs
 integration-down: ## Stop the test stack
 	$(COMPOSE_INTEGRATION) down
 
-##@ API spec (Redocly CLI, run in Docker)
+##@ Documentation (rendered in Docker; nothing to install)
+
+docs: ## Render the README, guides, changelog and API spec as a local site in bin/docs
+	$(PANDOC) docs/site/build.sh $(DOCS_OUT)
+	$(REDOCLY) build-docs docs/openapi.json -o $(DOCS_OUT)/api.html
+	@echo "open $(DOCS_OUT)/index.html, or run make docs-open"
+
+docs-open: docs ## Build the docs site and open it in your browser
+	@if [ "$$(uname)" = Darwin ]; then open $(DOCS_OUT)/index.html; \
+	elif command -v xdg-open >/dev/null; then xdg-open $(DOCS_OUT)/index.html; \
+	else echo "open $(DOCS_OUT)/index.html in a browser"; fi
+
+godoc: ## Browse the Go package documentation at http://localhost:6060 (Ctrl-C to stop)
+	go run golang.org/x/pkgsite/cmd/pkgsite@v0.5.0 -http=localhost:6060 .
 
 spec: ## Render docs/openapi.json as an HTML page, bin/openapi.html
 	@mkdir -p bin

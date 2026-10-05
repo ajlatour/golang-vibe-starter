@@ -27,8 +27,8 @@ contract, change that variable; no code changes are needed.
 - `make` (GNU Make 3.81 or later, already on macOS and most Linux systems) for the shortcuts below.
   Without it, each target in the `Makefile` is a few lines you can run by hand.
 
-Nothing else: the spec tools run in Docker, and the integration tests' Go dependencies download
-on first use.
+Nothing else: the documentation and spec tools run in Docker, and the Go tools and the
+integration tests' dependencies download on first use.
 
 ## Run
 
@@ -109,6 +109,10 @@ The API reads these environment variables:
 
 ## Documentation
 
+`make docs-open` renders all of this as a local website and opens it in your browser: these
+pages, the changelog and the API spec, with links between them. `make godoc` serves the Go package
+documentation (the code's doc comments) at http://localhost:6060.
+
 - [The local stack](docs/local-stack.md): the compose stack, WireMock's stubs, fault injection,
   and load-test tuning.
 - [Feature flags](docs/feature-flags.md): the flags, what happens when flagd can't answer, and
@@ -145,7 +149,8 @@ flagd/                   Feature flag definitions: served by flagd, and embedded
                          in the API as its fallback values
 wiremock/mappings/       WireMock stubs (mounted)
 wiremock/faults/         Opt-in fault stubs (loaded via the admin API)
-docs/                    The documents above, and the OpenAPI spec
+docs/                    The documents above, the OpenAPI spec, and site/, which
+                         renders them as a local website (make docs)
 Makefile                 Shortcuts for running, testing and checking (make help)
 integration/             Godog end-to-end tests against the composed stack (own Go module)
 compose.yaml             Local stack: api + WireMock + flagd
