@@ -62,7 +62,11 @@ func handleList(logger *slog.Logger, store Store, flags Flags) http.HandlerFunc 
 
 func handleGet(logger *slog.Logger, store Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		it, err := store.Get(r.Context(), r.PathValue("id"))
+		id, ok := pathID(w, r)
+		if !ok {
+			return
+		}
+		it, err := store.Get(r.Context(), id)
 		if err != nil {
 			storeError(logger, w, r, err)
 			return
@@ -89,11 +93,15 @@ func handleCreate(logger *slog.Logger, store Store) http.HandlerFunc {
 
 func handleUpdate(logger *slog.Logger, store Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := pathID(w, r)
+		if !ok {
+			return
+		}
 		in, ok := decodeInput(w, r)
 		if !ok {
 			return
 		}
-		it, err := store.Update(r.Context(), Item{ID: r.PathValue("id"), Name: in.Name, Description: in.Description})
+		it, err := store.Update(r.Context(), Item{ID: id, Name: in.Name, Description: in.Description})
 		if err != nil {
 			storeError(logger, w, r, err)
 			return
@@ -104,12 +112,28 @@ func handleUpdate(logger *slog.Logger, store Store) http.HandlerFunc {
 
 func handleDelete(logger *slog.Logger, store Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if err := store.Delete(r.Context(), r.PathValue("id")); err != nil {
+		id, ok := pathID(w, r)
+		if !ok {
+			return
+		}
+		if err := store.Delete(r.Context(), id); err != nil {
 			storeError(logger, w, r, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// pathID returns the request's {id}. If it isn't a valid ID (see ValidID),
+// no item can have it: pathID answers 404, as for any unknown item, without
+// asking the store, and returns false.
+func pathID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	id := r.PathValue("id")
+	if !ValidID(id) {
+		httpx.WriteError(w, http.StatusNotFound, ErrNotFound.Error())
+		return "", false
+	}
+	return id, true
 }
 
 // decodeInput reads and validates the JSON request body shared by create and

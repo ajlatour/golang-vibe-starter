@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -582,3 +583,70 @@ func TestOpenAPICorrelationIDMatchesBehavior(t *testing.T) {
 		})
 	}
 }
+
+// TestOpenAPIItemIDMatchesBehavior fails if the spec's rule for an item ID
+// and the code's (item.ValidID) disagree. An ID the spec rejects must get a
+// 404 without the store being asked, so it never reaches the upstream.
+func TestOpenAPIItemIDMatchesBehavior(t *testing.T) {
+	s := loadSpec(t)
+	param, ok := s.lookup("#/components/parameters/ItemID")
+	if !ok {
+		t.Fatal("spec has no ItemID parameter")
+	}
+	schema := param["schema"].(map[string]any)
+	pattern := regexp.MustCompile(schema["pattern"].(string))
+	if int(schema["maxLength"].(float64)) != item.MaxIDLen {
+		t.Errorf("spec maxLength = %v, item.MaxIDLen = %d", schema["maxLength"], item.MaxIDLen)
+	}
+
+	asked := false
+	handler := newHandler(slog.New(slog.DiscardHandler), headerguard.DefaultPolicy(), spyStore{asked: &asked})
+	for _, id := range []string{
+		"widget", "new-item", "x_1", strings.Repeat("a", 128), strings.Repeat("a", 129),
+		".", "..", "%2E%2E", "..%2F..%2Fadmin", "a%2Fb", "a%20b", "x%3Fq", "%C3%A9",
+	} {
+		for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
+			t.Run(method+" "+truncate(id), func(t *testing.T) {
+				asked = false
+				req := httptest.NewRequest(method, "/items/"+id, strings.NewReader(`{"name":"x"}`))
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				decoded, err := url.PathUnescape(id)
+				if err != nil {
+					t.Fatal(err)
+				}
+				// A literal "." or ".." never reaches the handlers: the router
+				// redirects to the cleaned path first, which is as safe.
+				want := http.StatusNotFound
+				if id == "." || id == ".." {
+					want = http.StatusTemporaryRedirect
+				}
+				switch {
+				case pattern.MatchString(decoded) && !asked:
+					t.Errorf("the spec accepts %q, but the store wasn't asked (status %d)", decoded, rec.Code)
+				case !pattern.MatchString(decoded) && (asked || rec.Code != want):
+					t.Errorf("the spec rejects %q: want %d without asking the store; got %d, store asked: %v", decoded, want, rec.Code, asked)
+				}
+			})
+		}
+	}
+}
+
+// spyStore notes that it was asked anything, and has no items.
+type spyStore struct{ asked *bool }
+
+func (s spyStore) List(context.Context) ([]item.Item, error) { *s.asked = true; return nil, nil }
+func (s spyStore) Get(context.Context, string) (item.Item, error) {
+	*s.asked = true
+	return item.Item{}, item.ErrNotFound
+}
+func (s spyStore) Create(context.Context, item.Item) (item.Item, error) {
+	*s.asked = true
+	return item.Item{}, nil
+}
+func (s spyStore) Update(context.Context, item.Item) (item.Item, error) {
+	*s.asked = true
+	return item.Item{}, item.ErrNotFound
+}
+func (s spyStore) Delete(context.Context, string) error { *s.asked = true; return item.ErrNotFound }

@@ -9,6 +9,14 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+### Security
+
+- Item IDs are checked before they reach the upstream: an ID must be 1 to 128 letters, digits,
+  `-` and `_` (`item.ValidID`), and any other is a 404 that never leaves the API. Before, an ID
+  such as `%2E%2E` reached the upstream as `/items/..`, which an upstream or proxy that
+  normalizes paths or decodes `%2F` could route somewhere other than `/items/{id}`. The rule is
+  in `docs/openapi.json`, and `httpstore` refuses such IDs too.
+
 ### Added
 
 - Resource monitoring ([watching resources](docs/performance.md#watching-resources)):

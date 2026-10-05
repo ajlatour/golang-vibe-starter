@@ -160,8 +160,8 @@
         "name": "id",
         "in": "path",
         "required": true,
-        "description": "The item's ID.",
-        "schema": { "type": "string" }
+        "description": "The item's ID: 1 to 128 letters, digits, `-` and `_`. No item has any other ID, so any other value is answered with 404.",
+        "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$", "maxLength": 128 }
       },
       "CorrelationID": {
         "name": "Client-Correlation-Id",

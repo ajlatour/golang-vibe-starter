@@ -25,6 +25,30 @@ type Item struct {
 // ErrNotFound is returned by a Store when no item has the given ID.
 var ErrNotFound = errors.New("item not found")
 
+// MaxIDLen is the longest an item ID can be.
+const MaxIDLen = 128
+
+// ValidID reports whether id could name an item: 1 to MaxIDLen ASCII
+// letters, digits, '-' and '_'. No item has any other ID, so the handlers
+// answer 404 for one without asking the store, and httpstore never puts one
+// in an upstream URL. That matters because an upstream, or a proxy in front
+// of it, may normalize "." and ".." path segments or decode %2F, so an ID
+// such as ".." or "..%2F..%2Fadmin" could otherwise reach a route other than
+// /items/{id}.
+func ValidID(id string) bool {
+	if id == "" || len(id) > MaxIDLen {
+		return false
+	}
+	for _, c := range []byte(id) {
+		switch {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', c == '-', c == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // Store is the persistence boundary for items. Handlers depend only on this
 // interface. Implementations assign ID and timestamps, and must be safe for
 // concurrent use.

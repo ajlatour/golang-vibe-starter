@@ -73,6 +73,8 @@ the code.
 `items` is a placeholder resource standing in for the real domain. Request bodies are JSON
 (`{"name": "...", "description": "..."}`). `name` is required, at most 200 characters, and
 trimmed of surrounding whitespace. Bodies are limited to 1 MiB, and unknown fields are rejected.
+An item ID is 1 to 128 letters, digits, `-` and `_`; no item has any other ID, so any other ID is a
+404, answered by the API without asking the upstream.
 
 Errors are JSON, `{"error":"..."}`:
 
