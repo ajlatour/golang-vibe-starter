@@ -54,6 +54,9 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Fuzz tests for the code that handles untrusted input: JSON request bodies, correlation IDs, the
+  header guard, item IDs, `API_KEYS` and the request metrics' labels, each checking a property
+  that must hold for any input. `make fuzz` runs them, and a new CI job runs each for 10 seconds.
 - Every log line of a request made with an API key names the key (`api_key`, never the key
   itself), `response sent` included, so the logs say which client did what.
 - Request metrics on `/metrics` (`internal/httpmetrics`, standard library only):

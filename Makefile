@@ -47,7 +47,7 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .DEFAULT_GOAL := help
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
-	api-key vuln live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint \
+	api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint \
 	perf perf-profile bench bench-compare load-compare perf-compare monitor
 
 ##@ Help
@@ -121,6 +121,18 @@ vuln: ## Check all three modules for known vulnerabilities the code can reach
 	go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 	go run -C integration golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 	go run -C perf/report golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
+# The fuzz tests, as package:Function. go test fuzzes one at a time.
+FUZZ_TARGETS := internal/httpx:FuzzDecodeJSON internal/httpx:FuzzCorrelationID \
+	internal/headerguard:FuzzMiddleware internal/item:FuzzValidID \
+	internal/apikey:FuzzParseKeys internal/httpmetrics:FuzzObserve
+FUZZTIME ?= 30s
+
+fuzz: ## Fuzz the code that handles untrusted input, FUZZTIME (30s) per target
+	@for t in $(FUZZ_TARGETS); do \
+		pkg=$${t%%:*}; fn=$${t#*:}; echo "fuzzing $$fn in $$pkg for $(FUZZTIME)"; \
+		go test ./$$pkg -run '^$$' -fuzz "^$$fn$$" -fuzztime $(FUZZTIME) 2>&1 | tail -n 3 || exit 1; \
+	done
 
 live-test: ## The opt-in httpstore test against the running WireMock
 	$(COMPOSE) up -d --wait mock
