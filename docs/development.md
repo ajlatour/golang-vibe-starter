@@ -142,7 +142,7 @@ value with a double quote in it can't go inside a step's quoted argument; give i
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request, in three jobs, each
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request, in four jobs, each
 step a `make` target:
 
 - **test**: `make fmt-check`, `make vet` and `make test-race` (together, `make check`). Fast, no
@@ -152,6 +152,14 @@ step a `make` target:
   the API's log lines say which build they came from.
 - **docs**: `make docs-check`, which builds the documentation website and checks every page and
   link in it (`docs/site/site_test.go`).
+- **vuln**: `make vuln`, govulncheck over all three modules: known vulnerabilities in the
+  dependencies and the Go standard library that the code can actually reach.
+
+Every action is pinned to a commit SHA (the version is in a comment beside it) and every container
+image to a digest, so a moved tag can't change what CI runs. Dependabot (`.github/dependabot.yml`)
+opens a weekly pull request for each kind of update: Go modules, actions, the Dockerfile's images
+and compose's. The pandoc and Redocly images in the Makefile are outside what Dependabot reads, so
+their digests are updated by hand.
 
 A newer push to the same branch cancels the run in progress.
 

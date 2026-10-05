@@ -200,8 +200,10 @@ from them mean little. So each comparison measures both versions on one runner, 
   from each version, after a warm-up run that's thrown away.
 
 Whatever slows a runner meanwhile lands on both versions alike. The two comparisons run as parallel
-jobs on separate runners, and a third job writes the report from their results; only that job can
-write to the pull request. Changes to Markdown and `docs/` alone don't run the workflow.
+jobs on separate runners, and a third job writes the report from their results. None of them can
+write to the pull request: the report tool is built from the pull request's own code, so a fourth
+job posts the comment and applies the verdict, reading the report as data and never checking out
+or running the pull request's code. Changes to Markdown and `docs/` alone don't run the workflow.
 
 **What the comment shows.** First the verdict, then the changes that matter, then the load test's
 latency and errors for each version, and what the API cost while it ran: CPU per request (from

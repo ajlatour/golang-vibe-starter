@@ -72,7 +72,7 @@ services:
   mock:
     # Multi-arch: runs natively on arm64 and amd64. The -alpine tag is
     # amd64-only and would run emulated on Apple Silicon, skewing timings.
-    image: wiremock/wiremock:3.13.2
+    image: wiremock/wiremock:3.13.2@sha256:0d4ecb3e4dc8213fd7a4d37d6a78f6e6b553a6d2e15bd51b0999781282ac61b3
     ports:
       - "127.0.0.1:8081:8080"
     volumes:
@@ -103,7 +103,7 @@ services:
   flagd:
     # OpenFeature sidecar. The API evaluates flags over OFREP (HTTP, port
     # 8016); no OpenFeature SDK or gRPC dependency is needed.
-    image: ghcr.io/open-feature/flagd:v0.12.9
+    image: ghcr.io/open-feature/flagd:v0.12.9@sha256:e6cca86b29629a06806aa7954b4a9b5f291c30839c6ae4f815dc4ddcee4a0746
     ports:
       - "127.0.0.1:8016:8016"
     volumes:
@@ -123,7 +123,7 @@ services:
     # The load generator for the performance tests in perf/. Not started by
     # `up`: `make perf PROFILE=<name>` runs it on demand (the perf profile),
     # on this network, so it reaches the API container directly.
-    image: grafana/k6:2.3.0
+    image: grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34
     profiles: [perf]
     volumes:
       - ./perf:/perf:ro
@@ -139,7 +139,7 @@ services:
   # API's runtime metrics and k6's results, in Prometheus, on a Grafana
   # dashboard. Published on this machine's loopback only.
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    image: gcr.io/cadvisor/cadvisor:v0.55.1@sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57
     profiles: [monitoring]
     # cAdvisor reads the Docker engine's cgroups, which takes the host's
     # filesystems, read-only, and privileged mode. On macOS, "host" is Docker
@@ -161,7 +161,7 @@ services:
       - --disable_metrics=advtcp,cpu_topology,cpuset,disk,diskIO,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp
 
   prometheus:
-    image: prom/prometheus:v3.15.0
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
     profiles: [monitoring]
     ports:
       - "127.0.0.1:9090:9090"
@@ -174,7 +174,7 @@ services:
       - --web.enable-remote-write-receiver
 
   grafana:
-    image: grafana/grafana:13.2.3
+    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
     profiles: [monitoring]
     ports:
       - "127.0.0.1:3000:3000"

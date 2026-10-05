@@ -33,6 +33,11 @@ Ideas considered but not planned are listed under
   connection send 1 MiB before the header guard saw it.
 - The API container in compose runs with a read-only filesystem, no Linux capabilities and
   `no-new-privileges`.
+- CI's supply chain: every action is pinned to a commit SHA and every container image to a
+  digest, Dependabot proposes weekly updates for Go modules, actions and images, and a new `vuln`
+  job (`make vuln`) runs govulncheck over all three modules. The performance workflow's comment is
+  posted by a job that never runs the pull request's code; the job that builds the report tool
+  from it is read-only.
 
 ### Added
 
