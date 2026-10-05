@@ -14,6 +14,7 @@ type outageTracker struct {
 	mu        sync.Mutex
 	active    bool
 	since     time.Time // when the current outage was first seen
+	tried     time.Time // when the service was last asked during it
 	fallbacks int       // evaluations answered from defaults during it
 }
 
@@ -28,10 +29,34 @@ func (o *outageTracker) failed() (started bool) {
 	defer o.mu.Unlock()
 	if !o.active {
 		o.active, o.since, o.fallbacks = true, o.now(), 0
+		o.tried = o.since
 		started = true
 	}
 	o.fallbacks++
 	return started
+}
+
+// waiting reports whether an evaluation should take its default without
+// asking the service: an outage is in progress and the service was asked
+// less than retry ago. When it returns false during an outage, the caller is
+// the one to ask, and the next try is counted from now, so evaluations at the
+// same moment keep waiting rather than all asking at once. A retry of zero
+// never waits.
+func (o *outageTracker) waiting(retry time.Duration) bool {
+	if retry <= 0 {
+		return false
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if !o.active {
+		return false
+	}
+	now := o.now()
+	if now.Sub(o.tried) < retry {
+		return true
+	}
+	o.tried = now
+	return false
 }
 
 // answered records that the service answered, whatever it said. If an outage

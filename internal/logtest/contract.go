@@ -27,7 +27,7 @@ type Message struct {
 var Contract = map[string]Message{
 	// Lifecycle: logged outside any request, so no request_id.
 	"using upstream":      {[]string{"INFO"}, []string{"url", "timeout"}},
-	"using feature flags": {[]string{"INFO"}, []string{"url", "timeout"}},
+	"using feature flags": {[]string{"INFO"}, []string{"url", "timeout", "cache_ttl"}},
 	"using header guard":  {[]string{"INFO"}, []string{"mode", "max_headers", "max_header_bytes", "max_total_bytes"}},
 	"using API keys":      {[]string{"INFO"}, []string{"api_keys", "reads"}},
 	"using limits":        {[]string{"INFO"}, []string{"max_in_flight", "rate_limit", "rate_burst"}},

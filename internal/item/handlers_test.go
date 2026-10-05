@@ -66,6 +66,8 @@ func TestHandlers(t *testing.T) {
 		{name: "create missing name", method: http.MethodPost, path: "/items", body: `{"description":"x"}`, wantStatus: http.StatusUnprocessableEntity},
 		{name: "create blank name", method: http.MethodPost, path: "/items", body: `{"name":"   "}`, wantStatus: http.StatusUnprocessableEntity},
 		{name: "create name too long", method: http.MethodPost, path: "/items", body: `{"name":"` + strings.Repeat("a", item.MaxNameLen+1) + `"}`, wantStatus: http.StatusUnprocessableEntity},
+		{name: "create description at the limit", method: http.MethodPost, path: "/items", body: `{"name":"x","description":"` + strings.Repeat("é", item.MaxDescriptionLen) + `"}`, wantStatus: http.StatusCreated},
+		{name: "create description too long", method: http.MethodPost, path: "/items", body: `{"name":"x","description":"` + strings.Repeat("a", item.MaxDescriptionLen+1) + `"}`, wantStatus: http.StatusUnprocessableEntity},
 		{name: "create empty body", method: http.MethodPost, path: "/items", body: ``, wantStatus: http.StatusBadRequest},
 		{name: "create malformed JSON", method: http.MethodPost, path: "/items", body: `{"name":`, wantStatus: http.StatusBadRequest},
 		{name: "create unknown field", method: http.MethodPost, path: "/items", body: `{"name":"x","colour":"red"}`, wantStatus: http.StatusBadRequest},

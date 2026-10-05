@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
@@ -73,5 +74,34 @@ func TestDefensiveHeadersAreNotShared(t *testing.T) {
 	}
 	if got := second.Header()["Cache-Control"]; len(got) != 1 || got[0] != "no-store" {
 		t.Errorf("the next response's Cache-Control = %q: the first one's Add leaked into it", got)
+	}
+}
+
+// countingMetrics counts the requests started and finished.
+type countingMetrics struct{ started, observed int }
+
+func (m *countingMetrics) Start() { m.started++ }
+func (m *countingMetrics) Observe(route, method string, status int, d time.Duration) {
+	m.observed++
+}
+
+// TestMiddlewareMetricsSurviveAbort checks a request whose handler aborts
+// with http.ErrAbortHandler, which the middleware passes on to net/http, is
+// still observed as finished, so the in-flight count doesn't drift.
+func TestMiddlewareMetricsSurviveAbort(t *testing.T) {
+	m := &countingMetrics{}
+	h := Middleware(slog.New(slog.DiscardHandler), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic(http.ErrAbortHandler)
+	}), WithMetrics(m))
+	func() {
+		defer func() {
+			if v := recover(); v != http.ErrAbortHandler {
+				t.Errorf("recovered %v, want http.ErrAbortHandler passed on", v)
+			}
+		}()
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/items", nil))
+	}()
+	if m.started != 1 || m.observed != 1 {
+		t.Errorf("started %d, observed %d; want 1 and 1", m.started, m.observed)
 	}
 }

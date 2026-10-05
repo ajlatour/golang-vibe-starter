@@ -36,6 +36,10 @@ flag, the API logs a warning and falls back to the flag's `defaultVariant` from
 - Set `FLAGS_FALLBACK_FILE` to read a different flagd-format file at startup instead (for example
   one mounted from a ConfigMap).
 - With `FLAGS_URL` unset the API skips flagd and uses those defaults alone.
+- The API keeps each value flagd serves for `FLAGS_CACHE_TTL` (1s), so a change made in flagd
+  reaches it within a second, and flagd is asked about each flag about once a second however busy
+  the API is. While flagd isn't answering, the API asks it once per `FLAGS_CACHE_TTL` too, and
+  every evaluation in between takes its default at once instead of waiting out `FLAGS_TIMEOUT`.
 - Only boolean flags are supported; a flag whose default variant isn't a boolean stops the
   service at startup.
 

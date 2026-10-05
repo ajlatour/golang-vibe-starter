@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -218,4 +221,65 @@ func TestProfiling(t *testing.T) {
 		cancel()
 		waitForShutdown(t, errc)
 	})
+}
+
+// TestNewTransportReusesConnections checks the upstream's connection pool
+// keeps a connection for every request that can be in flight: a second burst
+// of concurrent calls reuses the first's connections instead of opening new
+// ones, as Go's default (2 idle per host) would.
+func TestNewTransportReusesConnections(t *testing.T) {
+	const concurrent = 20
+	var opened atomic.Int32
+	release := make(chan struct{})
+	var arrived sync.WaitGroup
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		arrived.Done()
+		<-release // hold every request until all are in flight, so each needs its own connection
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		if s == http.StateNew {
+			opened.Add(1)
+		}
+	}
+	srv.Start()
+	t.Cleanup(srv.Close)
+
+	client := &http.Client{Transport: newTransport(concurrent)}
+	burst := func() {
+		arrived.Add(concurrent)
+		var done sync.WaitGroup
+		for range concurrent {
+			done.Go(func() {
+				resp, err := client.Get(srv.URL)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				_ = resp.Body.Close()
+			})
+		}
+		arrived.Wait()
+		for range concurrent {
+			release <- struct{}{}
+		}
+		done.Wait()
+	}
+	burst()
+	burst()
+	if n := opened.Load(); n != concurrent {
+		t.Errorf("two bursts of %d calls opened %d connections, want %d: the second should reuse the first's", concurrent, n, concurrent)
+	}
+}
+
+func TestNewTransport(t *testing.T) {
+	for _, tt := range []struct{ maxInFlight, wantIdle int }{{512, 512}, {0, defaultIdleConns}} {
+		tr := newTransport(tt.maxInFlight)
+		if tr.MaxIdleConnsPerHost != tt.wantIdle || tr.MaxIdleConns != tt.wantIdle {
+			t.Errorf("newTransport(%d) keeps %d idle per host, %d in all; want %d", tt.maxInFlight, tr.MaxIdleConnsPerHost, tr.MaxIdleConns, tt.wantIdle)
+		}
+		if tr.Proxy != nil {
+			t.Errorf("newTransport(%d) uses a proxy from the environment; want none", tt.maxInFlight)
+		}
+	}
 }

@@ -85,6 +85,18 @@ func TestLoadConfigFlags(t *testing.T) {
 		if got.FlagsTimeout != 500*time.Millisecond {
 			t.Errorf("FlagsTimeout = %v, want 500ms", got.FlagsTimeout)
 		}
+		if got.FlagsCacheTTL != time.Second {
+			t.Errorf("FlagsCacheTTL = %v, want 1s", got.FlagsCacheTTL)
+		}
+	})
+	t.Run("cache off", func(t *testing.T) {
+		got, err := loadConfig(with("FLAGS_CACHE_TTL", "0s"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.FlagsCacheTTL != 0 {
+			t.Errorf("FlagsCacheTTL = %v, want 0", got.FlagsCacheTTL)
+		}
 	})
 	t.Run("url and timeout", func(t *testing.T) {
 		env := map[string]string{"UPSTREAM_URL": "http://mock:8080", "FLAGS_URL": "http://flagd:8016", "FLAGS_TIMEOUT": "1s"}
@@ -105,6 +117,8 @@ func TestLoadConfigFlags(t *testing.T) {
 		"query string":    with("FLAGS_URL", "http://flagd:8016?key=abc"),
 		"zero timeout":    with("FLAGS_TIMEOUT", "0s"),
 		"garbage timeout": with("FLAGS_TIMEOUT", "soon"),
+		"negative cache":  with("FLAGS_CACHE_TTL", "-1s"),
+		"garbage cache":   with("FLAGS_CACHE_TTL", "a while"),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := loadConfig(getenv); err == nil {

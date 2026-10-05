@@ -68,6 +68,9 @@ type Store interface {
 // MaxNameLen is the longest allowed item name, in characters.
 const MaxNameLen = 200
 
+// MaxDescriptionLen is the longest allowed item description, in characters.
+const MaxDescriptionLen = 2000
+
 // input is the request body for creating or replacing an item. httpstore
 // sends the same shape upstream.
 type input struct {
@@ -84,6 +87,8 @@ func (in *input) validate() string {
 		return "name is required"
 	case utf8.RuneCountInString(in.Name) > MaxNameLen:
 		return "name must be at most 200 characters"
+	case utf8.RuneCountInString(in.Description) > MaxDescriptionLen:
+		return "description must be at most 2000 characters"
 	}
 	return ""
 }

@@ -53,6 +53,7 @@ const (
 	KeyFlag      = "flag"
 	KeyDefault   = "default"
 	KeyFallbacks = "fallbacks"
+	KeyCacheTTL  = "cache_ttl"
 
 	// Startup and shutdown.
 	KeyURL     = "url"

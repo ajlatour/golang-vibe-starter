@@ -74,7 +74,7 @@ the code.
 
 `items` is a placeholder resource standing in for the real domain. Request bodies are JSON
 (`{"name": "...", "description": "..."}`). `name` is required, at most 200 characters, and
-trimmed of surrounding whitespace. Bodies are limited to 1 MiB, and unknown fields are rejected.
+trimmed of surrounding whitespace; `description` is optional, at most 2000 characters. Bodies are limited to 1 MiB, and unknown fields are rejected.
 An item ID is 1 to 128 letters, digits, `-` and `_`; no item has any other ID, so any other ID is a
 404, answered by the API without asking the upstream.
 
@@ -153,6 +153,7 @@ The API reads these environment variables:
 | `UPSTREAM_TIMEOUT`    | `5s`       | Timeout for each upstream request.                         |
 | `FLAGS_URL`           |            | flagd OFREP base URL, e.g. `http://flagd:8016`, without a query string or fragment. Unset disables flags. |
 | `FLAGS_TIMEOUT`       | `500ms`    | Timeout for each flag evaluation.                          |
+| `FLAGS_CACHE_TTL`     | `1s`       | How long a flag's value is kept after flagd serves it, so a change in flagd shows within this; during a flagd outage, how often flagd is retried, with the evaluations in between taking their defaults at once. `0s` asks flagd every time. |
 | `FLAGS_FALLBACK_FILE` |            | flagd-format flag file whose defaults replace the embedded `flagd/flags.json`. |
 | `ADDR`                | `:8080`    | Listen address. Takes precedence over `PORT`.              |
 | `PORT`                |            | Listen port, used only when `ADDR` is unset.               |
