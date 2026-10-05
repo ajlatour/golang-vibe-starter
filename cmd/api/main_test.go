@@ -192,8 +192,18 @@ func TestProfiling(t *testing.T) {
 		if code := get(t, "http://"+pprofAddr+"/debug/pprof/heap?debug=1"); code != http.StatusOK {
 			t.Errorf("PPROF_ADDR answers the heap profile with %d, want 200", code)
 		}
-		if code := get(t, "http://"+pprofAddr+"/metrics"); code != http.StatusOK {
-			t.Errorf("PPROF_ADDR answers /metrics with %d, want 200", code)
+		get(t, "http://"+addr+"/healthz")
+		resp, err := http.Get("http://" + pprofAddr + "/metrics")
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("PPROF_ADDR answers /metrics with %d, want 200", resp.StatusCode)
+		}
+		if want := `http_requests_total{route="GET /healthz",method="GET",status="200"} 1`; !strings.Contains(string(body), want) {
+			t.Errorf("/metrics lacks the request just made, %s", want)
 		}
 		for _, path := range []string{"/debug/pprof/", "/metrics"} {
 			if code := get(t, "http://"+addr+path); code != http.StatusNotFound {

@@ -13,6 +13,7 @@ package profiling
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -25,11 +26,11 @@ import (
 
 // Handler serves the pprof index at /debug/pprof/ and every profile under it:
 // profile (CPU), heap, allocs, goroutine, block, mutex, threadcreate, cmdline,
-// symbol and trace. It also serves the runtime metrics at /metrics; see
-// MetricsHandler.
-func Handler() http.Handler {
+// symbol and trace. It also serves the runtime metrics at /metrics, followed
+// by any extra; see MetricsHandler.
+func Handler(extra ...func(io.Writer)) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET "+MetricsPath, MetricsHandler())
+	mux.Handle("GET "+MetricsPath, MetricsHandler(extra...))
 	mux.HandleFunc("GET /debug/pprof/", pprof.Index) // also serves the named profiles
 	mux.HandleFunc("GET /debug/pprof/cmdline", pprof.Cmdline)
 	mux.Handle("GET /debug/pprof/profile", capSeconds(http.HandlerFunc(pprof.Profile)))
@@ -68,9 +69,9 @@ func loopbackOnly(addr net.Addr) bool {
 // The caller listens, so that a bad address fails at startup rather than in
 // the background. An error after that is logged, not returned: profiling is a
 // diagnostic aid, and losing it mustn't stop the API.
-func Serve(ctx context.Context, logger *slog.Logger, ln net.Listener) {
+func Serve(ctx context.Context, logger *slog.Logger, ln net.Listener, extra ...func(io.Writer)) {
 	srv := &http.Server{
-		Handler:           Handler(),
+		Handler:           Handler(extra...),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),

@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"runtime/debug"
+	"sync"
 )
 
 // New returns a logger writing to w at level in the given format ("text" for
@@ -25,15 +26,71 @@ func New(w io.Writer, level slog.Level, format, service, version string) *slog.L
 
 type requestIDKey struct{}
 
+// requestState is what the log lines of one request share: its correlation
+// ID, and what is learned about the request as it's served, by handlers
+// further in. Middleware hands handlers copies of the request (each
+// WithContext makes one), so what the inner ones learn would otherwise be lost
+// to the outer ones; the state is shared by pointer, so every copy sees it.
+// One allocation per request, as storing the ID alone would cost.
+type requestState struct {
+	id string
+
+	mu    sync.Mutex
+	route string
+	attrs []slog.Attr
+	buf   [2]slog.Attr // room for the first attrs without allocating
+}
+
+func state(ctx context.Context) *requestState {
+	s, _ := ctx.Value(requestIDKey{}).(*requestState)
+	return s
+}
+
 // RequestID returns the request's correlation ID, or "" if ctx has none.
 func RequestID(ctx context.Context) string {
-	id, _ := ctx.Value(requestIDKey{}).(string)
-	return id
+	if s := state(ctx); s != nil {
+		return s.id
+	}
+	return ""
+}
+
+// SetRoute records the route pattern the request matched, for the log lines
+// written outside the router, where the request no longer carries it. A
+// context without WithRequestID ignores it.
+func SetRoute(ctx context.Context, route string) {
+	if s := state(ctx); s != nil {
+		s.mu.Lock()
+		s.route = route
+		s.mu.Unlock()
+	}
+}
+
+// Route returns the route recorded with SetRoute, or "".
+func Route(ctx context.Context) string {
+	if s := state(ctx); s != nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.route
+	}
+	return ""
+}
+
+// AddAttrs adds fields to every later log line of the request, those written
+// by outer handlers included, such as which API key made it. A context
+// without WithRequestID ignores them.
+func AddAttrs(ctx context.Context, attrs ...slog.Attr) {
+	if s := state(ctx); s != nil {
+		s.mu.Lock()
+		s.attrs = append(s.attrs, attrs...)
+		s.mu.Unlock()
+	}
 }
 
 // WithRequestID returns a copy of ctx carrying id as the correlation ID.
 func WithRequestID(ctx context.Context, id string) context.Context {
-	return context.WithValue(ctx, requestIDKey{}, id)
+	s := &requestState{id: id}
+	s.attrs = s.buf[:0]
+	return context.WithValue(ctx, requestIDKey{}, s)
 }
 
 // NewContextHandler wraps h so that every record logged with a context
@@ -46,8 +103,11 @@ func NewContextHandler(h slog.Handler) slog.Handler {
 type contextHandler struct{ slog.Handler }
 
 func (h contextHandler) Handle(ctx context.Context, r slog.Record) error {
-	if id := RequestID(ctx); id != "" {
-		r.AddAttrs(slog.String(KeyRequestID, id))
+	if s := state(ctx); s != nil {
+		r.AddAttrs(slog.String(KeyRequestID, s.id))
+		s.mu.Lock()
+		r.AddAttrs(s.attrs...)
+		s.mu.Unlock()
 	}
 	return h.Handler.Handle(ctx, r)
 }

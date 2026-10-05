@@ -96,8 +96,15 @@ numbers for an environment shaped like production.
 
 Three layers, from the lightest. None adds a dependency to the service.
 
-**The API's runtime metrics.** With `PPROF_ADDR` set, the API also serves `/metrics` there:
-every scalar measurement in Go's `runtime/metrics` (goroutines, heap, allocations, GC cycles, CPU
+**The API's request metrics.** With `PPROF_ADDR` set, `/metrics` there has every request the API
+served (`internal/httpmetrics`): `http_requests_total` by route pattern, method and status,
+`http_request_duration_seconds`, a latency histogram by the same labels, and
+`http_requests_in_flight`. They're what you'd alert on in production: the rate, errors and
+duration of each route. A route is the pattern a request matched, `none` for one answered before
+routing (refused by the header guard, authentication or the limits), and an unusual method counts
+as `OTHER`, so no request can create series at will. Recording a request allocates nothing.
+
+**The API's runtime metrics.** The same `/metrics` also has every scalar measurement in Go's `runtime/metrics` (goroutines, heap, allocations, GC cycles, CPU
 spent in GC, and more), with the process's CPU time and, on Linux, its resident memory. They're
 in Prometheus's text format, written with the standard library alone
 (`internal/profiling/metrics.go`) and named as the Prometheus Go client names them, so
@@ -140,8 +147,9 @@ limit on what the API is asked to do. The raw samples are saved next to the k6 s
 | Grafana, `localhost:3000` | Shows the performance dashboard, with no login: it listens on this machine's loopback only |
 
 While the stack is up, `make perf` (any profile) sends k6's results to Prometheus too, so the
-dashboard shows requests per second, latency and errors by route, each container's CPU, memory and
-network, and the API's CPU, heap, allocation rate, GC and goroutines, on one timeline. A soak run
+dashboard shows k6's requests per second, latency and errors by route, the API's own view of the
+same (rate by route, responses by status, p99 by route, requests in flight), each container's CPU,
+memory and network, and the API's CPU, heap, allocation rate, GC and goroutines, on one timeline. A soak run
 (`make perf PROFILE=soak`) is where it pays off: memory or goroutines that climb and don't come
 back down. `make down` stops it all.
 

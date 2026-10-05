@@ -163,7 +163,7 @@ The API reads these environment variables:
 | `MAX_IN_FLIGHT`       | `512`      | The most requests served at once; more get 503 with `Retry-After`. `0` is no cap. |
 | `RATE_LIMIT`          | `100`      | Requests per second each client may make on average; more get 429 with `Retry-After`. A client is its API key, or its IP address without one. `0` is no limit. |
 | `RATE_BURST`          | `200`      | Requests a client may make at once after a quiet spell. |
-| `PPROF_ADDR`          |            | Where to serve the runtime profiles (pprof) and metrics (`/metrics`), e.g. `127.0.0.1:6061`. Unset serves neither. Keep it private: see [Performance](docs/performance.md#profiling). |
+| `PPROF_ADDR`          |            | Where to serve the runtime profiles (pprof) and metrics (`/metrics`: requests by route, and the Go runtime), e.g. `127.0.0.1:6061`. Unset serves neither. Keep it private: see [Performance](docs/performance.md#profiling). |
 | `HEADER_GUARD_MODE`   | `enforce`  | `enforce` rejects requests that break a [header rule](#request-headers); `report` only logs them. |
 | `HEADER_MAX_COUNT`    | `100`      | The most request headers allowed.                          |
 | `HEADER_MAX_BYTES`    | `8192`     | The largest any one request header may be, name and value, in bytes. |

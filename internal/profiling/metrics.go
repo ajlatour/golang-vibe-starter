@@ -3,6 +3,7 @@ package profiling
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"os"
@@ -33,7 +34,10 @@ var startTime = time.Now()
 // The process metrics follow the Prometheus conventions:
 // process_cpu_seconds_total, process_resident_memory_bytes (Linux only, which
 // is what the container runs) and process_start_time_seconds.
-func MetricsHandler() http.Handler {
+//
+// extra writes more metrics after these, such as the service's request
+// metrics (httpmetrics.Recorder.WritePrometheus).
+func MetricsHandler(extra ...func(io.Writer)) http.Handler {
 	descs := scalarMetrics()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		samples := make([]metrics.Sample, len(descs))
@@ -62,6 +66,9 @@ func MetricsHandler() http.Handler {
 		}
 		writeMetric(bw, "go_info", "gauge", "The Go version the binary was built with, as a label.", 1, "version", runtime.Version())
 		writeProcessMetrics(bw)
+		for _, write := range extra {
+			write(bw)
+		}
 		_ = bw.Flush()
 	})
 }

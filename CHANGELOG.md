@@ -54,6 +54,11 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Request metrics on `/metrics` (`internal/httpmetrics`, standard library only):
+  `http_requests_total` and the `http_request_duration_seconds` histogram by route pattern, method
+  and status, and `http_requests_in_flight`. Labels are bounded (the matched pattern, `none`
+  before routing, `OTHER` for unusual methods), and recording a request allocates nothing. The
+  Grafana dashboard has a row for them.
 - `/readyz`, a readiness probe beside `/healthz`: 200 while the instance can reach the upstream (any
   answer counts, an error included), 503 once it starts shutting down. Checks are cached for a
   second, and changes are logged once each way (`not ready`, `ready again`). `SHUTDOWN_DELAY`
@@ -273,6 +278,10 @@ Ideas considered but not planned are listed under
 
 ### Fixed
 
+- The `route` field of every "response sent" line was empty since authentication was added:
+  authentication hands the router a copy of the request, and the route it matched never reached
+  the logging middleware outside. `httpx.RecordRoute` now records it in the request's shared log
+  state, at no extra allocation.
 - Labelling a pull request (Dependabot labels its own as it opens them) no longer cancels its
   performance comparison: only the `perf-ok` label shares the comparison's concurrency group;
   other label changes get their own, and skip.

@@ -19,6 +19,7 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
 	"github.com/ajlatour/golang-vibe-starter/internal/featureflag"
 	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
+	"github.com/ajlatour/golang-vibe-starter/internal/httpmetrics"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
@@ -93,17 +94,20 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		return err
 	}
 
+	// Request metrics: recorded always, served with the runtime's on
+	// PPROF_ADDR when it's set.
+	metrics := httpmetrics.New()
 	if cfg.PprofAddr != "" {
 		ln, err := net.Listen("tcp", cfg.PprofAddr)
 		if err != nil {
 			return fmt.Errorf("PPROF_ADDR: %w", err)
 		}
-		go profiling.Serve(ctx, logger, ln)
+		go profiling.Serve(ctx, logger, ln, metrics.WritePrometheus)
 	}
 
 	// Ready while this instance can reach the upstream, until shutdown.
 	readiness := httpx.NewReadiness(logger, time.Second, time.Second, httpx.Check{Name: "upstream", Fn: store.Reachable})
-	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness},
+	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness, Metrics: metrics},
 		store, item.WithFlags(evaluator))
 	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, handler,
 		httpx.MaxHeaderBytes(serverHeaderLimit(cfg.HeaderGuard)),
@@ -138,6 +142,8 @@ type handlerConfig struct {
 	Limits limit.Policy
 	// Readiness answers /readyz. Nil reports ready, always.
 	Readiness *httpx.Readiness
+	// Metrics records every request, for /metrics. Nil records nothing.
+	Metrics *httpmetrics.Recorder
 }
 
 // newHandler builds the API's root handler. From the outside in: the standard
@@ -163,8 +169,13 @@ func newHandler(logger *slog.Logger, cfg handlerConfig, items item.Store, opts .
 	auth, limits := cfg.Auth, cfg.Limits
 	auth.Exempt = append(slices.Clip(auth.Exempt), probes...)
 	limits.Exempt = append(slices.Clip(limits.Exempt), probes...)
+	var mwOpts []httpx.MiddlewareOption
+	if cfg.Metrics != nil {
+		mwOpts = append(mwOpts, httpx.WithMetrics(cfg.Metrics))
+	}
 	return httpx.Middleware(logger, limit.InFlight(limits,
-		headerguard.Middleware(logger, cfg.Guard, apikey.Middleware(logger, auth, limit.PerClient(limits, mux)))))
+		headerguard.Middleware(logger, cfg.Guard, apikey.Middleware(logger, auth, limit.PerClient(limits, httpx.RecordRoute(mux))))),
+		mwOpts...)
 }
 
 // serverHeaderLimit is how much of a request's line and headers Go's server
