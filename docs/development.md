@@ -20,6 +20,10 @@ How the code is put together, how to change it safely, and how it's tested.
   the flag definitions and the store contract each have tests that fail when the code and the
   description disagree. The next section lists them.
 - **Tests never call Docker.** The integration tests talk HTTP to a stack you start yourself.
+- **The architecture is written down and checked.** [Architecture](architecture.md) has the
+  package dependency rules and the requirements; [decisions](decisions.md) records why.
+  `docs/architecture_test.go` fails when a package imports what the table doesn't allow, or a
+  record is incomplete. A pull request that makes an architectural choice adds a record.
 - **Commands live in the `Makefile`.** `make help` lists them, and CI runs the same targets, so
   what passes locally passes in CI.
 - **Preview documentation before you push.** `make docs-open` renders the README, these guides,
@@ -47,6 +51,8 @@ don't, and its message says what to fix.
 | A route (new or removed) | The traffic mix in `perf/k6.js` | `perf/profiles_test.go` checks the mix covers every operation in `docs/openapi.json` |
 | A Go runtime metric's name, or a k6 percentile on the dashboard | `monitoring/grafana/dashboards/performance.json` | `monitoring/monitoring_test.go` checks the dashboard's metrics exist in `/metrics` and its k6 percentiles are ones `perf/run.sh` sends |
 | A k6 profile or threshold | `perf/profiles.json`, and its row in `docs/performance.md` | `perf/profiles_test.go` checks phases, durations and threshold syntax |
+| A package's imports (a new package, or one importing another it didn't) | The package table in `docs/architecture.md` | `docs/architecture_test.go` |
+| An architectural choice: a new dependency, protocol, protection or pattern | A record in `docs/decisions.md`, superseding any it replaces | `docs/architecture_test.go` checks records are complete and indexed |
 | An environment variable (or its default) | `.env.example` and the Configuration table in the README | `cmd/api/envexample_test.go`: the variables the code reads, the two lists and their defaults must all agree |
 
 Recipes: [adding a log line](logging.md#rules-for-log-lines),

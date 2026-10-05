@@ -1,0 +1,482 @@
+# Architecture decisions
+
+The decisions that shaped this service, one record each: what forced a choice, what was chosen
+and what was turned down, and what follows from it. [Architecture](architecture.md) describes the
+result; these records say why it is that way.
+
+Most were recorded after they were made: their date is that of the commit that made them, which
+is the first place to look for the details.
+
+## How to use these records
+
+- **Before changing something a record covers**, read it: the constraint that forced the choice
+  may still hold.
+- **To change a decision**, add a new record that supersedes the old one. Set the old record's
+  status to "Superseded by ADR-NNNN", and change nothing else in it: the history is the point.
+- **To record a new decision**, copy the template below, take the next number, and add it to the
+  index. Record it in the pull request that makes the change.
+
+`docs/architecture_test.go` checks every record has a status, context, decision and consequences,
+and that the index matches the records.
+
+Template:
+
+```text
+## ADR-NNNN: <the decision, as a short statement>
+
+- **Status:** Proposed | Accepted | Superseded by ADR-NNNN
+- **Date:** YYYY-MM-DD (commit)
+
+**Context.** What forces a choice: the problem, the constraints, the options considered.
+
+**Decision.** What was chosen, in a sentence or two.
+
+**Consequences.** What follows, good and bad, and what holds it in place.
+```
+
+## Index
+
+| ADR | Decision | Status |
+| --- | -------- | ------ |
+| [ADR-0001](#adr-0001-record-architecture-decisions) | Record architecture decisions | Accepted |
+| [ADR-0002](#adr-0002-the-service-uses-the-standard-library-only) | The service uses the standard library only | Accepted |
+| [ADR-0003](#adr-0003-items-live-in-an-upstream-service-behind-a-store-interface) | Items live in an upstream service, behind a store interface | Accepted |
+| [ADR-0004](#adr-0004-wiremock-is-the-local-upstream) | WireMock is the local upstream | Accepted |
+| [ADR-0005](#adr-0005-feature-flags-come-from-flagd-over-ofrep-with-embedded-defaults) | Feature flags come from flagd over OFREP, with embedded defaults | Accepted |
+| [ADR-0006](#adr-0006-logs-are-structured-and-held-to-a-contract) | Logs are structured and held to a contract | Accepted |
+| [ADR-0007](#adr-0007-every-outbound-call-goes-through-one-json-call) | Every outbound call goes through one JSON call | Accepted |
+| [ADR-0008](#adr-0008-the-openapi-spec-is-the-contract-checked-against-the-handlers) | The OpenAPI spec is the contract, checked against the handlers | Accepted |
+| [ADR-0009](#adr-0009-integration-tests-run-gherkin-against-the-composed-stack) | Integration tests run Gherkin against the composed stack | Accepted |
+| [ADR-0010](#adr-0010-configuration-is-environment-variables-documented-and-checked) | Configuration is environment variables, documented and checked | Accepted |
+| [ADR-0011](#adr-0011-tooling-runs-in-docker-or-through-go-run) | Tooling runs in Docker or through go run | Accepted |
+| [ADR-0012](#adr-0012-request-headers-are-screened-before-the-handlers) | Request headers are screened before the handlers | Accepted |
+| [ADR-0013](#adr-0013-pull-requests-are-compared-with-their-base-on-one-runner) | Pull requests are compared with their base on one runner | Accepted |
+| [ADR-0014](#adr-0014-resource-monitoring-adds-containers-not-dependencies) | Resource monitoring adds containers, not dependencies | Accepted |
+| [ADR-0015](#adr-0015-the-domain-driven-restructure-is-deferred) | The domain-driven restructure is deferred | Accepted |
+| [ADR-0016](#adr-0016-clients-authenticate-with-hashed-api-keys) | Clients authenticate with hashed API keys | Accepted |
+| [ADR-0017](#adr-0017-item-ids-are-checked-against-an-allowlist) | Item IDs are checked against an allowlist | Accepted |
+| [ADR-0018](#adr-0018-the-service-sheds-load-itself) | The service sheds load itself | Accepted |
+| [ADR-0019](#adr-0019-outbound-calls-never-follow-redirects) | Outbound calls never follow redirects | Accepted |
+| [ADR-0020](#adr-0020-ci-pins-updates-scans-and-isolates) | CI pins, updates, scans and isolates | Accepted |
+| [ADR-0021](#adr-0021-readiness-means-the-upstream-can-be-reached) | Readiness means the upstream can be reached | Accepted |
+| [ADR-0022](#adr-0022-metrics-are-prometheus-text-served-privately) | Metrics are Prometheus text, served privately | Accepted |
+| [ADR-0023](#adr-0023-a-requests-log-lines-share-state) | A request's log lines share state | Accepted |
+| [ADR-0024](#adr-0024-mains-performance-history-lives-on-a-data-branch) | Main's performance history lives on a data branch | Accepted |
+| [ADR-0025](#adr-0025-ci-keeps-gos-build-cache-not-dockers-layers) | CI keeps Go's build cache, not Docker's layers | Accepted |
+
+## ADR-0001: Record architecture decisions
+
+- **Status:** Accepted
+- **Date:** 2026-10-05
+
+**Context.** The service grew quickly, through many decisions made in pull requests and
+conversations. The code shows what was chosen; nothing showed why, or what was turned down.
+
+**Decision.** Keep architecture decision records, in this one file, in the format above.
+
+**Consequences.** A decision can be revisited knowing its reasons. A record is never edited after
+it's accepted, only superseded, so the log is also a history. One file keeps the records inside
+the docs site and its link checks.
+
+## ADR-0002: The service uses the standard library only
+
+- **Status:** Accepted
+- **Date:** 2026-10-03 (029a3cd)
+
+**Context.** Every dependency is code to audit, update and trust. Go's standard library covers
+HTTP serving and clients, JSON, structured logging (`log/slog`), runtime metrics and profiling.
+
+**Decision.** The service's module has no third-party dependencies. Where a tool would normally
+bring one, the code does the job itself: flags over plain HTTP instead of an OpenFeature SDK
+(ADR-0005), the API spec in JSON instead of YAML (ADR-0008), metrics in Prometheus's text format
+written by hand (ADR-0022). Tooling that needs a dependency gets a module of its own: the
+integration tests (Godog) and the performance report (benchstat's statistics).
+
+**Consequences.** Nothing to update but Go. Some code exists that a library would otherwise
+provide, kept small and tested. `docs/architecture_test.go` fails if the service's `go.mod` gains
+a requirement.
+
+## ADR-0003: Items live in an upstream service, behind a store interface
+
+- **Status:** Accepted
+- **Date:** 2026-10-03 (8012ea7)
+
+**Context.** The service fronts data owned by another system. Its handlers shouldn't depend on
+how that system is reached, and tests shouldn't need it running.
+
+**Decision.** The handlers depend on `item.Store`. The production store, `httpstore`, calls the
+upstream's `/items` routes over HTTP. Tests use an in-memory store, and every store must pass the
+same contract (`itemtest.StoreContract`).
+
+**Consequences.** The upstream can change, or be replaced, by changing `UPSTREAM_URL` or adding a
+store. The service owns no data and no consistency. Upstream failures are the upstream's: 502 or
+504, never 500 (REL-1).
+
+## ADR-0004: WireMock is the local upstream
+
+- **Status:** Accepted
+- **Date:** 2026-10-03 (a81d892)
+
+**Context.** Local development and the integration tests need an upstream. A hand-written mock
+service was the first stand-in; it needed code for every behaviour, faults included.
+
+**Decision.** Use WireMock, with stubs in `wiremock/mappings` and opt-in fault stubs in
+`wiremock/faults`, switched on through its admin API (`make fault`).
+
+**Consequences.** Faults (timeouts, resets, malformed bodies) are a JSON file, not code. WireMock
+keeps no state: a create returns `new-item` and nothing is stored, which the tests and guides
+allow for. It's a JVM, so its warm-up and garbage collection show in load tests' tail latency.
+
+## ADR-0005: Feature flags come from flagd over OFREP, with embedded defaults
+
+- **Status:** Accepted
+- **Date:** 2026-10-03 (705e1f0, 8abd719)
+
+**Context.** The service needs feature flags. OpenFeature is the standard; its Go SDK and
+flagd's gRPC provider would be the first dependencies (ADR-0002). Flags also mustn't become a
+reason for requests to fail.
+
+**Decision.** Run flagd as a sidecar and evaluate flags over OFREP, its plain HTTP/JSON protocol.
+`flagd/flags.json` is both what flagd serves and, compiled into the binary, the fallback when
+flagd can't answer.
+
+**Consequences.** No SDK, and one file defines each flag. A flagd outage costs flag freshness, not
+requests (REL-2), logged once per outage. The service refuses to start if a flag it declares
+isn't defined. Only boolean flags are supported so far.
+
+## ADR-0006: Logs are structured and held to a contract
+
+- **Status:** Accepted
+- **Date:** 2026-10-03 (8ab7b3f, be75964, d68b8aa)
+
+**Context.** Logs are only useful to query and alert on if their messages, levels and fields are
+stable. Free-form log lines drift with every change.
+
+**Decision.** Log with `log/slog`, JSON by default, one line per record. Every field name is a
+constant in `internal/logx/keys.go`; every message is in `logtest.Contract` with its levels and
+required fields, and in the tables of `docs/logging.md`. Every request gets a correlation ID,
+logged as `request_id` and returned in `Client-Correlation-Id`.
+
+**Consequences.** A test fails if the code, the contract and the docs disagree, or if a running
+service writes a line the contract doesn't allow (OBS-1). Adding a log line takes three edits.
+Secrets in URLs are redacted, and a test plants secrets to prove none is logged.
+
+## ADR-0007: Every outbound call goes through one JSON call
+
+- **Status:** Accepted
+- **Date:** 2026-10-04 (fa76e63)
+
+**Context.** The store and the flags client each encoded, sent, capped, decoded and classified
+their failures, slightly differently.
+
+**Decision.** `internal/jsoncall` makes every outbound JSON call: it encodes, sends, caps and
+drains the response, checks the status, decodes, redacts URLs in errors, and classifies failures.
+Each client supplies only what differs.
+
+**Consequences.** A rule for all outbound calls lives in one place: the response cap, error
+redaction, and later the refusal to follow redirects (ADR-0019).
+
+## ADR-0008: The OpenAPI spec is the contract, checked against the handlers
+
+- **Status:** Accepted
+- **Date:** 2026-10-04 (2e0c9c8)
+
+**Context.** An API spec that's written by hand drifts from the code; one generated from code
+needs annotations and tooling.
+
+**Decision.** `docs/openapi.json` is written by hand, in JSON because the standard library has no
+YAML parser. Tests run the real handlers through every documented response of every operation and
+check status, body schema, headers and limits against the spec, and that the code's routes and
+the spec's are the same.
+
+**Consequences.** Changing the API means changing the spec in the same pull request, or a test
+fails (API-1). The tests validate with a small JSON Schema subset written for them, so a schema
+feature they don't understand fails loudly rather than passing.
+
+## ADR-0009: Integration tests run Gherkin against the composed stack
+
+- **Status:** Accepted
+- **Date:** 2026-10-04 (ef95db8)
+
+**Context.** Unit tests run the handlers in-process. Something must also check the real
+container, WireMock and flagd together, without tests that manage Docker themselves.
+
+**Decision.** Godog (Gherkin) scenarios in `integration/`, a module of its own, talk HTTP to a
+stack started separately (`make integration-up`, as CI does). Tests never call Docker.
+
+**Consequences.** Scenarios read as behaviour, and the stack can be inspected while they run.
+Godog is a dependency of the integration module only, never of the service (ADR-0002). Scenarios
+assume WireMock's stubs, and that flagd reloads its file, which `integration/flags_test.go`
+handles with care.
+
+## ADR-0010: Configuration is environment variables, documented and checked
+
+- **Status:** Accepted
+- **Date:** 2026-10-04 (8c85a5f, 41e1d94)
+
+**Context.** The service runs in containers and on platforms that configure through the
+environment. Settings described in several places drift apart.
+
+**Decision.** Every setting is an environment variable with its default in code, read through
+`internal/envconfig`, which collects every invalid value before failing. `.env.example` lists every
+variable with its default, commented out, and the README has a table of them; a test holds the
+code, the file and the table to each other.
+
+**Consequences.** No config files. A typo stops startup with every problem at once (CFG-1). Adding
+a setting takes three edits, or a test fails (CFG-2).
+
+## ADR-0011: Tooling runs in Docker or through go run
+
+- **Status:** Accepted
+- **Date:** 2026-10-04 (a3eba67)
+
+**Context.** Rendering the docs and the spec would normally need pandoc and Node.js (Redocly), and
+load testing k6: each a tool for every contributor to install and keep at the right version.
+
+**Decision.** Run them from pinned Docker images (pandoc, Redocly, k6), and Go tools through
+`go run` at a pinned version (benchstat, pkgsite, govulncheck). No Node.js anywhere.
+
+**Consequences.** Go and Docker are all a contributor installs (DEP-4), and everyone runs the same
+versions. The first run of a target pulls its image.
+
+## ADR-0012: Request headers are screened before the handlers
+
+- **Status:** Accepted
+- **Date:** 2026-10-04 (9d94fb6)
+
+**Context.** Headers are untrusted input that every handler would otherwise have to defend
+against: oversized headers, duplicated single-use headers, bodies that aren't JSON, and proxy or
+method-override headers that could spoof a client's address or method.
+
+**Decision.** `internal/headerguard` screens every request first: limits on header count and size
+(431), single-use headers sent twice (400), bodies not sent as JSON (415), and proxy and override
+headers removed. It can report instead of enforce, for rolling out.
+
+**Consequences.** Handlers can trust what reaches them (SEC-4). Requiring JSON bodies also blocks
+cross-site form posts. Nothing in the service may trust `X-Forwarded-For`, which matters for rate
+limiting behind a proxy (ADR-0018). The limits are configurable; which headers are single-use or
+removed is not.
+
+## ADR-0013: Pull requests are compared with their base on one runner
+
+- **Status:** Accepted
+- **Date:** 2026-10-04 (2236ebf, d94897d)
+
+**Context.** Absolute timings from shared CI runners vary by 10% or more between runners, so a
+number from one run means little. A gate on noisy numbers either blocks good changes or is
+ignored. Of the load tools considered (a hand-written Go generator, Vegeta as a library, k6), k6
+was chosen, run from its image (ADR-0011).
+
+**Decision.** Run each pull request's benchmarks and a short k6 profile against both the pull
+request and its base, interleaved on the same runner, and report the comparison in one comment
+edited on every push. Fail only on what is exact or plainly broken: more allocations per
+operation (unless the pull request has the `perf-ok` label) or crossed load thresholds. Report
+timing, CPU and memory changes as warnings. Write the comment from a job that runs no pull
+request code (ADR-0020).
+
+**Consequences.** Regressions in allocations can't land unnoticed (PERF-2). Timing regressions
+are flagged but need confirming locally (`make perf-compare`). The comparison adds about four
+minutes to a pull request, in parallel with CI.
+
+## ADR-0014: Resource monitoring adds containers, not dependencies
+
+- **Status:** Accepted
+- **Date:** 2026-10-05 (04e0aa5)
+
+**Context.** Load tests need CPU and memory figures beside their latencies. Exporters and client
+libraries would add dependencies to the service.
+
+**Decision.** Three layers: the service serves the Go runtime's own metrics with the standard
+library (ADR-0022); every load run samples `docker stats` and the service's metrics before and
+after; and `make monitor` starts cAdvisor, Prometheus and Grafana as an opt-in compose profile,
+with a dashboard kept in the repository.
+
+**Consequences.** The pull request report includes CPU per request and peak memory. The dashboard
+is local-only and on loopback. cAdvisor needs privileged access to the Docker engine, so it runs
+only when asked for.
+
+## ADR-0015: The domain-driven restructure is deferred
+
+- **Status:** Accepted
+- **Date:** 2026-10-05 (pull request #1, closed)
+
+**Context.** A restructure along domain-driven lines was built: a pure domain package, a name value
+object with its invariants, HTTP handlers and DTOs in their own package, and the store's wire
+types as an anti-corruption layer. Items are a placeholder with CRUD rules only.
+
+**Decision.** Don't adopt it now. Keep `internal/item` as model, store interface and handlers
+together, until a real domain with real rules replaces items.
+
+**Consequences.** Less structure than a growing domain would need. When one arrives, pull request
+#1 shows a worked restructure to start from; its branch was deleted, and GitHub can restore it.
+
+## ADR-0016: Clients authenticate with hashed API keys
+
+- **Status:** Accepted
+- **Date:** 2026-10-05 (f765a76)
+
+**Context.** Anyone who could reach the service could change its data. The options were API keys
+checked in the service, JWT or OIDC (a dependency, or a careful implementation), or leaving it to
+a gateway in front.
+
+**Decision.** API keys, sent as `Authorization: Bearer`. `API_KEYS` lists each key's name, scope
+(read, or read and write) and SHA-256 hash; a request's key is hashed and compared with every
+configured hash in constant time. Keys are 256-bit random values from `make api-key`, so a fast
+hash is safe. Every route but the probes needs a key; the service refuses to start with none,
+unless `API_AUTH=off`, which logs a warning.
+
+**Consequences.** No dependency, and a leaked config holds no usable key (SEC-1, SEC-2). The local
+stack ships two documented development keys, which work only on loopback (ADR-0020). Keys are
+read once at startup, so rotating one needs a restart. A gateway can still be added in front.
+
+## ADR-0017: Item IDs are checked against an allowlist
+
+- **Status:** Accepted
+- **Date:** 2026-10-05 (f3a2197)
+
+**Context.** IDs were path-escaped before going to the upstream, but `%2E%2E` reached it as
+`/items/..`, which an upstream or proxy that normalizes paths, or decodes `%2F`, could route
+elsewhere. Answering 400 or 404 for such an ID was considered.
+
+**Decision.** An item ID is 1 to 128 letters, digits, `-` and `_` (`item.ValidID`). The handlers
+answer any other with 404, as for an item that doesn't exist, without asking the store; the
+store refuses one too.
+
+**Consequences.** No path traversal into the upstream (API-4). The contract didn't change: an
+impossible ID is just an unknown one. An upstream that issues other IDs would need the rule
+widened, in the spec and the code together.
+
+## ADR-0018: The service sheds load itself
+
+- **Status:** Accepted
+- **Date:** 2026-10-05 (810139f)
+
+**Context.** Every request fanned out to the upstream, so a flood passed straight through. Limits
+in a gateway would protect the service only where there is one.
+
+**Decision.** `internal/limit` caps requests in flight (503) before authentication, and limits each
+client with a token bucket (429) after it. A client is its API key, or its address without one.
+Both refuse at once with `Retry-After` rather than queue. The probes are exempt.
+
+**Consequences.** The upstream sees at most the service's capacity (REL-3). Limits are per
+instance. Behind a proxy, keyless clients share the proxy's address, since proxy headers are never
+trusted (ADR-0012). The local stack turns the per-client limit off so load tests measure the
+service.
+
+## ADR-0019: Outbound calls never follow redirects
+
+- **Status:** Accepted
+- **Date:** 2026-10-05 (463a27f)
+
+**Context.** Go's HTTP client follows redirects by default. A compromised or misconfigured
+upstream could send the service to any address it can reach, internal ones included, with the
+request body on a 307 or 308.
+
+**Decision.** `jsoncall` never follows a redirect, whatever client it's given: a 3xx is an
+unexpected status, so a 502. It keeps one no-redirect copy of each client, so this costs nothing
+per call.
+
+**Consequences.** No server-side request forgery through the upstream (SEC-5). An upstream that
+moves must be reconfigured, not followed.
+
+## ADR-0020: CI pins, updates, scans and isolates
+
+- **Status:** Accepted
+- **Date:** 2026-10-05 (546210d, b9a93e9)
+
+**Context.** CI runs third-party actions and images, and the performance workflow writes a comment
+to the pull request: a token with write access in a job that runs the pull request's code.
+
+**Decision.** Pin every action to a commit SHA and every image to a digest; let Dependabot propose
+updates weekly; run govulncheck on every push. Run pull request code only in read-only jobs, and
+post the comment from a job that never checks it out. Publish the local stack on loopback only.
+
+**Consequences.** A moved tag can't change what runs (SEC-8). Updates arrive as reviewable pull
+requests, each with its own performance report. The pandoc and Redocly digests in the Makefile are
+outside what Dependabot reads and are updated by hand.
+
+## ADR-0021: Readiness means the upstream can be reached
+
+- **Status:** Accepted
+- **Date:** 2026-10-05 (1330a94)
+
+**Context.** A load balancer needs to know which instances to send traffic to. If readiness
+followed the upstream's health, an upstream problem would take every instance out of service at
+once, turning partial failure into total outage.
+
+**Decision.** `/readyz` is ready while the service can reach the upstream (any HTTP answer counts,
+an error included) and isn't shutting down. `/healthz` stays the liveness check. Results are
+cached for a second. `SHUTDOWN_DELAY` keeps serving after SIGTERM, reporting not ready.
+
+**Consequences.** Instance-local problems (network, DNS, configuration) take an instance out of
+service; upstream problems surface as 502s from every instance instead (REL-4). Deploys can drain
+cleanly (REL-5).
+
+## ADR-0022: Metrics are Prometheus text, served privately
+
+- **Status:** Accepted
+- **Date:** 2026-10-05 (04e0aa5, 8b47875)
+
+**Context.** Operators need request rates, errors and latencies, and the runtime's state. The
+Prometheus client library would be a dependency (ADR-0002). Profiles and metrics also reveal
+internals.
+
+**Decision.** Write Prometheus's text format with the standard library: every scalar from
+`runtime/metrics`, and per-route request counts and latency histograms (`internal/httpmetrics`)
+with bounded labels and no allocation per request. Serve them, with pprof, on `PPROF_ADDR` only:
+off by default, never the API's port.
+
+**Consequences.** Any Prometheus can scrape the service (OBS-3), and `make monitor` does. Names
+follow the Prometheus Go client's, so dashboards carry over. Exposure is the deployment's to keep
+private; the service warns when it listens beyond loopback (SEC-6).
+
+## ADR-0023: A request's log lines share state
+
+- **Status:** Accepted
+- **Date:** 2026-10-05 (8b47875, c3cd08b)
+
+**Context.** Middleware hands inner handlers copies of the request. What an inner handler learned
+(the route the router matched, the API key that authenticated) never reached the outer logging
+middleware: the `route` field of every "response sent" line was empty once authentication was
+added.
+
+**Decision.** The correlation ID's context value is a small per-request state, shared by every
+copy of the request, which inner handlers add to: `httpx.RecordRoute` records the route, and
+authentication adds the key's name to every later log line. It costs the one allocation storing
+the ID already did.
+
+**Consequences.** Every line of a request carries its ID, route and key (OBS-2), with no change to
+handler signatures. Anything else learned deep in a request can be logged the same way.
+
+## ADR-0024: Main's performance history lives on a data branch
+
+- **Status:** Accepted
+- **Date:** 2026-10-05 (9f7c99b)
+
+**Context.** Pull request comparisons (ADR-0013) catch a change worse than its base, not a slow
+drift across merges. Dashboards and benchmark services need hosting; GitHub Pages needs a paid
+plan for a private repository.
+
+**Decision.** After every merge, measure `main` alone and save one JSON record per commit on the
+`perf-data` branch. `make perf-trends` charts the records as a standalone HTML page, drawn with
+inline SVG by the report tool.
+
+**Consequences.** The history lives in git, with no service to run (PERF-3). The recording job is
+the only one that writes to the repository, only to that branch, and runs only merged code.
+Timings carry the runners' noise; allocations, being exact, chart cleanly.
+
+## ADR-0025: CI keeps Go's build cache, not Docker's layers
+
+- **Status:** Accepted
+- **Date:** 2026-10-05 (80c5283)
+
+**Context.** CI spent most of the image build compiling from an empty Go build cache. Docker's
+layer cache (through `docker/bake-action`) wouldn't help: nearly every pull request changes Go
+code, which invalidates the compile layer.
+
+**Decision.** Keep Go's own build cache between runs with `actions/cache`, fed into the image
+build as an optional build context and exported after it (`scripts/build-api-image.sh`).
+
+**Consequences.** Only changed packages recompile: the integration job's image build went from 40s
+to 29s. Local builds are unchanged. The cache is keyed on the Dockerfile and `go.mod`, so a new Go
+version starts afresh rather than growing the old cache.

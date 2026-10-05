@@ -184,6 +184,9 @@ start otherwise, so a typo can't switch a limit off.
 pages, the changelog and the API spec, with links between them. `make godoc` serves the Go package
 documentation (the code's doc comments) at http://localhost:6060.
 
+- [Architecture](docs/architecture.md): how the service is built, from its context to its
+  packages, and its requirements, each with the test that verifies it.
+- [Architecture decisions](docs/decisions.md): why it's built that way, one record per decision.
 - [Calling the API](docs/curl.md): `scripts/api` and plain curl examples for every route, error
   and header rule.
 - [Performance](docs/performance.md): Go benchmarks, k6 load, stress, spike and soak tests,
@@ -203,13 +206,17 @@ documentation (the code's doc comments) at http://localhost:6060.
 
 ```
 cmd/api/                 API service: config, wiring, Dockerfile
+cmd/apikey/              Generates an API key and its API_KEYS entry (make api-key)
 internal/item/           Item model, Store interface, /items handlers
 internal/item/httpstore/ The production Store: items on the upstream over HTTP,
                          and UpstreamError (502/504) when the upstream fails
 internal/httpx/          HTTP plumbing: graceful Serve, middleware (correlation IDs,
-                         request logging), JSON helpers, healthcheck probe
+                         request logging), JSON helpers, the health and readiness probes
 internal/headerguard/    Screens every request's headers: limits, duplicates, JSON
                          bodies, and stripping proxy and override headers
+internal/apikey/         API key authentication: hashed keys, read and write scopes
+internal/limit/          The cap on requests in flight, and each client's rate limit
+internal/httpmetrics/    Request metrics per route, in Prometheus's text format
 internal/envconfig/      Reading configuration from environment variables, and the
                          settings every service shares (address, logging, shutdown)
 internal/logx/           Logging toolkit: logger, the Key field names, request-ID
@@ -224,6 +231,7 @@ internal/profiling/      Serves pprof and runtime metrics on their own listener 
 internal/logtest/        Capture and parse JSON logs in tests; the log contract
 internal/nettest/        Dead, hanging, dropping and failing upstream stubs for tests
 scripts/api              Calls the API with curl; see docs/curl.md
+scripts/build-api-image.sh  Builds the API's image, keeping Go's build cache (CI)
 perf/                    k6 load profiles, the scripts that run them, and the PR report
 monitoring/              Prometheus and Grafana config for make monitor
 flagd/                   Feature flag definitions: served by flagd, and embedded
@@ -237,5 +245,5 @@ integration/             Godog end-to-end tests against the composed stack (own 
 compose.yaml             Local stack: api + WireMock + flagd
 compose.integration.yaml Compose overrides for the integration tests (ignores .env)
 .env.example             Every setting the API reads, with its default
-.github/workflows/       CI: unit tests, then the integration tests against the stack
+.github/workflows/       CI, the pull request performance report, and main's performance record
 ```

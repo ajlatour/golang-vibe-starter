@@ -54,6 +54,12 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Architecture documentation. [Architecture](docs/architecture.md) covers the context and scope,
+  the request path, the packages and their dependency rules, runtime behaviour, deployment, and 36
+  requirements, each naming what verifies it. [Architecture decisions](docs/decisions.md) has 25
+  records of why it's built that way. `docs/architecture_test.go` holds both to the code: the
+  service's `go.mod` requires nothing, packages import only what the table allows, every path
+  named exists, and every record is complete and indexed.
 - Performance over time ([trends](docs/performance.md#trends)): after every merge, a new workflow
   measures `main` (benchmarks and the `compare` load profile) and saves one JSON record per commit
   on the `perf-data` branch. `make perf-trends` charts them as a standalone HTML page, drawn by
