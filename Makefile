@@ -48,7 +48,7 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
 	lint api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint \
-	perf perf-profile bench bench-compare load-compare perf-compare perf-trends monitor
+	release-prepare release-tag perf perf-profile bench bench-compare load-compare perf-compare perf-trends monitor
 
 ##@ Help
 
@@ -213,6 +213,27 @@ perf-compare: ## Both comparisons, written up as the pull request comment CI pos
 		-bench-base $(BENCH_OUT)/base.txt -bench-head $(BENCH_OUT)/head.txt \
 		-load $(LOAD_OUT) $$([ $$status -ne 0 ] && echo -load-failed) > bin/perf/report.md || status=$$?; \
 	echo "The report is in bin/perf/report.md"; exit $$status
+
+##@ Releasing (see docs/releasing.md)
+
+release-prepare: ## Turn Unreleased into VERSION on a branch, for a pull request: make release-prepare VERSION=v0.1.0
+	@echo "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "usage: make release-prepare VERSION=vX.Y.Z"; exit 2; }
+	@[ "$$(git rev-parse --abbrev-ref HEAD)" = main ] || { echo "switch to main first"; exit 1; }
+	@[ -z "$$(git status --porcelain)" ] || { echo "commit or stash your changes first"; exit 1; }
+	git pull -q --ff-only origin main
+	git checkout -q -b release-$(VERSION)
+	sh scripts/changelog.sh cut $(VERSION)
+	git commit -q -am "Release $(VERSION)"
+	@echo "Now push release-$(VERSION), open a pull request, and once it's merged: make release-tag VERSION=$(VERSION)"
+
+release-tag: ## Tag VERSION on main and push the tag, which publishes the release: make release-tag VERSION=v0.1.0
+	@echo "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "usage: make release-tag VERSION=vX.Y.Z"; exit 2; }
+	@[ "$$(git rev-parse --abbrev-ref HEAD)" = main ] || { echo "switch to main first"; exit 1; }
+	git pull -q --ff-only origin main
+	@sh scripts/changelog.sh notes $(VERSION) >/dev/null
+	git tag -a $(VERSION) -m "Release $(VERSION)"
+	git push origin $(VERSION)
+	@echo "Pushed $(VERSION): the Release workflow builds, publishes and announces it."
 
 ##@ Documentation (rendered in Docker; nothing to install)
 

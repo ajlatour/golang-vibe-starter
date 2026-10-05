@@ -209,6 +209,8 @@ says so.
 | CFG-2 | The code, `.env.example` and the README agree on every setting and default. | Documentation can be trusted | `cmd/api/envexample_test.go` |
 | TST-1 | Tests never start or call Docker; the integration tests talk HTTP to a stack started separately. | Fast, portable tests (ADR-0009) | Review: `integration/` |
 | TST-2 | CI runs the same `make` targets a contributor runs. | What passes locally passes in CI | Review: `.github/workflows/ci.yml` |
+| DEL-1 | A release is a version tag on a commit on `main`, with a section in the changelog; nothing else publishes an image. | What's released is what was reviewed and merged (ADR-0027) | `docs/changelog_test.go`, review: `.github/workflows/release.yml` |
+| DEL-2 | Every released image is built for linux/amd64 and linux/arm64 from the tagged commit, with an SBOM and build provenance attached. | Users can see what's in an image and how it was made (ADR-0027) | Review: `.github/workflows/release.yml` |
 | TST-3 | Code that handles untrusted input is fuzzed. | Finds what examples miss | `internal/httpx/fuzz_test.go`, `internal/headerguard/fuzz_test.go`, `internal/item/fuzz_test.go`, `internal/apikey/fuzz_test.go`, `internal/httpmetrics/fuzz_test.go` |
 
 ## Constraints and assumptions
@@ -228,5 +230,6 @@ What a production deployment would still want, and isn't here yet:
 
 - **Key rotation needs a restart:** `API_KEYS` is read once.
 - **No user identities:** clients are API keys, not people or OIDC tokens.
-- **No release process:** no tagged versions or published image.
+- **Images aren't signed:** releases carry provenance, but no signature
+  ([Releasing](releasing.md#not-yet)).
 - **No distributed tracing:** the correlation ID covers this service only.
