@@ -102,7 +102,7 @@ func guideServer(t *testing.T) (*httptest.Server, *recorder) {
 		routes.HandleFunc(pattern, func(http.ResponseWriter, *http.Request) {})
 	}
 	rec := &recorder{
-		next:   newHandler(slog.New(slog.DiscardHandler), headerguard.DefaultPolicy(), composeAuth(t), store),
+		next:   newHandler(slog.New(slog.DiscardHandler), headerguard.DefaultPolicy(), composeAuth(t), noLimits, store),
 		routes: routes,
 	}
 	srv := httptest.NewServer(rec)

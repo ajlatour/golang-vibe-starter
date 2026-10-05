@@ -4,12 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
 	"github.com/ajlatour/golang-vibe-starter/internal/envconfig"
 	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
+	"github.com/ajlatour/golang-vibe-starter/internal/limit"
 )
 
 // config is the API's environment configuration: the shared server settings
@@ -41,6 +43,9 @@ type config struct {
 	// need one (API_AUTH_READS), or nobody checked at all (API_AUTH=off).
 	// run refuses to start with it on and no keys.
 	Auth apikey.Policy
+
+	// Limits caps requests in flight, and each client's rate.
+	Limits limit.Policy
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
@@ -85,7 +90,20 @@ func loadConfig(getenv func(string) string) (config, error) {
 		Exempt:    []string{httpx.HealthzPath},
 	}
 
+	// Limits: on by default, generous enough that a well-behaved client never
+	// meets them. The healthcheck is exempt, so a busy service isn't also
+	// restarted by its own probe.
+	cfg.Limits = limit.Policy{
+		MaxInFlight: envconfig.Optional(env, "MAX_IN_FLIGHT", 512, strconv.Atoi),
+		Rate:        envconfig.Optional(env, "RATE_LIMIT", 100.0, parseRate),
+		Burst:       envconfig.Optional(env, "RATE_BURST", 200, strconv.Atoi),
+		Exempt:      []string{httpx.HealthzPath},
+	}
+
 	errs := []error{srvErr, env.Err()}
+	if err := cfg.Limits.Validate(); err != nil && env.Err() == nil {
+		errs = append(errs, err)
+	}
 	if err := guard.Validate(); err != nil && env.Err() == nil {
 		errs = append(errs, fmt.Errorf("HEADER_MAX_BYTES, HEADER_MAX_TOTAL_BYTES: %w", err))
 	}
@@ -131,4 +149,9 @@ func parseOpenReads(v string) (bool, error) {
 		return true, nil
 	}
 	return false, fmt.Errorf("want required or open, got %q", v)
+}
+
+// parseRate reads RATE_LIMIT: requests per second, 0 for no limit.
+func parseRate(v string) (float64, error) {
+	return strconv.ParseFloat(v, 64)
 }

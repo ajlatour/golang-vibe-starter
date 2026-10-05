@@ -19,6 +19,11 @@ Ideas considered but not planned are listed under
   logged as a warning), and `API_AUTH_READS=open` lets reads through without a key. The compose
   stack sets two documented development keys, which `scripts/api`, k6 and the integration tests
   use; `scripts/api` sends one only to the local stack.
+- Limits (`internal/limit`): at most `MAX_IN_FLIGHT` requests (512) are served at once, and more
+  get 503, before authentication, so floods without a valid key are capped too; and each client,
+  its API key or else its IP address, may make `RATE_LIMIT` requests a second (100) in bursts of
+  `RATE_BURST` (200), and more get 429. Both set `Retry-After`, and `/healthz` is exempt. The
+  compose stack turns the per-client limit off, so load tests measure the API.
 - Item IDs are checked before they reach the upstream: an ID must be 1 to 128 letters, digits,
   `-` and `_` (`item.ValidID`), and any other is a 404 that never leaves the API. Before, an ID
   such as `%2E%2E` reached the upstream as `/items/..`, which an upstream or proxy that

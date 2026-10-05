@@ -59,6 +59,9 @@ include `.git`; without it, container logs show `version=devel`.
 | `api_key`     | `request refused by authentication` | The name of the API key, as configured in `API_KEYS`; never the key. |
 | `api_keys`    | `using API keys`       | The configured keys' names and scopes, e.g. `ci (write), dashboard (read)`. |
 | `reads`       | `using API keys`       | Whether reads need a key: `required` or `open` (`API_AUTH_READS`). |
+| `max_in_flight` | `using limits`       | The cap on requests being served at once (`MAX_IN_FLIGHT`). |
+| `rate_limit`  | `using limits`         | Requests per second each client may make on average (`RATE_LIMIT`). |
+| `rate_burst`  | `using limits`         | Requests a client may make at once after a quiet spell (`RATE_BURST`). |
 | `mode`        | `using header guard`   | `enforce` or `report` (`HEADER_GUARD_MODE`).                 |
 | `max_headers` | `using header guard`   | The header count limit in force (`HEADER_MAX_COUNT`).        |
 | `max_header_bytes` | `using header guard` | The per-header size limit in force, in bytes (`HEADER_MAX_BYTES`). |
@@ -96,6 +99,7 @@ upstream, comes back, and leaves the API.
 | `using feature flags` | INFO | `url`, `timeout` | Startup, with `FLAGS_URL` set. |
 | `using API keys` | INFO | `api_keys`, `reads` | Startup: the names and scopes of the configured keys (never the keys), and whether reads need one. |
 | `authentication is off: every request is allowed` | WARN | none | Startup, with `API_AUTH=off`. For local development only. |
+| `using limits` | INFO | `max_in_flight`, `rate_limit`, `rate_burst` | Startup: the cap on requests in flight and the per-client rate limit in force (0 is none). |
 | `using header guard` | INFO | `mode`, `max_headers`, `max_header_bytes`, `max_total_bytes` | Startup: the header rules actually in force, after any overrides. |
 | `feature flags: no FLAGS_URL, using default values only` | INFO | none | Startup, with `FLAGS_URL` unset. |
 | `server started` | INFO | `addr` | The server is listening. |

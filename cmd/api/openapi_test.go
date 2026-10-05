@@ -26,6 +26,7 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
+	"github.com/ajlatour/golang-vibe-starter/internal/limit"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
 )
 
@@ -231,15 +232,35 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), store, item.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID
+		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), noLimits, store, item.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID
+	case "ratelimited":
+		// The test client (its key) has spent its only token, and gets
+		// another in about 11 days.
+		limits := limit.Policy{Rate: 1e-6, Burst: 1}
+		h := newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), limits, itemtest.NewMemStore())
+		warm := httptest.NewRequest("GET", "/items", nil)
+		warm.Header.Set("Authorization", "Bearer "+testWriteKey)
+		h.ServeHTTP(httptest.NewRecorder(), warm)
+		return h, ""
+	case "overloaded":
+		// The one request the service takes at once is stuck in the store.
+		store := blockingStore{entered: make(chan struct{}), release: make(chan struct{})}
+		h := newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), limit.Policy{MaxInFlight: 1}, store)
+		stuck := httptest.NewRequest("GET", "/items", nil)
+		stuck.Header.Set("Authorization", "Bearer "+testWriteKey)
+		done := make(chan struct{})
+		go func() { h.ServeHTTP(httptest.NewRecorder(), stuck); close(done) }()
+		<-store.entered
+		t.Cleanup(func() { close(store.release); <-done })
+		return h, ""
 	case "internal":
-		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), errStore{}), ""
+		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), noLimits, errStore{}), ""
 	case "badgw":
-		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})), ""
+		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), noLimits, httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})), ""
 	case "timeout":
 		upstream := httptest.NewServer(http.HandlerFunc(nettest.Hang))
 		t.Cleanup(upstream.Close)
-		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})), ""
+		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), noLimits, httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})), ""
 	}
 	t.Fatalf("unknown environment %q", env)
 	return nil, ""
@@ -370,6 +391,26 @@ func scenarios(t *testing.T, s *spec) []scenario {
 				name: o.Key() + " with a read-only key", env: "ok", method: method, path: path, op: o.Key(),
 				body: body, header: http.Header{"Authorization": {"Bearer " + testReadKey}}, want: http.StatusForbidden,
 				exempt: "refused for its key, not its body",
+			})
+		}
+	}
+
+	// The limits (internal/limit), for every operation but the healthcheck,
+	// which is exempt: over the client's rate (429), and with the service
+	// full (503).
+	for _, o := range s.operations(t) {
+		if o.Path == "/healthz" {
+			continue
+		}
+		path := strings.ReplaceAll(o.Path, "{id}", "x")
+		body := ""
+		if _, has := o.Op["requestBody"]; has {
+			body = okBody
+		}
+		for env, want := range map[string]int{"ratelimited": http.StatusTooManyRequests, "overloaded": http.StatusServiceUnavailable} {
+			list = append(list, scenario{
+				name: o.Key() + " " + env, env: env, method: strings.ToUpper(o.Method), path: path, op: o.Key(),
+				body: body, want: want, exempt: "refused for its rate, not its body",
 			})
 		}
 	}
@@ -625,7 +666,7 @@ func TestOpenAPIItemIDMatchesBehavior(t *testing.T) {
 	}
 
 	asked := false
-	handler := newHandler(slog.New(slog.DiscardHandler), headerguard.DefaultPolicy(), noAuth, spyStore{asked: &asked})
+	handler := newHandler(slog.New(slog.DiscardHandler), headerguard.DefaultPolicy(), noAuth, noLimits, spyStore{asked: &asked})
 	for _, id := range []string{
 		"widget", "new-item", "x_1", strings.Repeat("a", 128), strings.Repeat("a", 129),
 		".", "..", "%2E%2E", "..%2F..%2Fadmin", "a%2Fb", "a%20b", "x%3Fq", "%C3%A9",
@@ -675,3 +716,26 @@ func (s spyStore) Update(context.Context, item.Item) (item.Item, error) {
 	return item.Item{}, item.ErrNotFound
 }
 func (s spyStore) Delete(context.Context, string) error { *s.asked = true; return item.ErrNotFound }
+
+// blockingStore holds every call until release is closed, after saying on
+// entered that one has arrived.
+type blockingStore struct{ entered, release chan struct{} }
+
+func (s blockingStore) wait() { s.entered <- struct{}{}; <-s.release }
+func (s blockingStore) List(context.Context) ([]item.Item, error) {
+	s.wait()
+	return nil, nil
+}
+func (s blockingStore) Get(context.Context, string) (item.Item, error) {
+	s.wait()
+	return item.Item{}, item.ErrNotFound
+}
+func (s blockingStore) Create(context.Context, item.Item) (item.Item, error) {
+	s.wait()
+	return item.Item{}, nil
+}
+func (s blockingStore) Update(context.Context, item.Item) (item.Item, error) {
+	s.wait()
+	return item.Item{}, nil
+}
+func (s blockingStore) Delete(context.Context, string) error { s.wait(); return nil }

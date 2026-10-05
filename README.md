@@ -87,6 +87,7 @@ Errors are JSON, `{"error":"..."}`:
 - 401: no API key, or not a valid one (with `WWW-Authenticate: Bearer`)
 - 403: a write with a read-only API key
 - 404: unknown ID
+- 429: over the client's rate limit (with `Retry-After`)
 - 415: a request body not sent as `Content-Type: application/json`
 - 422: validation failure
 - 431: request headers over a size limit
@@ -94,6 +95,7 @@ Errors are JSON, `{"error":"..."}`:
 - 502: the upstream couldn't give a usable answer: connection refused or reset, an error status,
   or a body that won't decode. The body is just `{"error":"bad gateway"}`; the upstream's message
   is logged, not returned
+- 503: the service is serving as many requests as it takes at once (with `Retry-After`)
 - 504: the upstream didn't answer within `UPSTREAM_TIMEOUT` (`{"error":"gateway timeout"}`)
 
 Every response carries a `Client-Correlation-Id` header. Send your own to tie the service's log
@@ -150,6 +152,9 @@ The API reads these environment variables:
 | `API_KEYS`            | (required) | API keys: comma-separated `name:scope:sha256` entries, scope `read` or `write`. `make api-key NAME=<who> SCOPE=read\|write` generates one. Only the key's hash goes here. Required unless `API_AUTH=off`. |
 | `API_AUTH`            | `on`       | `off` lets every request through without a key: local development only, and logged as a warning. |
 | `API_AUTH_READS`      | `required` | `open` lets reads (`GET`) through without a key; a key that is sent must still be valid. |
+| `MAX_IN_FLIGHT`       | `512`      | The most requests served at once; more get 503 with `Retry-After`. `0` is no cap. |
+| `RATE_LIMIT`          | `100`      | Requests per second each client may make on average; more get 429 with `Retry-After`. A client is its API key, or its IP address without one. `0` is no limit. |
+| `RATE_BURST`          | `200`      | Requests a client may make at once after a quiet spell. |
 | `PPROF_ADDR`          |            | Where to serve the runtime profiles (pprof) and metrics (`/metrics`), e.g. `127.0.0.1:6061`. Unset serves neither. Keep it private: see [Performance](docs/performance.md#profiling). |
 | `HEADER_GUARD_MODE`   | `enforce`  | `enforce` rejects requests that break a [header rule](#request-headers); `report` only logs them. |
 | `HEADER_MAX_COUNT`    | `100`      | The most request headers allowed.                          |

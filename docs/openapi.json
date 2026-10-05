@@ -46,6 +46,8 @@
           },
           "400": { "$ref": "#/components/responses/DuplicateHeader" },
           "431": { "$ref": "#/components/responses/HeadersTooLarge" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
@@ -81,6 +83,8 @@
           "422": { "$ref": "#/components/responses/Unprocessable" },
           "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
           "431": { "$ref": "#/components/responses/HeadersTooLarge" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "500": { "$ref": "#/components/responses/InternalError" },
@@ -108,6 +112,8 @@
           "404": { "$ref": "#/components/responses/NotFound" },
           "400": { "$ref": "#/components/responses/DuplicateHeader" },
           "431": { "$ref": "#/components/responses/HeadersTooLarge" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
@@ -136,6 +142,8 @@
           "422": { "$ref": "#/components/responses/Unprocessable" },
           "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
           "431": { "$ref": "#/components/responses/HeadersTooLarge" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "500": { "$ref": "#/components/responses/InternalError" },
@@ -154,6 +162,8 @@
           "404": { "$ref": "#/components/responses/NotFound" },
           "400": { "$ref": "#/components/responses/DuplicateHeader" },
           "431": { "$ref": "#/components/responses/HeadersTooLarge" },
+          "429": { "$ref": "#/components/responses/TooManyRequests" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "500": { "$ref": "#/components/responses/InternalError" },
@@ -192,6 +202,11 @@
         "required": true,
         "description": "The request's correlation ID: yours if you sent a valid one, otherwise one the service generated.",
         "schema": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" }
+      },
+      "RetryAfter": {
+        "required": true,
+        "description": "Seconds to wait before retrying.",
+        "schema": { "type": "string", "pattern": "^[0-9]+$" }
       }
     },
     "schemas": {
@@ -277,6 +292,22 @@
       "Forbidden": {
         "description": "The API key may only read.",
         "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "TooManyRequests": {
+        "description": "Over the client's rate limit: by default 100 requests a second on average, in bursts of up to 200 (RATE_LIMIT, RATE_BURST). A client is its API key, or its IP address without one. Retry after the given number of seconds.",
+        "headers": {
+          "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" },
+          "Retry-After": { "$ref": "#/components/headers/RetryAfter" }
+        },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "ServiceUnavailable": {
+        "description": "The service is serving as many requests as it takes at once (MAX_IN_FLIGHT, 512 by default). Retry after the given number of seconds.",
+        "headers": {
+          "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" },
+          "Retry-After": { "$ref": "#/components/headers/RetryAfter" }
+        },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "HeadersTooLarge": {

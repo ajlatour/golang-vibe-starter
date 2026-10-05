@@ -30,6 +30,7 @@ var Contract = map[string]Message{
 	"using feature flags": {[]string{"INFO"}, []string{"url", "timeout"}},
 	"using header guard":  {[]string{"INFO"}, []string{"mode", "max_headers", "max_header_bytes", "max_total_bytes"}},
 	"using API keys":      {[]string{"INFO"}, []string{"api_keys", "reads"}},
+	"using limits":        {[]string{"INFO"}, []string{"max_in_flight", "rate_limit", "rate_burst"}},
 	"authentication is off: every request is allowed":        {[]string{"WARN"}, nil},
 	"feature flags: no FLAGS_URL, using default values only": {[]string{"INFO"}, nil},
 	"server started":           {[]string{"INFO"}, []string{"addr"}},
@@ -70,7 +71,7 @@ var Contract = map[string]Message{
 // OutsideRequests lists the messages that are logged outside any request, and
 // so legitimately have no request_id. Every other message has one.
 var OutsideRequests = []string{
-	"using upstream", "using feature flags", "using header guard", "using API keys",
+	"using upstream", "using feature flags", "using header guard", "using API keys", "using limits",
 	"authentication is off: every request is allowed", "feature flags: no FLAGS_URL, using default values only",
 	"server started", "shutting down", "server stopped", "profiling server started", "profiling server failed",
 	"profiling server is reachable beyond this machine; keep its port private",
