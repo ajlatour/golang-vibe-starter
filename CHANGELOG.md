@@ -268,6 +268,9 @@ Ideas considered but not planned are listed under
 
 ### Fixed
 
+- Labelling a pull request (Dependabot labels its own as it opens them) no longer cancels its
+  performance comparison: only the `perf-ok` label shares the comparison's concurrency group;
+  other label changes get their own, and skip.
 - The pull request load comparison measured the pull request against itself: `docker compose run`
   restarted the API on compose's default image before every k6 run, replacing the base's image.
   k6 now runs with `--no-deps`, and `perf/load-ab.sh` checks after every run that the API ran the

@@ -26,8 +26,15 @@ on:
 permissions:
   contents: read
 
+# A newer push to the pull request cancels the comparison in progress. A label
+# change other than perf-ok gets a group of its own: it skips every job, and
+# sharing the group would only cancel the real comparison (Dependabot, for
+# one, adds labels the moment it opens a pull request).
 concurrency:
-  group: perf-${{ github.event.pull_request.number }}
+  group: >-
+    perf-${{ github.event.pull_request.number }}-${{
+    ((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'perf-ok')
+    && github.run_id || 'compare' }}
   cancel-in-progress: true
 
 env:
