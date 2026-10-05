@@ -54,3 +54,24 @@ func TestMiddleware(t *testing.T) {
 		})
 	}
 }
+
+// TestDefensiveHeadersAreNotShared checks a handler that adds to a defensive
+// header changes only its own response, though every response starts from
+// the same values.
+func TestDefensiveHeadersAreNotShared(t *testing.T) {
+	h := Middleware(slog.New(slog.DiscardHandler), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/private" {
+			w.Header().Add("Cache-Control", "private")
+		}
+	}))
+	first := httptest.NewRecorder()
+	h.ServeHTTP(first, httptest.NewRequest("GET", "/private", nil))
+	second := httptest.NewRecorder()
+	h.ServeHTTP(second, httptest.NewRequest("GET", "/other", nil))
+	if got := first.Header()["Cache-Control"]; len(got) != 2 {
+		t.Errorf("the first response's Cache-Control = %q, want no-store and private", got)
+	}
+	if got := second.Header()["Cache-Control"]; len(got) != 1 || got[0] != "no-store" {
+		t.Errorf("the next response's Cache-Control = %q: the first one's Add leaked into it", got)
+	}
+}

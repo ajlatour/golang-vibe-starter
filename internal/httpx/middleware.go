@@ -24,11 +24,20 @@ func Middleware(logger *slog.Logger, h http.Handler) http.Handler {
 // of what may be a client's data.
 func defensiveHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Cache-Control", "no-store")
+		// Assigned, not Set, so every response shares these values instead of
+		// allocating its own. Each slice's length is its capacity, so a later
+		// Add appends to a copy, never to the shared array.
+		h := w.Header()
+		h["X-Content-Type-Options"] = nosniff
+		h["Cache-Control"] = noStore
 		next.ServeHTTP(w, r)
 	})
 }
+
+var (
+	nosniff = []string{"nosniff"}
+	noStore = []string{"no-store"}
+)
 
 // StatusClientClosedRequest is the status logged (and sent, though no one is
 // listening) when the client disconnects before the response is ready. It is
