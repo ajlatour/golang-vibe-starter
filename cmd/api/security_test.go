@@ -29,6 +29,7 @@ func TestDefensiveHeaders(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			handler, _ := handlerFor(t, tt.env)
 			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+			req.Header.Set("Authorization", "Bearer "+testWriteKey)
 			if tt.contentType != "" {
 				req.Header.Set("Content-Type", tt.contentType)
 			}
@@ -37,12 +38,28 @@ func TestDefensiveHeaders(t *testing.T) {
 			if rec.Code != tt.want {
 				t.Fatalf("status %d, want %d", rec.Code, tt.want)
 			}
-			for name, want := range map[string]string{"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"} {
-				if got := rec.Header().Get(name); got != want {
-					t.Errorf("%s = %q, want %q", name, got, want)
-				}
-			}
+			checkDefensiveHeaders(t, rec)
 		})
+	}
+	t.Run("an authentication refusal", func(t *testing.T) {
+		handler, _ := handlerFor(t, "ok")
+		req := httptest.NewRequest("DELETE", "/items/x", nil)
+		req.Header.Set("Authorization", "Bearer "+testReadKey)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != 403 {
+			t.Fatalf("status %d, want 403", rec.Code)
+		}
+		checkDefensiveHeaders(t, rec)
+	})
+}
+
+func checkDefensiveHeaders(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	for name, want := range map[string]string{"X-Content-Type-Options": "nosniff", "Cache-Control": "no-store"} {
+		if got := rec.Header().Get(name); got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
 	}
 }
 
@@ -51,7 +68,7 @@ func TestDefensiveHeaders(t *testing.T) {
 // guard still answers a request just over its limit with JSON.
 func TestServerCapsHeaders(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	addr, _, errc := startApp(t, ctx, map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock"})
+	addr, _, errc := startApp(t, ctx, map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock", "API_AUTH": "off"})
 	defer func() { cancel(); waitForShutdown(t, errc) }()
 
 	send := func(total int) (*http.Response, string) {

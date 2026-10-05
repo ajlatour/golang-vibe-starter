@@ -231,15 +231,15 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return newHandler(logger, headerguard.DefaultPolicy(), store, item.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID
+		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), store, item.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID
 	case "internal":
-		return newHandler(logger, headerguard.DefaultPolicy(), errStore{}), ""
+		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), errStore{}), ""
 	case "badgw":
-		return newHandler(logger, headerguard.DefaultPolicy(), httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})), ""
+		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})), ""
 	case "timeout":
 		upstream := httptest.NewServer(http.HandlerFunc(nettest.Hang))
 		t.Cleanup(upstream.Close)
-		return newHandler(logger, headerguard.DefaultPolicy(), httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})), ""
+		return newHandler(logger, headerguard.DefaultPolicy(), testAuth(t), httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})), ""
 	}
 	t.Fatalf("unknown environment %q", env)
 	return nil, ""
@@ -255,8 +255,9 @@ type scenario struct {
 	want         int
 	check        func(t *testing.T, body []byte)
 
-	// header is added to the request. A request with a body gets
-	// Content-Type: application/json unless header sets one.
+	// header is added to the request; a header with nil values is left out.
+	// A request gets the test write key, and with a body, Content-Type:
+	// application/json, unless header says otherwise.
 	header http.Header
 
 	// exempt says why a body the schema calls valid is refused anyway, for a
@@ -352,6 +353,25 @@ func scenarios(t *testing.T, s *spec) []scenario {
 				body: body, header: http.Header{"Content-Type": {"text/plain"}}, want: http.StatusUnsupportedMediaType,
 			})
 		}
+
+		// Authentication (internal/apikey): every operation the spec says
+		// needs a key refuses a request without one, and a read-only key's
+		// writes.
+		if sec, ok := o.Op["security"].([]any); ok && len(sec) == 0 {
+			continue // exempt, like the healthcheck
+		}
+		list = append(list, scenario{
+			name: o.Key() + " without an API key", env: "ok", method: method, path: path, op: o.Key(),
+			body: body, header: http.Header{"Authorization": nil}, want: http.StatusUnauthorized,
+			exempt: "refused for its key, not its body",
+		})
+		if method != http.MethodGet {
+			list = append(list, scenario{
+				name: o.Key() + " with a read-only key", env: "ok", method: method, path: path, op: o.Key(),
+				body: body, header: http.Header{"Authorization": {"Bearer " + testReadKey}}, want: http.StatusForbidden,
+				exempt: "refused for its key, not its body",
+			})
+		}
 	}
 
 	// The three ways the service itself or its upstream can fail, for every
@@ -429,7 +449,12 @@ func TestOpenAPIMatchesBehavior(t *testing.T) {
 			if sc.body != "" {
 				req.Header.Set("Content-Type", "application/json")
 			}
+			req.Header.Set("Authorization", "Bearer "+testWriteKey)
 			for name, values := range sc.header {
+				if values == nil {
+					req.Header.Del(name) // nil means: don't send it
+					continue
+				}
 				req.Header[name] = values
 			}
 			rec := httptest.NewRecorder()
@@ -600,7 +625,7 @@ func TestOpenAPIItemIDMatchesBehavior(t *testing.T) {
 	}
 
 	asked := false
-	handler := newHandler(slog.New(slog.DiscardHandler), headerguard.DefaultPolicy(), spyStore{asked: &asked})
+	handler := newHandler(slog.New(slog.DiscardHandler), headerguard.DefaultPolicy(), noAuth, spyStore{asked: &asked})
 	for _, id := range []string{
 		"widget", "new-item", "x_1", strings.Repeat("a", 128), strings.Repeat("a", 129),
 		".", "..", "%2E%2E", "..%2F..%2Fadmin", "a%2Fb", "a%20b", "x%3Fq", "%C3%A9",

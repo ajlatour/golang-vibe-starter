@@ -76,9 +76,16 @@ trimmed of surrounding whitespace. Bodies are limited to 1 MiB, and unknown fiel
 An item ID is 1 to 128 letters, digits, `-` and `_`; no item has any other ID, so any other ID is a
 404, answered by the API without asking the upstream.
 
+Every route but `/healthz` needs an API key, sent as `Authorization: Bearer <key>`. A key may read,
+or read and write. `make api-key NAME=<who> SCOPE=read|write` generates one, with the `API_KEYS`
+entry that configures it; the local stack comes with two development keys
+([Calling the API](docs/curl.md#api-keys)).
+
 Errors are JSON, `{"error":"..."}`:
 
 - 400: malformed body, or a header sent twice that may appear only once
+- 401: no API key, or not a valid one (with `WWW-Authenticate: Bearer`)
+- 403: a write with a read-only API key
 - 404: unknown ID
 - 415: a request body not sent as `Content-Type: application/json`
 - 422: validation failure
@@ -140,6 +147,9 @@ The API reads these environment variables:
 | `LOG_LEVEL`           | `info`     | `debug`, `info`, `warn`, or `error`.                       |
 | `LOG_FORMAT`          | `json`     | `json` or `text`.                                          |
 | `SHUTDOWN_TIMEOUT`    | `10s`      | How long in-flight requests get to finish on SIGTERM.      |
+| `API_KEYS`            | (required) | API keys: comma-separated `name:scope:sha256` entries, scope `read` or `write`. `make api-key NAME=<who> SCOPE=read\|write` generates one. Only the key's hash goes here. Required unless `API_AUTH=off`. |
+| `API_AUTH`            | `on`       | `off` lets every request through without a key: local development only, and logged as a warning. |
+| `API_AUTH_READS`      | `required` | `open` lets reads (`GET`) through without a key; a key that is sent must still be valid. |
 | `PPROF_ADDR`          |            | Where to serve the runtime profiles (pprof) and metrics (`/metrics`), e.g. `127.0.0.1:6061`. Unset serves neither. Keep it private: see [Performance](docs/performance.md#profiling). |
 | `HEADER_GUARD_MODE`   | `enforce`  | `enforce` rejects requests that break a [header rule](#request-headers); `report` only logs them. |
 | `HEADER_MAX_COUNT`    | `100`      | The most request headers allowed.                          |

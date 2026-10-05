@@ -6,8 +6,10 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
 	"github.com/ajlatour/golang-vibe-starter/internal/envconfig"
 	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
+	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 )
 
 // config is the API's environment configuration: the shared server settings
@@ -34,6 +36,11 @@ type config struct {
 	// HeaderGuard is the header guard's policy: headerguard.DefaultPolicy,
 	// with the mode and limits overridden by the environment.
 	HeaderGuard headerguard.Policy
+
+	// Auth is who may call the API: the keys in API_KEYS, whether reads
+	// need one (API_AUTH_READS), or nobody checked at all (API_AUTH=off).
+	// run refuses to start with it on and no keys.
+	Auth apikey.Policy
 }
 
 func loadConfig(getenv func(string) string) (config, error) {
@@ -68,6 +75,16 @@ func loadConfig(getenv func(string) string) (config, error) {
 	guard.MaxTotalBytes = envconfig.Optional(env, "HEADER_MAX_TOTAL_BYTES", guard.MaxTotalBytes, headerguard.ParseLimit)
 	cfg.HeaderGuard = guard
 
+	// Authentication: on, with every request needing a key, unless told
+	// otherwise. The healthcheck never needs one, so the container's own
+	// probe works.
+	cfg.Auth = apikey.Policy{
+		Off:       envconfig.Optional(env, "API_AUTH", false, parseAuthOff),
+		OpenReads: envconfig.Optional(env, "API_AUTH_READS", false, parseOpenReads),
+		Keys:      envconfig.Optional(env, "API_KEYS", nil, apikey.ParseKeys),
+		Exempt:    []string{httpx.HealthzPath},
+	}
+
 	errs := []error{srvErr, env.Err()}
 	if err := guard.Validate(); err != nil && env.Err() == nil {
 		errs = append(errs, fmt.Errorf("HEADER_MAX_BYTES, HEADER_MAX_TOTAL_BYTES: %w", err))
@@ -92,4 +109,26 @@ func parseHTTPURL(v string) (*url.URL, error) {
 		return nil, fmt.Errorf("must not contain a query string or fragment, got %q", u.Redacted())
 	}
 	return u, nil
+}
+
+// parseAuthOff reads API_AUTH: on (the default) or off.
+func parseAuthOff(v string) (bool, error) {
+	switch v {
+	case "on":
+		return false, nil
+	case "off":
+		return true, nil
+	}
+	return false, fmt.Errorf("want on or off, got %q", v)
+}
+
+// parseOpenReads reads API_AUTH_READS: required (the default) or open.
+func parseOpenReads(v string) (bool, error) {
+	switch v {
+	case "required":
+		return false, nil
+	case "open":
+		return true, nil
+	}
+	return false, fmt.Errorf("want required or open, got %q", v)
 }

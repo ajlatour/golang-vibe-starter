@@ -41,7 +41,8 @@ so a change in them is real wherever it shows up.
 
 ## Load tests (k6)
 
-`perf/k6.js` sends a mix of traffic like a real client's: 40% `GET /items`, 40% `GET /items/{id}`,
+`perf/k6.js` sends a mix of traffic like a real client's, with the stack's development API key (or
+`API_KEY`, to load-test with another): 40% `GET /items`, 40% `GET /items/{id}`,
 10% creates, 5% replaces and 5% deletes, against the items WireMock serves. It sends at a **fixed
 rate**, starting requests on schedule whether or not earlier ones have answered, so a slow service
 can't hide by slowing the test down (the trap called coordinated omission).

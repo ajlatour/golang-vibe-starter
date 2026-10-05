@@ -36,6 +36,10 @@ const (
 	KeyHeader  = "header"  // the header concerned
 	KeyHeaders = "headers" // header names, comma-separated
 
+	KeyAPIKey  = "api_key"  // an API key's configured name, never the key
+	KeyAPIKeys = "api_keys" // the configured keys' names, comma-separated
+	KeyReads   = "reads"    // whether reads need a key: required or open
+
 	KeyMode           = "mode" // enforce or report
 	KeyMaxHeaders     = "max_headers"
 	KeyMaxHeaderBytes = "max_header_bytes"

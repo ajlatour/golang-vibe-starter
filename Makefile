@@ -47,7 +47,7 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .DEFAULT_GOAL := help
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
-	vuln live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint \
+	api-key vuln live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint \
 	perf perf-profile bench bench-compare load-compare perf-compare monitor
 
 ##@ Help
@@ -112,6 +112,10 @@ test-race: ## Unit tests with the race detector
 	go test -C perf/report -race ./...
 
 check: fmt-check vet test-race ## Everything CI's fast job runs
+
+api-key: ## Generate an API key and its API_KEYS entry: make api-key NAME=ci SCOPE=write
+	@if [ -z "$(NAME)" ] || [ -z "$(SCOPE)" ]; then echo "usage: make api-key NAME=<who> SCOPE=read|write"; exit 2; fi
+	@go run ./cmd/apikey $(NAME) $(SCOPE)
 
 vuln: ## Check all three modules for known vulnerabilities the code can reach
 	go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...

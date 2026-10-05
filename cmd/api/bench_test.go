@@ -35,7 +35,7 @@ func BenchmarkAPI(b *testing.B) {
 
 	logger := logx.New(io.Discard, slog.LevelInfo, "json", "api", "bench")
 	store := httpstore.New(upstream.URL, &http.Client{Timeout: 5 * time.Second}, httpstore.WithLogger(logger))
-	api := newHandler(logger, headerguard.DefaultPolicy(), store)
+	api := newHandler(logger, headerguard.DefaultPolicy(), noAuth, store)
 
 	for _, tt := range []struct {
 		name, method, path, body string

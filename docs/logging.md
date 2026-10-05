@@ -56,6 +56,9 @@ include `.git`; without it, container logs show `version=devel`.
 | `reason`      | `request headers rejected`, `request headers would be rejected` | Which header rule was broken: `header too large`, `too many headers`, `headers too large`, `duplicate header`, `missing content type` or `unsupported content type`. |
 | `header`      | the same lines, when one header is to blame | The header's name, e.g. `Content-Type`.      |
 | `headers`     | `request headers stripped` | The names of the headers removed, comma-separated.       |
+| `api_key`     | `request refused by authentication` | The name of the API key, as configured in `API_KEYS`; never the key. |
+| `api_keys`    | `using API keys`       | The configured keys' names and scopes, e.g. `ci (write), dashboard (read)`. |
+| `reads`       | `using API keys`       | Whether reads need a key: `required` or `open` (`API_AUTH_READS`). |
 | `mode`        | `using header guard`   | `enforce` or `report` (`HEADER_GUARD_MODE`).                 |
 | `max_headers` | `using header guard`   | The header count limit in force (`HEADER_MAX_COUNT`).        |
 | `max_header_bytes` | `using header guard` | The per-header size limit in force, in bytes (`HEADER_MAX_BYTES`). |
@@ -81,6 +84,7 @@ upstream, comes back, and leaves the API.
 | `panic serving request` | ERROR | `method`, `route`, `path`, `panic`, `stack` | A handler panicked; the client gets a 500. |
 | `request headers rejected` | INFO | `reason`, `status` | A request broke a header rule and was answered with `status` (400, 415 or 431); `header` names the header when one is to blame. See [request headers](../README.md#request-headers). |
 | `request headers would be rejected` | INFO | `reason`, `status` | The same, with `HEADER_GUARD_MODE=report`: logged, but let through. |
+| `request refused by authentication` | INFO | `reason`, `status` | A request had no valid API key (401: `missing key`, `not a bearer token`, `unknown key`) or a read-only key tried to write (403: `read-only key`, with `api_key` naming it). The key itself is never logged. |
 | `request headers stripped` | DEBUG | `headers` | Proxy or method-override headers were removed before the handlers ran. |
 | `upstream request failed` | WARN | `upstream`, `upstream_duration_ms`, `error` | An upstream call failed: no response, an unexpected status, or a body that won't decode. `upstream_status` is also present if a response arrived. |
 | `upstream request cancelled` | DEBUG | `upstream`, `upstream_duration_ms`, `error` | The client left during an upstream call, so it isn't the upstream's failure. |
@@ -90,6 +94,8 @@ upstream, comes back, and leaves the API.
 | `flag has no configured default, using false` | ERROR | `flag` | A flag the code reads has no default in the definitions. Logged once per flag. |
 | `using upstream` | INFO | `url`, `timeout` | Startup. |
 | `using feature flags` | INFO | `url`, `timeout` | Startup, with `FLAGS_URL` set. |
+| `using API keys` | INFO | `api_keys`, `reads` | Startup: the names and scopes of the configured keys (never the keys), and whether reads need one. |
+| `authentication is off: every request is allowed` | WARN | none | Startup, with `API_AUTH=off`. For local development only. |
 | `using header guard` | INFO | `mode`, `max_headers`, `max_header_bytes`, `max_total_bytes` | Startup: the header rules actually in force, after any overrides. |
 | `feature flags: no FLAGS_URL, using default values only` | INFO | none | Startup, with `FLAGS_URL` unset. |
 | `server started` | INFO | `addr` | The server is listening. |

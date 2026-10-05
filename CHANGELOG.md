@@ -11,6 +11,14 @@ Ideas considered but not planned are listed under
 
 ### Security
 
+- API keys (`internal/apikey`): every route but `/healthz` needs one, sent as
+  `Authorization: Bearer <key>`; 401 without a valid key, 403 for a write with a read-only one.
+  `API_KEYS` lists the keys as `name:scope:sha256`, so only hashes are configured, and every
+  configured hash is compared in constant time. `make api-key` generates a key and its entry.
+  The service refuses to start with no keys unless `API_AUTH=off` (local development only,
+  logged as a warning), and `API_AUTH_READS=open` lets reads through without a key. The compose
+  stack sets two documented development keys, which `scripts/api`, k6 and the integration tests
+  use; `scripts/api` sends one only to the local stack.
 - Item IDs are checked before they reach the upstream: an ID must be 1 to 128 letters, digits,
   `-` and `_` (`item.ValidID`), and any other is a 404 that never leaves the API. Before, an ID
   such as `%2E%2E` reached the upstream as `/items/..`, which an upstream or proxy that

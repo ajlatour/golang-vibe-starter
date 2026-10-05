@@ -3,9 +3,9 @@
   "info": {
     "title": "golang-vibe-starter API",
     "version": "0.1.0",
-    "description": "A small HTTP API over a placeholder `items` resource. Item data comes from an upstream service, so a failure to reach or understand the upstream is reported as 502 or 504, never as a 500. Every response carries a `Client-Correlation-Id` header; send one to tie the service's log lines to your own, or quote the one returned when reporting a problem. Every response also carries `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`. Every request's headers are screened first: a request with a body must send `Content-Type: application/json` (415 otherwise), headers have size limits (431), some may appear only once (400), and proxy and method-override headers (`X-Forwarded-*`, `Forwarded`, `X-Real-IP`, `X-HTTP-Method-Override`) are ignored.\n\nThis file is checked against the running handlers by tests (`cmd/api/openapi_test.go`): routes, status codes, response bodies, headers and the limits stated here must match what the service actually does."
+    "description": "A small HTTP API over a placeholder `items` resource. Item data comes from an upstream service, so a failure to reach or understand the upstream is reported as 502 or 504, never as a 500. Every response carries a `Client-Correlation-Id` header; send one to tie the service's log lines to your own, or quote the one returned when reporting a problem. Every response also carries `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`. Every route but `/healthz` needs an API key (`Authorization: Bearer <key>`): 401 without a valid one, 403 for a write with a read-only key. Every request's headers are screened first: a request with a body must send `Content-Type: application/json` (415 otherwise), headers have size limits (431), some may appear only once (400), and proxy and method-override headers (`X-Forwarded-*`, `Forwarded`, `X-Real-IP`, `X-HTTP-Method-Override`) are ignored.\n\nThis file is checked against the running handlers by tests (`cmd/api/openapi_test.go`): routes, status codes, response bodies, headers and the limits stated here must match what the service actually does."
   },
-  "security": [],
+  "security": [{ "apiKey": [] }],
   "servers": [
     { "url": "http://localhost:8080", "description": "Local development (docker compose up)" }
   ],
@@ -13,6 +13,7 @@
     "/healthz": {
       "get": {
         "operationId": "healthz",
+        "security": [],
         "summary": "Liveness check",
         "description": "Reports ok whenever the process can serve HTTP. It doesn't check the upstream.",
         "parameters": [{ "$ref": "#/components/parameters/CorrelationID" }],
@@ -45,6 +46,7 @@
           },
           "400": { "$ref": "#/components/responses/DuplicateHeader" },
           "431": { "$ref": "#/components/responses/HeadersTooLarge" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
           "504": { "$ref": "#/components/responses/GatewayTimeout" }
@@ -79,6 +81,8 @@
           "422": { "$ref": "#/components/responses/Unprocessable" },
           "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
           "431": { "$ref": "#/components/responses/HeadersTooLarge" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
           "504": { "$ref": "#/components/responses/GatewayTimeout" }
@@ -104,6 +108,7 @@
           "404": { "$ref": "#/components/responses/NotFound" },
           "400": { "$ref": "#/components/responses/DuplicateHeader" },
           "431": { "$ref": "#/components/responses/HeadersTooLarge" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
           "504": { "$ref": "#/components/responses/GatewayTimeout" }
@@ -131,6 +136,8 @@
           "422": { "$ref": "#/components/responses/Unprocessable" },
           "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
           "431": { "$ref": "#/components/responses/HeadersTooLarge" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
           "504": { "$ref": "#/components/responses/GatewayTimeout" }
@@ -147,6 +154,8 @@
           "404": { "$ref": "#/components/responses/NotFound" },
           "400": { "$ref": "#/components/responses/DuplicateHeader" },
           "431": { "$ref": "#/components/responses/HeadersTooLarge" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
           "504": { "$ref": "#/components/responses/GatewayTimeout" }
@@ -155,6 +164,13 @@
     }
   },
   "components": {
+    "securitySchemes": {
+      "apiKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "An API key, sent as `Authorization: Bearer <key>`. A key may read, or read and write; a read-only key's writes get 403. `make api-key` generates one. A deployment can leave reads open (API_AUTH_READS=open), or, for local development only, turn authentication off (API_AUTH=off)."
+      }
+    },
     "parameters": {
       "ItemID": {
         "name": "id",
@@ -247,6 +263,19 @@
       },
       "UnsupportedMediaType": {
         "description": "The request has a body, but not Content-Type: application/json (parameters such as charset are fine).",
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "Unauthorized": {
+        "description": "No API key, or not a valid one. Send it as `Authorization: Bearer <key>`.",
+        "headers": {
+          "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" },
+          "WWW-Authenticate": { "required": true, "description": "The scheme to use.", "schema": { "type": "string", "pattern": "^Bearer " } }
+        },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "Forbidden": {
+        "description": "The API key may only read.",
         "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },

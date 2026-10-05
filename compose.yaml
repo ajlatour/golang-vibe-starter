@@ -41,6 +41,12 @@ services:
       UPSTREAM_TIMEOUT: ${UPSTREAM_TIMEOUT:-5s}
       LOG_FORMAT: ${LOG_FORMAT:-text}
       HEADER_GUARD_MODE: ${HEADER_GUARD_MODE:-enforce}
+      # API keys (docs/curl.md#api-keys): by default two local development
+      # keys, gvs_local-development-only, which may write, and
+      # gvs_local-read-only, which may only read. They're in this file, so
+      # they're no secret: they work only because the stack is published on
+      # loopback. Set API_KEYS in .env (make api-key) to use your own.
+      API_KEYS: ${API_KEYS:-dev:write:1f0d1e72ef1251a015cbec8ae3ad6880002ffe8ad4de82f4f496db34dc3e91dc,dev-reader:read:1cf20667ccf4aa0982ca024c319ee0cf77cadf20e85bd2fc51264075af57b2d4}
       # All interfaces inside the container, so the port above can reach it.
       PPROF_ADDR: 0.0.0.0:6061
     depends_on:

@@ -10,7 +10,8 @@
 // down. Every request is tagged with its phase, which is how thresholds in
 // profiles.json can apply to one phase only, leaving the warm-up out.
 //
-// Environment: PROFILE (default smoke), API_URL (default http://api:8080).
+// Environment: PROFILE (default smoke), API_URL (default http://api:8080),
+// API_KEY (default the stack's development key, which may write).
 
 import http from 'k6/http';
 import { check } from 'k6';
@@ -68,6 +69,7 @@ export const options = {
 // any failure counts against the error thresholds.
 const ids = ['widget', 'gadget', 'gizmo'];
 const json = { headers: { 'Content-Type': 'application/json' } };
+const auth = `Bearer ${__ENV.API_KEY || 'gvs_local-development-only'}`;
 const mix = [
   { weight: 40, route: 'GET /items', call: () => http.get(`${baseURL}/items`, tagged('GET /items')), want: 200 },
   { weight: 40, route: 'GET /items/{id}', call: () => http.get(`${baseURL}/items/${pick(ids)}`, tagged('GET /items/{id}')), want: 200 },
@@ -82,9 +84,13 @@ function pick(list) {
 }
 
 // tagged names a request by its route, not its URL, so the results group
-// /items/widget and /items/gizmo together.
+// /items/widget and /items/gizmo together, and adds the API key.
 function tagged(route, params = {}) {
-  return { ...params, tags: { ...(params.tags || {}), name: route } };
+  return {
+    ...params,
+    headers: { ...(params.headers || {}), Authorization: auth },
+    tags: { ...(params.tags || {}), name: route },
+  };
 }
 
 export function traffic() {
