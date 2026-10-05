@@ -19,7 +19,10 @@ services:
         #   VERSION=$(git rev-parse --short HEAD) docker compose up --build
         VERSION: ${VERSION:-devel}
     ports:
-      - "8080:8080"
+      # Published on this machine's loopback only, like every port here: on a
+      # shared network, nobody else can reach the stack, least of all
+      # WireMock's unauthenticated admin API.
+      - "127.0.0.1:8080:8080"
       # The runtime profiles (pprof), published on this machine's loopback
       # only: they expose the program's internals. docs/performance.md.
       - "127.0.0.1:6061:6061"
@@ -63,7 +66,7 @@ services:
     # amd64-only and would run emulated on Apple Silicon, skewing timings.
     image: wiremock/wiremock:3.13.2
     ports:
-      - "8081:8080"
+      - "127.0.0.1:8081:8080"
     volumes:
       # Happy-path stubs only. Fault stubs in wiremock/faults are added at
       # runtime through the admin API; see docs/local-stack.md.
@@ -94,7 +97,7 @@ services:
     # 8016); no OpenFeature SDK or gRPC dependency is needed.
     image: ghcr.io/open-feature/flagd:v0.12.9
     ports:
-      - "8016:8016"
+      - "127.0.0.1:8016:8016"
     volumes:
       # The directory is mounted, not the file, so an editor that saves by
       # replacing the file still works. flagd watches the file and reloads on

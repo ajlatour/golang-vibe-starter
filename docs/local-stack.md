@@ -8,6 +8,11 @@
 | `mock`  | 8081 | [WireMock](https://wiremock.org), standing in for the items upstream. Admin API at `/__admin`. |
 | `flagd` | 8016 | The feature flag service. See [Feature flags](feature-flags.md). |
 
+Every port is published on this machine's loopback (`127.0.0.1`) only, so on a shared network
+nobody else can reach the stack, least of all WireMock's admin API, which has no authentication
+and can change everything the API is served. To reach the stack from another device on purpose,
+change the address in `compose.yaml` for that run, and change it back.
+
 The API starts only after WireMock passes its healthcheck. The API image is distroless and static
 (about 16 MB). It has no shell or curl, so it checks its own health with `/api healthcheck`.
 

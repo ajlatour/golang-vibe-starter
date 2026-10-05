@@ -16,6 +16,9 @@ Ideas considered but not planned are listed under
   such as `%2E%2E` reached the upstream as `/items/..`, which an upstream or proxy that
   normalizes paths or decodes `%2F` could route somewhere other than `/items/{id}`. The rule is
   in `docs/openapi.json`, and `httpstore` refuses such IDs too.
+- The compose stack publishes the API (8080), WireMock (8081) and flagd (8016) on `127.0.0.1` only,
+  like the ports added since. Before, they listened on every interface, so anyone on the same
+  network could use WireMock's unauthenticated admin API to change what the API was served.
 
 ### Added
 
