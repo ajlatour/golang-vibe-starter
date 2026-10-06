@@ -126,6 +126,22 @@ func scenarios(t *testing.T, s *spec) []scenario {
 			})
 		}
 
+		// Versioning (httpx.APIVersion): every operation but the probes
+		// refuses a version the API doesn't serve; the probes answer.
+		unsupported := http.Header{"Api-Version": {"99"}}
+		if o.Path == "/healthz" || o.Path == "/readyz" {
+			list = append(list, scenario{
+				name: o.Key() + " with an unsupported API version", env: "ok", method: method, path: path, op: o.Key(),
+				header: unsupported, want: http.StatusOK,
+			})
+		} else {
+			list = append(list, scenario{
+				name: o.Key() + " with an unsupported API version", env: "ok", method: method, path: path, op: o.Key(),
+				body: body, header: unsupported, want: http.StatusBadRequest,
+				exempt: "refused for its version, not its body",
+			})
+		}
+
 		// Authentication (internal/apikey): every operation the spec says
 		// needs a key refuses a request without one, and a read-only key's
 		// writes.

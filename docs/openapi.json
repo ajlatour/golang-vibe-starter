@@ -16,11 +16,11 @@
         "security": [],
         "summary": "Liveness check",
         "description": "Reports ok whenever the process can serve HTTP. It doesn't check the upstream.",
-        "parameters": [{ "$ref": "#/components/parameters/CorrelationID" }],
+        "parameters": [{ "$ref": "#/components/parameters/CorrelationID" }, { "$ref": "#/components/parameters/APIVersion" }],
         "responses": {
           "200": {
             "description": "The service is up.",
-            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Health" } }
             }
@@ -36,16 +36,16 @@
         "security": [],
         "summary": "Readiness check",
         "description": "Whether to send this instance traffic: 200 while it can reach the upstream (any answer from it counts, an error included), 503 once it is shutting down or if it can't reach the upstream at all. Liveness is /healthz. The result is cached for a second, so frequent probes cost little.",
-        "parameters": [{ "$ref": "#/components/parameters/CorrelationID" }],
+        "parameters": [{ "$ref": "#/components/parameters/CorrelationID" }, { "$ref": "#/components/parameters/APIVersion" }],
         "responses": {
           "200": {
             "description": "Ready.",
-            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Readiness" } } }
           },
           "503": {
             "description": "Not ready: shutting down, or the upstream can't be reached.",
-            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Readiness" } } }
           },
           "400": { "$ref": "#/components/responses/DuplicateHeader" },
@@ -58,11 +58,11 @@
         "operationId": "listItems",
         "summary": "List items",
         "description": "Returns all items, oldest first. When the `items-list-total` feature flag is on, the response also carries `total`.",
-        "parameters": [{ "$ref": "#/components/parameters/CorrelationID" }],
+        "parameters": [{ "$ref": "#/components/parameters/CorrelationID" }, { "$ref": "#/components/parameters/APIVersion" }],
         "responses": {
           "200": {
             "description": "The items.",
-            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ItemList" } }
             }
@@ -81,7 +81,7 @@
       "post": {
         "operationId": "createItem",
         "summary": "Create an item",
-        "parameters": [{ "$ref": "#/components/parameters/CorrelationID" }],
+        "parameters": [{ "$ref": "#/components/parameters/CorrelationID" }, { "$ref": "#/components/parameters/APIVersion" }],
         "requestBody": {
           "required": true,
           "content": {
@@ -92,7 +92,7 @@
           "201": {
             "description": "The created item, with its URL in `Location`.",
             "headers": {
-              "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" },
+              "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" },
               "Location": {
                 "required": true,
                 "description": "Path of the new item, `/items/{id}`.",
@@ -120,7 +120,7 @@
     "/items/{id}": {
       "parameters": [
         { "$ref": "#/components/parameters/ItemID" },
-        { "$ref": "#/components/parameters/CorrelationID" }
+        { "$ref": "#/components/parameters/CorrelationID" }, { "$ref": "#/components/parameters/APIVersion" }
       ],
       "get": {
         "operationId": "getItem",
@@ -128,7 +128,7 @@
         "responses": {
           "200": {
             "description": "The item.",
-            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Item" } }
             }
@@ -157,7 +157,7 @@
         "responses": {
           "200": {
             "description": "The updated item.",
-            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Item" } }
             }
@@ -182,7 +182,7 @@
         "responses": {
           "204": {
             "description": "The item was deleted. No body.",
-            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } }
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } }
           },
           "404": { "$ref": "#/components/responses/NotFound" },
           "400": { "$ref": "#/components/responses/DuplicateHeader" },
@@ -207,6 +207,13 @@
       }
     },
     "parameters": {
+      "APIVersion": {
+        "name": "API-Version",
+        "in": "header",
+        "required": false,
+        "description": "The API version the request is written for. Without it, the current one. A version the API doesn't serve is a 400, `unsupported_api_version`; the probes accept any. Versioning is by this header, never by path.",
+        "schema": { "type": "string", "enum": ["1"] }
+      },
       "ItemID": {
         "name": "id",
         "in": "path",
@@ -223,6 +230,11 @@
       }
     },
     "headers": {
+      "APIVersion": {
+        "required": true,
+        "description": "The API version that answered: the one asked for in the API-Version request header, or the current one without it.",
+        "schema": { "type": "string", "enum": ["1"] }
+      },
       "CorrelationID": {
         "required": true,
         "description": "The request's correlation ID: yours if you sent a valid one, otherwise one the service generated.",
@@ -303,44 +315,44 @@
           "code": {
             "type": "string",
             "description": "What the error means, for a client to act on: stable, unlike `error`. Two errors with one status can mean different things (a 403 for a read-only key, or one the validation service refused), and the code tells them apart.",
-            "enum": ["invalid_body", "duplicate_header", "api_key_required", "api_key_invalid", "read_only_key", "validation_refused", "not_found", "unsupported_media_type", "invalid_field", "rate_limited", "headers_too_large", "client_closed", "internal", "upstream_failed", "busy", "validation_unavailable", "upstream_timeout"]
+            "enum": ["invalid_body", "duplicate_header", "unsupported_api_version", "api_key_required", "api_key_invalid", "read_only_key", "validation_refused", "not_found", "unsupported_media_type", "invalid_field", "rate_limited", "headers_too_large", "client_closed", "internal", "upstream_failed", "busy", "validation_unavailable", "upstream_timeout"]
           }
         }
       }
     },
     "responses": {
       "BadRequest": {
-        "description": "The body isn't usable (malformed JSON, the wrong shape or types, an unknown field, an empty body, or over 1 MiB), or a header that may appear only once (Content-Type, Authorization, Client-Correlation-Id) appears more than once.",
-        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "description": "The body isn't usable (malformed JSON, the wrong shape or types, an unknown field, an empty body, or over 1 MiB), a header that may appear only once (Content-Type, Authorization, Client-Correlation-Id, API-Version) appears more than once, or an API-Version the API doesn't serve (`unsupported_api_version`).",
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "DuplicateHeader": {
-        "description": "A header that may appear only once (Content-Type, Authorization, Client-Correlation-Id) appears more than once.",
-        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "description": "A header that may appear only once (Content-Type, Authorization, Client-Correlation-Id, API-Version) appears more than once.",
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "UnsupportedMediaType": {
         "description": "The request has a body, but not Content-Type: application/json (parameters such as charset are fine).",
-        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "Unauthorized": {
         "description": "No API key, or not a valid one. Send it as `Authorization: Bearer <key>`.",
         "headers": {
-          "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" },
+          "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" },
           "WWW-Authenticate": { "required": true, "description": "The scheme to use.", "schema": { "type": "string", "pattern": "^Bearer " } }
         },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "Forbidden": {
         "description": "The API key may only read, and this is a write; or, where the service checks requests (VALIDATOR_URL), the request-validation service refused the request. The reason is logged, not sent.",
-        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "TooManyRequests": {
         "description": "Over the client's rate limit: by default 100 requests a second on average, in bursts of up to 200 (RATE_LIMIT, RATE_BURST). A client is its API key, or its IP address without one. Retry after the given number of seconds.",
         "headers": {
-          "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" },
+          "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" },
           "Retry-After": { "$ref": "#/components/headers/RetryAfter" }
         },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
@@ -348,39 +360,39 @@
       "ServiceUnavailable": {
         "description": "The service is serving as many requests as it takes at once (MAX_IN_FLIGHT, 512 by default), or, where the service checks requests (VALIDATOR_URL) and fails closed, the request-validation service can't answer. Retry after the given number of seconds.",
         "headers": {
-          "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" },
+          "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" },
           "Retry-After": { "$ref": "#/components/headers/RetryAfter" }
         },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "HeadersTooLarge": {
         "description": "The request's headers are over a limit. By default: more than 100 headers, more than 8 KiB for any one header (name and value), or more than 32 KiB in total; a deployment can change these (HEADER_MAX_COUNT, HEADER_MAX_BYTES, HEADER_MAX_TOTAL_BYTES).",
-        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "NotFound": {
         "description": "No item has that ID.",
-        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "Unprocessable": {
         "description": "The body is well-formed but a value is invalid: `name` is missing, blank, or too long.",
-        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "InternalError": {
         "description": "An unexpected failure in this service itself.",
-        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "BadGateway": {
         "description": "The upstream couldn't give a usable answer: connection refused or reset, an error status, or a body that wouldn't decode.",
-        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "GatewayTimeout": {
         "description": "The upstream didn't answer in time.",
-        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       }
     }

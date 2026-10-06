@@ -99,6 +99,7 @@ apart errors that share a status:
 | ------ | ------ | ---- |
 | 400 | `invalid_body` | The body is malformed JSON, the wrong shape or types, has an unknown field, is empty, or is over 1 MiB |
 | 400 | `duplicate_header` | A header that may appear only once is sent twice |
+| 400 | `unsupported_api_version` | An `API-Version` the API doesn't serve ([Versioning](#versioning)) |
 | 401 | `api_key_required` | No API key, or not sent as `Authorization: Bearer <key>` (with `WWW-Authenticate: Bearer`) |
 | 401 | `api_key_invalid` | An API key that isn't valid |
 | 403 | `read_only_key` | A write with a read-only API key |
@@ -123,6 +124,18 @@ Every response also carries `X-Content-Type-Options: nosniff`, so a browser neve
 anything but its declared type, and `Cache-Control: no-store`, so nothing keeps a copy of it. An
 error body describes the problem in JSON's terms (`field "name" must be a string`), never the
 service's internals.
+
+### Versioning
+
+The API is versioned by a header, never by its URLs. Send `API-Version: 1` to say which version
+you're written for; without it, a request gets the current version, which is `1`. Every response
+carries `API-Version`, the version that answered. A version the API doesn't serve is a 400, code
+`unsupported_api_version`. The probes, `/healthz` and `/readyz`, answer whatever is asked.
+
+A change that would break a client comes as a new version, served beside the old one for a while;
+a change that can't break one (a new field, a new route) doesn't need one. So sending the header
+is what pins a client to the behaviour it was written against
+([ADR-0036](docs/decisions.md#adr-0036-the-api-is-versioned-by-a-header-not-by-path)).
 
 ### Request headers
 

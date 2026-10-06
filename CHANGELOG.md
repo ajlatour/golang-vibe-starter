@@ -17,6 +17,10 @@ Ideas considered but not planned are listed under
   budget of about one per ten requests, so a down upstream isn't hit harder, and each is logged,
   `upstream request retried`
   ([ADR-0035](docs/decisions.md#adr-0035-upstream-gets-are-retried-once-within-a-budget)).
+- API versioning by header: a request may send `API-Version` (today, `1`, the default without it),
+  every response carries the version that answered, and a version the API doesn't serve is a 400,
+  `unsupported_api_version`. URLs don't change with versions
+  ([ADR-0036](docs/decisions.md#adr-0036-the-api-is-versioned-by-a-header-not-by-path)).
 - W3C trace context: a request's `traceparent` header, or a new trace without one, puts its log
   lines in the trace (`trace_id`), and every call the API makes onward (the upstream, the validation
   service, flagd) carries the trace on, with a span ID of its own. No tracing SDK: when
