@@ -19,6 +19,12 @@ Ideas considered but not planned are listed under
   default) or let through (`open`), and the service is asked again at most once a second.
   `VALIDATOR_TIMEOUT` (300ms) bounds each call. The contract (`POST /validate`) is a placeholder
   for the real service's. The local stack runs it against a WireMock stub.
+  - It deploys dark: the `request-validation-enforce` feature flag, off by default, is shadow mode,
+    which asks the service and logs what it would refuse, refusing nothing. Turning the flag on
+    enforces it at runtime, with no deploy.
+  - Its cost is measured: `validator_call_duration_seconds` and `validator_calls_total{outcome}`
+    on `/metrics`, a Request validation section in each pull request's performance report, and a
+    chart in `main`'s trends and every release's Performance history.
 
 - Logs for debugging in production where the logs are all there is
   ([Logging](docs/logging.md#memory-over-time)):

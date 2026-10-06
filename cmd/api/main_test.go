@@ -22,6 +22,7 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
+	"github.com/ajlatour/golang-vibe-starter/internal/validator"
 )
 
 // TestRun starts the API on a random port against an in-process upstream
@@ -137,7 +138,7 @@ func TestNewFlags(t *testing.T) {
 	})
 	t.Run("flagd down falls back to the definitions file", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "flags.json")
-		if err := os.WriteFile(path, []byte(`{"flags":{"`+item.FlagListTotal+`":{"variants":{"on":true,"off":false},"defaultVariant":"on"}}}`), 0o600); err != nil {
+		if err := os.WriteFile(path, []byte(`{"flags":{"`+item.FlagListTotal+`":{"variants":{"on":true,"off":false},"defaultVariant":"on"},"`+validator.FlagEnforce+`":{"variants":{"on":true,"off":false},"defaultVariant":"off"}}}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		u, _ := url.Parse(nettest.DeadURL())

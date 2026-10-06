@@ -40,6 +40,10 @@ type loadRecord struct {
 	AllocPerRequestBytes *float64 `json:"alloc_per_request_bytes,omitempty"`
 	GCPer1000            *float64 `json:"gc_per_1000_requests,omitempty"`
 	MemoryPeakMiB        *float64 `json:"memory_peak_mib,omitempty"`
+	// The API's calls to the request-validation service, when it made any.
+	ValidatorMedianMS        *float64 `json:"validator_median_ms,omitempty"`
+	ValidatorP99MS           *float64 `json:"validator_p99_ms,omitempty"`
+	ValidatorCallsPerRequest *float64 `json:"validator_calls_per_request,omitempty"`
 }
 
 // runRecord is `report record`: one commit's results as a record.
@@ -88,6 +92,11 @@ func runRecord(args []string, out io.Writer) error {
 		}
 		if side.statsRuns > 0 {
 			l.MemoryPeakMiB = ptr(side.memoryPeakMiB)
+		}
+		if side.validatorRuns > 0 {
+			l.ValidatorMedianMS = ptr(side.validatorQuantile(0.5) * 1000)
+			l.ValidatorP99MS = ptr(side.validatorQuantile(0.99) * 1000)
+			l.ValidatorCallsPerRequest = ptr(side.validatorPerRequest())
 		}
 		r.Load = l
 	}
@@ -224,6 +233,8 @@ func runTrends(args []string, out io.Writer) error {
 			})}},
 		{title: "Memory, container peak", unit: "MiB", note: "The API container's peak during the load test.",
 			series: []series{load("memory", func(l *loadRecord) *float64 { return l.MemoryPeakMiB })}},
+		{title: "Request validation call", unit: "ms", note: "The API's calls to the request-validation service under load, from its own histogram: each request's cost of the check.",
+			series: []series{load("p99", func(l *loadRecord) *float64 { return l.ValidatorP99MS }), load("median", func(l *loadRecord) *float64 { return l.ValidatorMedianMS })}},
 		{title: "Allocations per request, by route", unit: "allocs/op", note: "BenchmarkAPI: exact, so any step is a real change.",
 			series: bench("allocs/op", 1)},
 		{title: "Time per request, by route", unit: "µs", note: "BenchmarkAPI, in-process: the median of 6 runs on a shared runner.",

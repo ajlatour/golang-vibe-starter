@@ -218,7 +218,10 @@ or running the pull request's code. Changes to Markdown and `docs/` alone don't 
 **What the comment shows.** First the verdict, then the changes that matter, then the load test's
 latency and errors for each version, and what the API cost while it ran: CPU per request (from
 its own CPU time, so it doesn't depend on how busy the runner was), its container's average CPU
-and peak memory, and bytes allocated and GC cycles per request. Every benchmark is in a collapsed table, with full benchstat
+and peak memory, and bytes allocated and GC cycles per request. When the API checks requests
+against a validation service, a **Request validation** section shows those calls' median and p99,
+and calls per request, from the API's own histogram ([Request validation](request-validation.md#what-it-costs)).
+Every benchmark is in a collapsed table, with full benchstat
 output and k6's output in the run, which the comment links to.
 
 | Change | Effect |

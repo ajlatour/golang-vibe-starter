@@ -162,6 +162,10 @@ func (r report) write(out io.Writer) error {
 				p("100%% CPU is one core. %s's API doesn't serve its runtime metrics, so the comparisons that need them start once this lands.", r.baseName)
 			}
 		}
+
+		if l.head.validatorRuns > 0 || l.base.validatorRuns > 0 {
+			renderValidator(p, r.baseName, l)
+		}
 	}
 
 	if len(r.bench.deltas) > 0 {
@@ -282,4 +286,46 @@ func codeList(names []string) string {
 		quoted[i] = "`" + n + "`"
 	}
 	return strings.Join(quoted, ", ")
+}
+
+// renderValidator writes the calls to the request-validation service during
+// the load test: their time, from the API's histogram, and how many there
+// were per request. A side that made none (a base from before the check, or
+// without VALIDATOR_URL) shows a dash.
+func renderValidator(p func(string, ...any), baseName string, l loadComparison) {
+	ms := func(s loadSide, q float64) string {
+		if s.validatorRuns == 0 {
+			return "—"
+		}
+		return fmt.Sprintf("%.2fms", s.validatorQuantile(q)*1000)
+	}
+	change := func(q float64) string {
+		if l.base.validatorRuns == 0 || l.head.validatorRuns == 0 {
+			return ""
+		}
+		return pct(l.base.validatorQuantile(q), l.head.validatorQuantile(q))
+	}
+	perRequest := func(s loadSide) string {
+		if s.validatorRuns == 0 {
+			return "—"
+		}
+		return fmt.Sprintf("%.2f", s.validatorPerRequest())
+	}
+	p("")
+	p("### Request validation (the API's calls to the validation service, during the load test)")
+	p("")
+	p("| | %s | This PR | Change |", baseName)
+	p("| --- | ---: | ---: | ---: |")
+	row := func(label, base, head, change string) {
+		if change == "" {
+			p("| %s | %s | %s | |", label, base, head)
+			return
+		}
+		p("| %s | %s | %s | %s |", label, base, head, change)
+	}
+	row("Median call", ms(l.base, 0.5), ms(l.head, 0.5), change(0.5))
+	row("p99 call", ms(l.base, 0.99), ms(l.head, 0.99), change(0.99))
+	row("Calls per request", perRequest(l.base), perRequest(l.head), "")
+	p("")
+	p("From the API's own histogram (validator_call_duration_seconds), so it's the check's share of each request's latency: estimated within the histogram's buckets, like Prometheus's histogram_quantile.")
 }

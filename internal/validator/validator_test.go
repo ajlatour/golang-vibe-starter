@@ -188,3 +188,77 @@ func TestReachable(t *testing.T) {
 		t.Error("Reachable = nil for an unreachable service, want an error")
 	}
 }
+
+// TestShadowMode checks that with Enforce saying false, the service is still
+// asked, but every request goes through: a refusal is logged as one it would
+// have been, and an outage, even failing closed, refuses nothing.
+func TestShadowMode(t *testing.T) {
+	f := &fakeChecker{reason: "blocked by rule 7"}
+	var logs logtest.Buffer
+	p := validator.Policy{Retry: time.Minute, Enforce: func(context.Context) bool { return false }}
+	h := validator.Middleware(logs.Logger(slog.LevelInfo), f, p, http.HandlerFunc(ok))
+
+	if rec := call(h, "/items"); rec.Code != http.StatusNoContent {
+		t.Errorf("refused in shadow mode: %d, want it through", rec.Code)
+	}
+	if f.calls.Load() != 1 {
+		t.Error("the service wasn't asked in shadow mode")
+	}
+	f.fail.Store(true)
+	if rec := call(h, "/items"); rec.Code != http.StatusNoContent {
+		t.Errorf("unavailable in shadow mode, failing closed: %d, want it through", rec.Code)
+	}
+	got := msgs(t, &logs)
+	if !slices.Equal(got, []string{"INFO request would be refused by validation", "WARN request validation unavailable"}) {
+		t.Errorf("logs = %q", got)
+	}
+	if !strings.Contains(logs.String(), "blocked by rule 7") || !strings.Contains(logs.String(), `"enforcing":false`) {
+		t.Errorf("want the reason, and the outage marked as not enforcing:\n%s", logs.String())
+	}
+}
+
+// TestObserve checks each checked request's outcome is observed, with the
+// call's duration when the service was asked, and none for an exempt path.
+func TestObserve(t *testing.T) {
+	now := time.Unix(0, 0)
+	f := &fakeChecker{}
+	type seen struct {
+		o    validator.Outcome
+		call time.Duration
+	}
+	var got []seen
+	enforce := true
+	p := validator.Policy{
+		Retry:   time.Second,
+		Exempt:  []string{"/healthz"},
+		Enforce: func(context.Context) bool { return enforce },
+		Observe: func(o validator.Outcome, call time.Duration) { got = append(got, seen{o, call}) },
+	}
+	// Each call to the service takes 7ms on the test clock.
+	slow := checkerFunc(func(ctx context.Context, r validator.Request) (validator.Decision, error) {
+		now = now.Add(7 * time.Millisecond)
+		return f.Check(ctx, r)
+	})
+	h := validator.MiddlewareAt(slog.New(slog.DiscardHandler), slow, p, func() time.Time { return now }, http.HandlerFunc(ok))
+
+	f.allow.Store(true)
+	call(h, "/items")
+	call(h, "/healthz")
+	f.allow.Store(false)
+	call(h, "/items")
+	enforce = false
+	call(h, "/items")
+	f.fail.Store(true)
+	call(h, "/items")
+	call(h, "/items") // within the second: not asked
+	want := []seen{
+		{validator.Allowed, 7 * time.Millisecond},
+		{validator.Refused, 7 * time.Millisecond},
+		{validator.ShadowRefused, 7 * time.Millisecond},
+		{validator.Unavailable, 7 * time.Millisecond},
+		{validator.NotAsked, 0},
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("observed %v, want %v", got, want)
+	}
+}

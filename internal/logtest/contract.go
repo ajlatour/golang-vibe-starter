@@ -72,7 +72,8 @@ var Contract = map[string]Message{
 	"using request validation": {[]string{"INFO"}, []string{"url", "timeout", "fail_open"}},
 	"request validation is off: no VALIDATOR_URL; every request goes unchecked": {[]string{"WARN"}, nil},
 	"request refused by validation":                                             {[]string{"INFO"}, []string{"reason"}},
-	"request validation unavailable":                                            {[]string{"WARN"}, []string{"fail_open", "error"}},
+	"request would be refused by validation":                                    {[]string{"INFO"}, []string{"reason"}},
+	"request validation unavailable":                                            {[]string{"WARN"}, []string{"enforcing", "fail_open", "error"}},
 	"request validation recovered":                                              {[]string{"INFO"}, []string{"failures", "duration_ms"}},
 
 	// Feature flags.

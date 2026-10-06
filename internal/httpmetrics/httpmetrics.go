@@ -34,6 +34,7 @@ type key struct {
 // series is one route, method and status: a request count and a latency
 // histogram, updated without locking.
 type series struct {
+	bounds  []float64       // the buckets' upper bounds, in seconds
 	buckets []atomic.Uint64 // per bucket, not cumulative; the last is +Inf
 	count   atomic.Uint64
 	sumBits atomic.Uint64 // float64 seconds, as bits
@@ -74,14 +75,23 @@ func (rec *Recorder) Observe(route, method string, status int, d time.Duration) 
 	if s == nil {
 		rec.mu.Lock()
 		if s = rec.series[k]; s == nil {
-			s = &series{buckets: make([]atomic.Uint64, len(Buckets)+1)}
+			s = newSeries(Buckets)
 			rec.series[k] = s
 		}
 		rec.mu.Unlock()
 	}
 
+	s.observe(d)
+}
+
+func newSeries(bounds []float64) *series {
+	return &series{bounds: bounds, buckets: make([]atomic.Uint64, len(bounds)+1)}
+}
+
+// observe adds one duration to the series.
+func (s *series) observe(d time.Duration) {
 	secs := d.Seconds()
-	i, _ := slices.BinarySearch(Buckets, secs)
+	i, _ := slices.BinarySearch(s.bounds, secs)
 	s.buckets[i].Add(1)
 	s.count.Add(1)
 	for {
@@ -90,6 +100,28 @@ func (rec *Recorder) Observe(route, method string, status int, d time.Duration) 
 			break
 		}
 	}
+}
+
+// writeHistogram writes s as a Prometheus histogram's lines: the
+// cumulative buckets, the sum and the count. labels, if any, go before le.
+func (s *series) writeHistogram(w io.Writer, name, labels string) {
+	sep := ""
+	if labels != "" {
+		sep = ","
+	}
+	var cumulative uint64
+	for i, le := range s.bounds {
+		cumulative += s.buckets[i].Load()
+		fmt.Fprintf(w, "%s_bucket{%s%sle=%q} %d\n", name, labels, sep, strconv.FormatFloat(le, 'g', -1, 64), cumulative)
+	}
+	cumulative += s.buckets[len(s.bounds)].Load()
+	fmt.Fprintf(w, "%s_bucket{%s%sle=\"+Inf\"} %d\n", name, labels, sep, cumulative)
+	braces := ""
+	if labels != "" {
+		braces = "{" + labels + "}"
+	}
+	fmt.Fprintf(w, "%s_sum%s %s\n", name, braces, strconv.FormatFloat(math.Float64frombits(s.sumBits.Load()), 'g', -1, 64))
+	fmt.Fprintf(w, "%s_count%s %d\n", name, braces, cumulative)
 }
 
 // WritePrometheus writes the metrics in Prometheus's text format. The HELP and
@@ -129,16 +161,7 @@ func (rec *Recorder) WritePrometheus(w io.Writer) {
 
 	fmt.Fprint(bw, "# HELP http_request_duration_seconds How long requests took to serve, by route pattern, method and status.\n# TYPE http_request_duration_seconds histogram\n")
 	for _, k := range keys {
-		s, l := all[k], labels(k)
-		var cumulative uint64
-		for i, le := range Buckets {
-			cumulative += s.buckets[i].Load()
-			fmt.Fprintf(bw, "http_request_duration_seconds_bucket{%s,le=%q} %d\n", l, strconv.FormatFloat(le, 'g', -1, 64), cumulative)
-		}
-		cumulative += s.buckets[len(Buckets)].Load()
-		fmt.Fprintf(bw, "http_request_duration_seconds_bucket{%s,le=\"+Inf\"} %d\n", l, cumulative)
-		fmt.Fprintf(bw, "http_request_duration_seconds_sum{%s} %s\n", l, strconv.FormatFloat(math.Float64frombits(s.sumBits.Load()), 'g', -1, 64))
-		fmt.Fprintf(bw, "http_request_duration_seconds_count{%s} %d\n", l, cumulative)
+		all[k].writeHistogram(bw, "http_request_duration_seconds", labels(k))
 	}
 
 	fmt.Fprintf(bw, "# HELP http_requests_in_flight Requests being served right now.\n# TYPE http_requests_in_flight gauge\nhttp_requests_in_flight %d\n", rec.inFlight.Load())
