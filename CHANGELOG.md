@@ -16,6 +16,10 @@ Ideas considered but not planned are listed under
   (`ci-times.yml`) saves the pipeline's time, each job's time and wait for a runner, and each
   step's time to the `perf-data` branch, and `make perf-trends` charts the pipeline and its jobs
   beside the performance trends ([Pipeline time](docs/performance.md#pipeline-time)).
+- Every release attaches its documentation: the docs site as of the tag, with a new Performance
+  history page charting `main`'s performance and CI time up to the release, and the records it
+  charts ([Releasing](docs/releasing.md#what-the-tag-publishes)). `make docs-release` builds it
+  locally; `make docs` shows the page as a note, so it needs no records.
 
 ### Changed
 

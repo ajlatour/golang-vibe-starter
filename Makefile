@@ -47,8 +47,8 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .DEFAULT_GOAL := help
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
-	lint api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check godoc spec spec-lint \
-	release-prepare release-tag perf perf-profile bench bench-compare load-compare perf-compare perf-trends monitor
+	lint api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check docs-release godoc spec spec-lint \
+	release-prepare release-tag perf perf-profile bench bench-compare load-compare perf-compare perf-data perf-trends monitor
 
 ##@ Help
 
@@ -191,15 +191,20 @@ bench: ## Run the Go benchmarks, BENCH_COUNT times each, into bin/bench/current.
 	@mkdir -p $(BENCH_OUT)
 	go test -run '^$$' -bench . -benchmem -count $(BENCH_COUNT) ./... | tee $(BENCH_OUT)/current.txt
 
-perf-trends: ## Chart main's performance and CI times over time from the perf-data branch: bin/perf/trends.html
+# The records on the perf-data branch, as `report trends` reads them.
+TRENDS_DATA := bin/perf/trends-data
+TRENDS_ARGS  = -records $(TRENDS_DATA)/records $$([ -d $(TRENDS_DATA)/ci ] && echo -ci-records $(TRENDS_DATA)/ci)
+
+perf-data: ## Fetch the perf-data branch's records into bin/perf/trends-data, and build the report tool
 	git fetch -q origin perf-data
-	rm -rf bin/perf/trends-data && mkdir -p bin/perf/trends-data
-	git archive FETCH_HEAD records | tar -x -C bin/perf/trends-data
+	rm -rf $(TRENDS_DATA) && mkdir -p $(TRENDS_DATA)
+	git archive FETCH_HEAD records | tar -x -C $(TRENDS_DATA)
 	@# CI times (ci-times.yml) are charted once there are any.
-	@if git cat-file -e FETCH_HEAD:ci 2>/dev/null; then git archive FETCH_HEAD ci | tar -x -C bin/perf/trends-data; fi
+	@if git cat-file -e FETCH_HEAD:ci 2>/dev/null; then git archive FETCH_HEAD ci | tar -x -C $(TRENDS_DATA); fi
 	go build -C perf/report -o $(CURDIR)/bin/perf-report .
-	bin/perf-report trends -records bin/perf/trends-data/records \
-		$$([ -d bin/perf/trends-data/ci ] && echo -ci-records bin/perf/trends-data/ci) > bin/perf/trends.html
+
+perf-trends: perf-data ## Chart main's performance and CI times over time from the perf-data branch: bin/perf/trends.html
+	bin/perf-report trends $(TRENDS_ARGS) > bin/perf/trends.html
 	@echo "open bin/perf/trends.html"
 
 bench-compare: ## Run the benchmarks here and at BENCH_BASE (default main), interleaved, and compare them
@@ -244,7 +249,7 @@ release-tag: ## Tag VERSION on main and push the tag, which publishes the releas
 docs: ## Render the README, guides, changelog and API spec as a local site in bin/docs
 	@# Start empty, so a page the build didn't produce can't survive from an earlier run.
 	rm -rf $(DOCS_OUT)
-	$(PANDOC) docs/site/build.sh $(DOCS_OUT)
+	$(PANDOC) docs/site/build.sh $(DOCS_OUT) $(HISTORY)
 	$(REDOCLY) build-docs docs/openapi.json -o $(DOCS_OUT)/api.html
 	@echo "open $(DOCS_OUT)/index.html, or run make docs-open"
 
@@ -255,6 +260,10 @@ docs-open: docs ## Build the docs site and open it in your browser
 
 docs-check: docs ## Build the docs site and check every page exists and every link resolves
 	DOCS_SITE=$(DOCS_OUT) go test ./docs/site -count=1 -v
+
+docs-release: perf-data ## Build and check the docs site with its Performance history charted from perf-data, as a release attaches it
+	bin/perf-report trends -fragment $(TRENDS_ARGS) > bin/perf/history.html
+	$(MAKE) docs-check HISTORY=bin/perf/history.html
 
 godoc: ## Browse the Go package documentation at http://localhost:6060 (Ctrl-C to stop)
 	go run golang.org/x/pkgsite/cmd/pkgsite@v0.5.0 -http=localhost:6060 .

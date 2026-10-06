@@ -170,3 +170,42 @@ func TestTrendsChartsCIRecords(t *testing.T) {
 		t.Error("trends with an empty -ci-records directory = nil error, want one")
 	}
 }
+
+// TestTrendsFragment checks -fragment writes the charts alone, wrapped for
+// the docs site's styles, with no blank line: Markdown would end the raw
+// HTML block there, and pandoc would treat the rest as text.
+func TestTrendsFragment(t *testing.T) {
+	a, err := ciRecord1(t, ciRun, ciJobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	buf, _ := json.Marshal(a)
+	if err := os.WriteFile(filepath.Join(dir, "20261005T100000-abc1234.json"), buf, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	err = runTrends([]string{"-fragment", "-records", writeRecords(t, record1(t, "aaa1111", "First", "2026-10-01T10:00:00Z")), "-ci-records", dir}, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frag := out.String()
+	if !strings.HasPrefix(frag, `<div class="perf-history">`) || !strings.HasSuffix(frag, "</div>\n") {
+		t.Errorf("fragment isn't wrapped in <div class=\"perf-history\">:\n%.200s", frag)
+	}
+	// (Its <title> elements are the points' hover text, inside the SVG.)
+	for _, page := range []string{"<!doctype", "<html", "<head", "<body", "<style"} {
+		if strings.Contains(frag, page) {
+			t.Errorf("fragment contains %s: it goes inside a docs page, which styles it", page)
+		}
+	}
+	// Markdown keeps a run of lines as raw HTML only while each starts with
+	// a tag: a blank line, or one starting with text, ends it, and pandoc
+	// would wrap what follows in <p>, breaking the charts.
+	for i, line := range strings.Split(strings.TrimSuffix(frag, "\n"), "\n") {
+		if !strings.HasPrefix(line, "<") {
+			t.Errorf("fragment line %d doesn't start with a tag: %.80q", i+1, line)
+		}
+	}
+	mustContain(t, frag, "Latency under load", "CI pipeline time", "CI time per job")
+}

@@ -26,13 +26,20 @@ and pushes the tag.
 ## What the tag publishes
 
 The workflow checks the tag is on a commit that's on `main`, that the changelog has the
-version's section, and that `docs/openapi.json` is that version, runs `make check` once more on the tagged commit, then publishes:
+version's section, and that `docs/openapi.json` is that version, runs `make check` once more on
+the tagged commit, builds and checks the documentation (`make docs-release`), then publishes:
 
 | What | Where |
 | ---- | ----- |
 | The API's image, for linux/amd64 and linux/arm64 | `ghcr.io/ajlatour/golang-vibe-starter`, tagged `v0.1.0`, `0.1` and `latest` |
 | An SBOM (SPDX) and build provenance (SLSA v1) for each platform | Attached to the image in the registry, made by BuildKit |
 | A GitHub release | Its notes are the version's changelog section, headed by the image's name |
+| The documentation, `docs-v0.1.0.tar.gz` | Attached to the release: the docs site as of the tag (open `docs/index.html`), with a Performance history page charting `main`'s performance and CI time up to the release |
+| The performance records, `performance-records-v0.1.0.tar.gz` | Attached to the release: the `perf-data` records that page charts, as JSON, for analysis of your own |
+
+So each release carries the history up to it, and comparing two releases' Performance history
+pages shows what changed between them. The history comes from the `perf-data` branch as it is when
+the release is made ([Performance](performance.md#trends)).
 
 The binary inside reports the version: `version` on every log line is `v0.1.0`. The image's
 labels name the source repository, the commit and the version. The package is private, like the

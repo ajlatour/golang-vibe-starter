@@ -150,11 +150,14 @@ type chart struct {
 	points []record
 }
 
-// runTrends is `report trends`: an HTML page charting the records.
+// runTrends is `report trends`: an HTML page charting the records, or with
+// -fragment, the charts alone, for the docs site's Performance history page
+// (docs/site/build.sh), which styles them (docs/site/site.css).
 func runTrends(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("trends", flag.ContinueOnError)
 	dir := fs.String("records", "", "the directory of records")
 	ciDir := fs.String("ci-records", "", "a directory of CI records (report ci-record), to chart too")
+	fragment := fs.Bool("fragment", false, "write the charts alone, as an HTML fragment for a docs page")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -229,6 +232,9 @@ func runTrends(args []string, out io.Writer) error {
 	if len(ciRecs) > 0 {
 		charts = append(charts, ciCharts(ciRecs)...)
 	}
+	if *fragment {
+		return writeTrendsBody(out, recs, charts, true)
+	}
 	return writeTrendsPage(out, recs, charts)
 }
 
@@ -236,7 +242,6 @@ var palette = []string{"#2563eb", "#dc2626", "#16a34a", "#d97706", "#9333ea", "#
 
 func writeTrendsPage(w io.Writer, recs []record, charts []chart) error {
 	p := func(format string, args ...any) { fmt.Fprintf(w, format, args...) }
-	first, last := recs[0], recs[len(recs)-1]
 	p(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Performance trends</title>
@@ -253,8 +258,25 @@ svg text { fill: var(--muted); font-size: 11px; } svg .grid { stroke: var(--grid
 .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; background: var(--c); }
 </style></head><body>
 <h1>Performance trends</h1>
-<p class="meta">main, %d commits measured, from %s (%s) to %s (%s). Hover a point for its commit.</p>
-`, len(recs), html.EscapeString(short(first.SHA)), html.EscapeString(day(first.Time)), html.EscapeString(short(last.SHA)), html.EscapeString(day(last.Time)))
+`)
+	if err := writeTrendsBody(w, recs, charts, false); err != nil {
+		return err
+	}
+	p("</body></html>\n")
+	return nil
+}
+
+// writeTrendsBody writes what the records cover, then the charts. As a
+// fragment, it's wrapped in <div class="perf-history"> for the docs site's
+// styles, and has no blank line: Markdown ends a raw HTML block at one.
+func writeTrendsBody(w io.Writer, recs []record, charts []chart, fragment bool) error {
+	p := func(format string, args ...any) { fmt.Fprintf(w, format, args...) }
+	first, last := recs[0], recs[len(recs)-1]
+	if fragment {
+		p("<div class=\"perf-history\">\n")
+	}
+	p("<p class=\"meta\">main, %d commits measured, from %s (%s) to %s (%s). Hover a point for its commit.</p>\n",
+		len(recs), html.EscapeString(short(first.SHA)), html.EscapeString(day(first.Time)), html.EscapeString(short(last.SHA)), html.EscapeString(day(last.Time)))
 	for _, c := range charts {
 		if !hasData(c) {
 			continue
@@ -271,7 +293,9 @@ svg text { fill: var(--muted); font-size: 11px; } svg .grid { stroke: var(--grid
 		}
 		p("</div></section>\n")
 	}
-	p("</body></html>\n")
+	if fragment {
+		p("</div>\n")
+	}
 	return nil
 }
 
@@ -337,8 +361,10 @@ func writeChart(w io.Writer, recs []record, c chart) {
 			if math.IsNaN(v) {
 				continue
 			}
-			fmt.Fprintf(w, `<circle cx="%.1f" cy="%.1f" r="3.5" fill="%s"><title>%s %s: %s %s
-%s</title></circle>`, x(i), y(v), color, html.EscapeString(short(recs[i].SHA)), html.EscapeString(s.name),
+			// The hover text's second line, the subject, follows "&#10;", not a
+			// line break: every line of the output then starts with a tag, so
+			// Markdown keeps it all as raw HTML (see writeTrendsBody).
+			fmt.Fprintf(w, `<circle cx="%.1f" cy="%.1f" r="3.5" fill="%s"><title>%s %s: %s %s&#10;%s</title></circle>`, x(i), y(v), color, html.EscapeString(short(recs[i].SHA)), html.EscapeString(s.name),
 				html.EscapeString(formatTick(v)), html.EscapeString(c.unit), html.EscapeString(recs[i].Subject))
 		}
 	}

@@ -4,7 +4,9 @@ name: Release
 # docs/releasing.md): the API's image for linux/amd64 and linux/arm64 on the
 # GitHub Container Registry, tagged vX.Y.Z, X.Y and latest, with an SBOM and
 # build provenance attached; and a GitHub release whose notes are the
-# version's section of CHANGELOG.md.
+# version's section of CHANGELOG.md, with the documentation attached: the docs
+# site, its Performance history page charting main's performance and CI time
+# up to the release, and the records it charts.
 #
 # Run it by hand (workflow_dispatch) for a dry run: the same checks and build,
 # from the branch it's run on, publishing nothing.
@@ -26,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: write # the GitHub release
+      contents: write # the GitHub release (and reading the perf-data branch)
       packages: write # the image
     env:
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
@@ -73,6 +75,20 @@ jobs:
       - name: Checks
         run: make check
 
+      # The docs site as of this release, its Performance history page charted
+      # from the perf-data branch, and checked like CI checks the docs.
+      - name: Build the documentation
+        run: |
+          make docs-release
+          tar -czf "$RUNNER_TEMP/docs-$VERSION.tar.gz" -C bin docs
+          tar -czf "$RUNNER_TEMP/performance-records-$VERSION.tar.gz" -C bin/perf/trends-data .
+          {
+            echo "Documentation: $(du -h "$RUNNER_TEMP/docs-$VERSION.tar.gz" | cut -f1)," \
+              "with the performance history of $(find bin/perf/trends-data/records -name '*.json' | wc -l | tr -d ' ') commits" \
+              "and $(find bin/perf/trends-data -path '*/ci/*.json' | wc -l | tr -d ' ') CI runs."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build the image, and push it unless this is a dry run
         env:
           GH_TOKEN: ${{ github.token }}
@@ -114,6 +130,11 @@ jobs:
           {
             echo "Image: \`$image:$VERSION\`, for linux/amd64 and linux/arm64, with an SBOM and build provenance."
             echo
+            echo "Documentation: \`docs-$VERSION.tar.gz\`, the docs site as of this release; open \`docs/index.html\`."
+            echo "Its Performance history page charts \`main\`'s performance and CI time up to the release, from the"
+            echo "records in \`performance-records-$VERSION.tar.gz\`."
+            echo
             cat "$RUNNER_TEMP/notes.md"
           } > "$RUNNER_TEMP/release.md"
-          gh release create "$VERSION" --title "$VERSION" --notes-file "$RUNNER_TEMP/release.md" --verify-tag
+          gh release create "$VERSION" --title "$VERSION" --notes-file "$RUNNER_TEMP/release.md" --verify-tag \
+            "$RUNNER_TEMP/docs-$VERSION.tar.gz" "$RUNNER_TEMP/performance-records-$VERSION.tar.gz"

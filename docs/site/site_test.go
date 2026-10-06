@@ -40,10 +40,11 @@ func siteDir(t *testing.T) string {
 }
 
 // expectedPages lists the pages the site must have: one per Markdown source,
-// named as docs/site/build.sh names them, plus the API spec page.
+// named as docs/site/build.sh names them, plus the API spec page and the
+// Performance history page.
 func expectedPages(t *testing.T) []string {
 	t.Helper()
-	pages := []string{"index.html", "changelog.html", "api.html"}
+	pages := []string{"index.html", "changelog.html", "api.html", "history.html"}
 	guides, err := filepath.Glob("../*.md")
 	if err != nil {
 		t.Fatal(err)
@@ -197,6 +198,8 @@ func TestReadmeGroupsLikeTheSite(t *testing.T) {
 			continue // the README is the Overview: it doesn't list itself
 		case "-":
 			src = "docs/openapi.json" // the spec, which the site renders as api.html
+		case "+history":
+			continue // generated from the perf-data branch: no file to link to
 		}
 		site[len(site)-1].sources = append(site[len(site)-1].sources, src)
 	}
@@ -221,5 +224,31 @@ func TestReadmeGroupsLikeTheSite(t *testing.T) {
 	}
 	if fmt.Sprint(got) != fmt.Sprint(site) {
 		t.Errorf("the README's Documentation list doesn't match the site's themes:\n README: %v\n site:   %v", got, site)
+	}
+}
+
+// TestHistoryPage checks the Performance history page holds either the
+// charts, as live SVG (a blank line in the fragment, or a change in pandoc,
+// would turn them into escaped text), or the note saying where to find them.
+func TestHistoryPage(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join(siteDir(t), "history.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(b)
+	if strings.Contains(page, "&lt;svg") || strings.Contains(page, "&lt;section") {
+		t.Fatal("history.html shows the charts' HTML as text")
+	}
+	charted := strings.Contains(page, `<div class="perf-history">`)
+	// Every paragraph the charts have carries a class; a bare one is pandoc
+	// wrapping text it no longer took for raw HTML, inside a chart.
+	if i := strings.Index(page, `<div class="perf-history">`); charted && strings.Contains(page[i:], "<p>") {
+		t.Error("history.html has a bare <p> among the charts: pandoc broke the raw HTML up")
+	}
+	switch {
+	case charted && strings.Count(page, "<svg") == 0:
+		t.Error("history.html has the charts' wrapper but no chart")
+	case !charted && !strings.Contains(page, "This build has no performance history"):
+		t.Error("history.html has neither the charts nor the note saying where they are")
 	}
 }

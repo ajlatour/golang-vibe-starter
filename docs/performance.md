@@ -260,6 +260,11 @@ The page is drawn by the report tool, with no JavaScript or chart library.
 The timings come from shared runners, so a single point means little; look for steps and slopes.
 Allocations are exact, so a step in them is always a real change.
 
+Every release attaches its documentation with these charts in it: the docs site's Performance
+history page, built from the records up to the release, and the records themselves
+([Releasing](releasing.md#what-the-tag-publishes)). `make docs-release` builds that site locally;
+`make docs` leaves the page as a note pointing here, so building the docs needs no records.
+
 ## Pipeline time
 
 How long CI takes is tracked the same way. After every successful CI run on `main`, the CI times
@@ -272,7 +277,7 @@ file per run under `ci/` on the `perf-data` branch, with:
 - each step's time, for working out what made a job slower.
 
 `make perf-trends` charts the pipeline's time and each job's beside the performance charts, once
-there are records. The jobs run in parallel, so the slowest one, usually `fuzz` or `lint`, sets
+there are records, and so does the Performance history page each release attaches. The jobs run in parallel, so the slowest one, usually `fuzz` or `lint`, sets
 the pipeline's time.
 
 It runs after CI rather than inside it, so it sees every job's finished timings, and a failure in
