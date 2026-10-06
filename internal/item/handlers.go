@@ -7,14 +7,19 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ajlatour/golang-vibe-starter/internal/featureflag"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 )
 
 // FlagListTotal is the feature flag that adds a "total" count to the list
-// response. Declaring it here makes the service check at startup that
-// flagd/flags.json defines it.
-var FlagListTotal = featureflag.Declare("items-list-total")
+// response.
+const FlagListTotal = "items-list-total"
+
+// FlagKeys lists every feature flag the handlers read. The service checks at
+// startup that flagd/flags.json defines each (cmd/api), so a flag read here
+// always has a default to fall back on. Add a flag the handlers read to it.
+func FlagKeys() []string {
+	return []string{FlagListTotal}
+}
 
 // Flags evaluates boolean feature flags. Implementations fall back to a
 // configured default when a flag can't be evaluated, so handlers never handle
@@ -180,12 +185,30 @@ func decodeDraft(w http.ResponseWriter, r *http.Request) (Draft, bool) {
 	return d, true
 }
 
-// storeError maps ErrNotFound to 404 and anything else to the status
-// httpx.ServerError picks: 500, or 502/504 for a failed upstream call.
+// storeError answers a Store's error: ErrNotFound is a 404, ErrStoreTimeout a
+// 504, ErrStoreUnavailable a 502, and anything else a 500, each 5xx logged by
+// httpx.ServerError.
 func storeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err error) {
-	if errors.Is(err, ErrNotFound) {
+	switch {
+	case errors.Is(err, ErrNotFound):
 		httpx.WriteError(w, http.StatusNotFound, ErrNotFound.Error())
-		return
+	case errors.Is(err, ErrStoreTimeout):
+		httpx.ServerError(logger, w, r, withStatus{err, http.StatusGatewayTimeout})
+	case errors.Is(err, ErrStoreUnavailable):
+		httpx.ServerError(logger, w, r, withStatus{err, http.StatusBadGateway})
+	default:
+		httpx.ServerError(logger, w, r, err)
 	}
-	httpx.ServerError(logger, w, r, err)
 }
+
+// withStatus gives err the status httpx.ServerError should answer it with,
+// keeping err's chain (and so its log fields) for errors.As.
+type withStatus struct {
+	error
+	status int
+}
+
+func (e withStatus) HTTPStatus() int { return e.status }
+func (e withStatus) Unwrap() error   { return e.error }
+
+var _ httpx.StatusError = withStatus{}

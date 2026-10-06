@@ -17,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 )
 
@@ -82,14 +81,28 @@ func InFlight(p Policy, next http.Handler) http.Handler {
 	})
 }
 
-// Client names who a request comes from, for the per-client limit: its API
-// key's name when it was authenticated with one, else its connection's IP
-// address. Proxy headers such as X-Forwarded-For are never trusted (the
-// header guard removes them), so behind a proxy every keyless request shares
-// the proxy's address.
-func Client(r *http.Request) string {
-	if name := apikey.Name(r.Context()); name != "" {
-		return "key:" + name
+// Identity is who a request comes from, as whatever identified it knows: a
+// name for the client, and the client's own rate limit, if it has one, which
+// replaces the policy's (a zero Rate: the policy's).
+type Identity struct {
+	Client string
+	Rate   float64
+	Burst  int
+}
+
+// Identify tells the per-client limit who a request comes from, when it can:
+// authentication, for one. It reports false for a request it can't identify.
+// The limiter knows nothing of how: cmd/api supplies one from the API keys.
+type Identify func(*http.Request) (Identity, bool)
+
+// clientName names who a request comes from, for the per-client limit: the
+// identity identify gave it, if any, else its connection's IP address. Proxy
+// headers such as X-Forwarded-For are never trusted (the header guard removes
+// them), so behind a proxy every unidentified request shares the proxy's
+// address.
+func clientName(r *http.Request, id Identity, identified bool) string {
+	if identified {
+		return "id:" + id.Client
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -148,28 +161,40 @@ func (l *limiter) sweep(now time.Time) {
 	}
 }
 
-// PerClient refuses a request with 429 when its client (see Client) is over
-// its rate: the key's own limit if it has one, else the policy's. Put it
-// after authentication, so a client is its key.
-func PerClient(p Policy, next http.Handler) http.Handler {
-	return perClient(p, time.Now, next)
+// PerClient refuses a request with 429 when its client is over its rate: the
+// client identify names, with its own limit if it has one, else its IP
+// address, with the policy's. A client's own limit applies even when the
+// policy sets none. identify may be nil, and every client is then an IP
+// address. Put it after whatever identify relies on: after authentication,
+// so a client is its key.
+func PerClient(p Policy, identify Identify, next http.Handler) http.Handler {
+	return perClient(p, identify, time.Now, next)
 }
 
-func perClient(p Policy, now func() time.Time, next http.Handler) http.Handler {
+func perClient(p Policy, identify Identify, now func() time.Time, next http.Handler) http.Handler {
 	l := &limiter{now: now, buckets: map[string]*bucket{}, lastSweep: now()}
 	exempt := exemptSet(p.Exempt)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// A key's own limit (apikey.Limits) replaces the policy's, and
-		// applies even when the policy sets none.
-		rate, burst := p.Rate, float64(p.Burst)
-		if kr, kb, ok := apikey.Limits(r.Context()); ok {
-			rate, burst = kr, float64(kb)
-		}
-		if rate == 0 || exempt[r.URL.Path] {
+		if exempt[r.URL.Path] {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if ok, wait := l.take(Client(r), rate, burst); !ok {
+		var id Identity
+		identified := false
+		if identify != nil {
+			id, identified = identify(r)
+		}
+		rate, burst := p.Rate, float64(p.Burst)
+		if identified && id.Rate > 0 {
+			rate, burst = id.Rate, float64(id.Burst)
+		}
+		// With no limit, don't even name the client: it would cost every
+		// request an allocation for nothing.
+		if rate == 0 {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if ok, wait := l.take(clientName(r, id, identified), rate, burst); !ok {
 			w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
 			httpx.WriteError(w, http.StatusTooManyRequests, "too many requests; slow down")
 			return

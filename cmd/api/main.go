@@ -127,14 +127,14 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 
 // newFlags returns the feature flag evaluator: flagd when FLAGS_URL is set,
 // otherwise the flag definitions' default values alone. Either way every flag
-// the application declares must be defined there, because those defaults are
-// what evaluation falls back to when flagd can't answer.
+// the application reads (item.FlagKeys) must be defined there, because those
+// defaults are what evaluation falls back to when flagd can't answer.
 func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
 	defaults, err := featureflag.LoadDefaults(cfg.FlagsFallbackFile)
 	if err != nil {
 		return nil, err
 	}
-	if err := defaults.Require(featureflag.Declared()...); err != nil {
+	if err := defaults.Require(item.FlagKeys()...); err != nil {
 		return nil, err
 	}
 
@@ -210,8 +210,22 @@ func newHandler(logger *slog.Logger, cfg handlerConfig, items item.Store, opts .
 		mwOpts = append(mwOpts, httpx.WithMetrics(cfg.Metrics))
 	}
 	return httpx.Middleware(logger, limit.InFlight(limits,
-		headerguard.Middleware(logger, cfg.Guard, apikey.Middleware(logger, auth, limit.PerClient(limits, httpx.RecordRoute(mux))))),
+		headerguard.Middleware(logger, cfg.Guard, apikey.Middleware(logger, auth, limit.PerClient(limits, identifyByKey, httpx.RecordRoute(mux))))),
 		mwOpts...)
+}
+
+// identifyByKey tells the per-client rate limit who a request comes from:
+// the API key it was authenticated with, and that key's own limit if it has
+// one. A request without a key isn't identified, and is limited by its
+// address. Here, where both are wired, is the one place the limiter and
+// authentication meet.
+func identifyByKey(r *http.Request) (limit.Identity, bool) {
+	name := apikey.Name(r.Context())
+	if name == "" {
+		return limit.Identity{}, false
+	}
+	rate, burst, _ := apikey.Limits(r.Context())
+	return limit.Identity{Client: name, Rate: rate, Burst: burst}, true
 }
 
 // serverHeaderLimit is how much of a request's line and headers Go's server

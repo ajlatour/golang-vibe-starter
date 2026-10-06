@@ -25,6 +25,17 @@ import (
 // ErrNotFound is returned by a Store when no item has the given ID.
 var ErrNotFound = errors.New("item not found")
 
+// A Store's errors match these, with errors.Is, when it couldn't do its part:
+// it didn't answer in time, or couldn't give a usable answer (it failed, was
+// unreachable, or answered with something unusable). The handlers answer them
+// 504 and 502, which say the API's dependency failed, not the API; any other
+// error is a 500. A Store says what went wrong, and the handlers decide what
+// that means to the client.
+var (
+	ErrStoreTimeout     = errors.New("the item store didn't answer in time")
+	ErrStoreUnavailable = errors.New("the item store couldn't give a usable answer")
+)
+
 // MaxIDLen is the longest an item ID can be.
 const MaxIDLen = 128
 

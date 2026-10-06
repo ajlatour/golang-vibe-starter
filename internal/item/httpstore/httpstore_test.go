@@ -227,8 +227,8 @@ func TestUpstreamRedirectIsAFailure(t *testing.T) {
 	store := httpstore.New(upstream.URL, &http.Client{Timeout: time.Second})
 	_, err := store.Create(t.Context(), itemtest.MustDraft("x", ""))
 	var uerr *httpstore.UpstreamError
-	if !errors.As(err, &uerr) || uerr.Status != http.StatusTemporaryRedirect || uerr.HTTPStatus() != http.StatusBadGateway {
-		t.Errorf("Create error = %v; want an UpstreamError for the 307, answered as 502", err)
+	if !errors.As(err, &uerr) || uerr.Status != http.StatusTemporaryRedirect || !errors.Is(err, item.ErrStoreUnavailable) || errors.Is(err, item.ErrStoreTimeout) {
+		t.Errorf("Create error = %v; want an UpstreamError for the 307 that is ErrStoreUnavailable", err)
 	}
 }
 

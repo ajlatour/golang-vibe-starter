@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +13,10 @@ import (
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
+	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
+	"github.com/ajlatour/golang-vibe-starter/internal/limit"
 )
 
 // The API keys the tests call the service with: one that may write, and one
@@ -147,5 +153,41 @@ func TestRunReloadsAPIKeysFile(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), `"msg":"API keys reloaded"`) {
 		t.Errorf("no reload logged:\n%s", logs)
+	}
+}
+
+// TestKeysAreRateLimitedClients checks the wiring between authentication and
+// the per-client rate limit (identifyByKey): a key is one client whatever
+// address it calls from, its own limit applies even when the policy sets
+// none, and a key without one is limited by the policy, apart from others.
+func TestKeysAreRateLimitedClients(t *testing.T) {
+	const capped, open = "gvs_capped", "gvs_open"
+	keys, err := apikey.ParseKeys("capped:read:" + apikey.HashHex(capped) + ":1/2,open:read:" + apikey.HashHex(open))
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := newHandler(slog.New(slog.DiscardHandler), handlerConfig{
+		Guard:  headerguard.DefaultPolicy(),
+		Auth:   apikey.Policy{Keys: keys},
+		Limits: limit.Policy{}, // no policy limit: only a key's own
+	}, itemtest.NewMemStore())
+	get := func(key string, port int) int {
+		req := httptest.NewRequest(http.MethodGet, "/items", nil)
+		req.RemoteAddr = fmt.Sprintf("192.0.2.1:%d", port)
+		req.Header.Set("Authorization", "Bearer "+key)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	// The capped key's burst of 2, from two addresses, then refused.
+	for i, want := range []int{http.StatusOK, http.StatusOK, http.StatusTooManyRequests} {
+		if code := get(capped, 1000+i); code != want {
+			t.Errorf("capped key, request %d: %d, want %d", i+1, code, want)
+		}
+	}
+	for i := range 20 {
+		if code := get(open, 2000); code != http.StatusOK {
+			t.Fatalf("open key, request %d: %d, want 200: no limit applies to it", i+1, code)
+		}
 	}
 }

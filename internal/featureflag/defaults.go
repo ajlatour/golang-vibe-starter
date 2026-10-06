@@ -15,7 +15,7 @@ import (
 // Defaults maps each flag key to the value used when flagd can't supply one.
 // It is derived from flag definitions in flagd's format: each flag's
 // defaultVariant, which is also what flagd serves when no targeting rule
-// matches. Every flag the application reads must be present (see Declare).
+// matches. Every flag the application reads must be present (see Require).
 type Defaults map[string]bool
 
 // LoadDefaults reads flag definitions from the flagd-format JSON file at

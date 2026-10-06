@@ -43,7 +43,7 @@ don't, and its message says what to fix.
 | The fields of `item.Item`, the name limit, or the correlation ID format | `docs/openapi.json` | `cmd/api/openapi_test.go` |
 | A log message (new, renamed, or a level or field changed) | `logtest.Contract` (`internal/logtest/contract.go`) and the Messages table in `docs/logging.md` | `internal/logx/schema_test.go`, and `cmd/api/logcontract_test.go`, which runs the whole service |
 | A log field name | A `Key` constant in `internal/logx/keys.go` and the Fields table in `docs/logging.md` | `internal/logx/schema_test.go`; a raw string key fails the build |
-| A feature flag | `flagd/flags.json`, and `featureflag.Declare` in code | The service won't start if a declared flag is missing; `cmd/api/main_test.go` |
+| A feature flag | `flagd/flags.json`, and the package's `FlagKeys` in code | The service won't start if a listed flag is missing; `cmd/api/main_test.go` |
 | A header rule or default limit (`headerguard.DefaultPolicy`) | `docs/openapi.json` (the 400, 415 and 431 responses) and the Request headers section of the README | `cmd/api/openapi_test.go` produces each status on every operation; `integration/features/headers.feature` |
 | A store implementation | Nothing: run it through `itemtest.StoreContract` | The same contract `httpstore.Store` and the in-memory fake pass |
 | A route, status or header rule a caller would hit, or `scripts/api` | `docs/curl.md`, which needs a successful call of every route | `cmd/api/curl_test.go` runs every command on the page, and the script, against the real handlers |

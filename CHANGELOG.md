@@ -10,6 +10,15 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+### Changed
+
+- Packages are told what they need instead of reaching into each other
+  ([ADR-0031](docs/decisions.md#adr-0031-packages-are-told-what-they-need-by-the-composition-root)):
+  the upstream store reports what went wrong and the item handlers choose the 502 or 504; the rate
+  limiter is told who a client is and their limit, rather than reading the API key itself; and the
+  item package lists the flags it reads, replacing the global flag registry. The API behaves as
+  before.
+
 ## [0.3.1] - 2026-10-06
 
 ### Changed

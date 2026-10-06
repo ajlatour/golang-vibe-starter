@@ -50,15 +50,17 @@ How flag problems are logged, without flooding the logs during an outage, is in
 ## Adding a flag
 
 1. Define it in `flagd/flags.json`.
-2. Declare and read it in code:
+2. Name it, list it, and read it in code, in the package that uses it:
    ```go
-   var FlagFoo = featureflag.Declare("foo") // package level
+   const FlagFoo = "foo"
+   func FlagKeys() []string { return []string{FlagListTotal, FlagFoo} } // item's, say
    ...
    if f.Bool(ctx, FlagFoo) { ... }   // f is the package's Flags
    ```
 
-`featureflag.Declare` registers the key, and the service refuses to start if any declared flag is
-missing from the definitions, so a typo or forgotten step fails fast, not at request time.
+At startup `cmd/api` checks every key in `item.FlagKeys()` (a new package with flags adds its own
+list there) against the definitions, and refuses to start if one is missing, so a typo or forgotten
+step fails fast, not at request time. Nothing is registered globally: the list is explicit.
 
 Evaluation currently sends an empty context, so targeting rules in flagd (per user, per tenant)
 have nothing to match on yet. Pass request attributes in `featureflag.OFREP` when you need them.
