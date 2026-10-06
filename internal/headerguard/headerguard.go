@@ -121,7 +121,7 @@ func DefaultPolicy() Policy {
 		MaxHeaders:      100,
 		MaxTotalBytes:   32 << 10,
 		MaxHeaderBytes:  8 << 10,
-		SingleValued:    []string{"Authorization", "Content-Type", httpx.RequestIDHeader},
+		SingleValued:    []string{"Authorization", "Content-Type", httpx.RequestIDHeader, httpx.APIVersionHeader},
 		RequireJSONBody: true,
 		Strip: []string{
 			"Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto",
@@ -145,6 +145,12 @@ func Middleware(logger *slog.Logger, p Policy, next http.Handler) http.Handler {
 	strip := make([]string, len(p.Strip))
 	for i, h := range p.Strip {
 		strip[i] = http.CanonicalHeaderKey(h)
+	}
+	// Canonical once, here: looked up as given, a name that isn't (such as
+	// API-Version) would be canonicalized, and allocated, on every request.
+	p.SingleValued = append([]string(nil), p.SingleValued...)
+	for i, h := range p.SingleValued {
+		p.SingleValued[i] = http.CanonicalHeaderKey(h)
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -210,8 +216,8 @@ func (p Policy) check(r *http.Request) *violation {
 	}
 
 	for _, h := range p.SingleValued {
-		if len(r.Header.Values(h)) > 1 {
-			name := http.CanonicalHeaderKey(h)
+		if len(r.Header[h]) > 1 { // h is canonical (see Middleware)
+			name := h
 			return &violation{
 				status: http.StatusBadRequest, code: httpx.CodeDuplicateHeader, reason: "duplicate header", header: name,
 				message: fmt.Sprintf("request has more than one %s header", name),

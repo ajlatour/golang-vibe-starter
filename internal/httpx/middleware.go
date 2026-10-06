@@ -75,6 +75,9 @@ func defensiveHeaders(next http.Handler) http.Handler {
 		h := w.Header()
 		h["X-Content-Type-Options"] = nosniff
 		h["Cache-Control"] = noStore
+		// Which API version answered (APIVersion), on every response,
+		// those refused before the version is checked included.
+		h[canonicalAPIVersion] = currentAPIVersion
 		next.ServeHTTP(w, r)
 	})
 }

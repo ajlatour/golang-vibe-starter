@@ -53,6 +53,7 @@ outside in:
 | 1 | Defensive headers, correlation ID, request logging and metrics, panic recovery | `internal/httpx` | 500 on a panic | Outermost, so every response, refusals included, is logged, counted and carries a correlation ID |
 | 2 | Cap on requests in flight | `internal/limit` | 503 | Before authentication, so floods without a valid key are capped too (ADR-0018) |
 | 3 | Header screening | `internal/headerguard` | 400, 415, 431 | Before authentication, so a doubled `Authorization` header is refused before either copy is read (ADR-0012) |
+| 3½ | API version | `httpx.APIVersion` | 400 for a version the API doesn't serve | After screening, so `API-Version` appears once; before authentication, since it's cheaper (ADR-0036) |
 | 4 | Authentication | `internal/apikey` | 401, 403 | After screening; the probes are exempt (ADR-0016) |
 | 5 | Per-client rate limit | `internal/limit` | 429 | After authentication, so a client is its key (ADR-0018) |
 | 6 | Request validation, with `VALIDATOR_URL` | `internal/validator`, over `internal/jsoncall` | 403, or 503 when the service can't answer and the API fails closed | After the rate limit, so a client's flood never reaches the validation service (ADR-0032) |

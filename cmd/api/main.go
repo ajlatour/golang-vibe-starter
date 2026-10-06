@@ -272,7 +272,7 @@ func newHandler(logger *slog.Logger, cfg handlerConfig, items item.Store, opts .
 		mwOpts = append(mwOpts, httpx.WithClientIP())
 	}
 	return httpx.Middleware(logger, limit.InFlight(limits,
-		headerguard.Middleware(logger, cfg.Guard, apikey.Middleware(logger, auth, limit.PerClient(limits, identifyByKey, validate(logger, cfg, probes, httpx.RecordRoute(mux)))))),
+		headerguard.Middleware(logger, cfg.Guard, httpx.APIVersion(probes, apikey.Middleware(logger, auth, limit.PerClient(limits, identifyByKey, validate(logger, cfg, probes, httpx.RecordRoute(mux))))))),
 		mwOpts...)
 }
 
