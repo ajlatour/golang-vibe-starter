@@ -54,6 +54,7 @@ make integration    # starts the stack, runs the integration tests, stops the st
 make perf PROFILE=load   # k6 load test against the stack; see docs/performance.md
 make perf-compare   # benchmarks and a load test against main: the report CI posts on a pull request
 make perf-trends    # main's performance over time, from the records CI keeps
+make perf-soak      # 30 minutes of load, failing if the heap or goroutines grow (nightly in CI)
 ```
 
 CI runs these same targets on every push to `main` and every pull request.

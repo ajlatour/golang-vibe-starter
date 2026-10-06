@@ -19,12 +19,15 @@
 // `report record` and `report trends` keep and chart main's performance
 // over time; see trends.go. `report ci-record` keeps how long each CI run on
 // main took, by job and step, for `report trends` to chart too; see ci.go.
+// `report soak` judges the nightly soak run: whether the API's heap or
+// goroutines grew; see soak.go.
 //
 // This is its own module, like integration/, so that the service itself
 // stays standard library only.
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -43,9 +46,13 @@ func main() {
 			run = runTrends
 		case "ci-record":
 			run = runCIRecord
+		case "soak":
+			run = runSoak
 		}
 		if run != nil {
-			if err := run(os.Args[2:], os.Stdout); err != nil {
+			if err := run(os.Args[2:], os.Stdout); errors.Is(err, errSoakGrew) {
+				os.Exit(1)
+			} else if err != nil {
 				fmt.Fprintln(os.Stderr, "report:", err)
 				os.Exit(2)
 			}

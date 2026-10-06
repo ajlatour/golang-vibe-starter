@@ -34,7 +34,8 @@ For context: what the items below build on.
   `traceparent`); request and runtime metrics; validator call metrics; `runtime stats` in the logs.
 - **Pipeline.** Unit, race, fuzz, OpenAPI-scenario and Gherkin integration tests; gosec,
   staticcheck and govulncheck; a performance comparison on every pull request with an allocation
-  gate; main's performance and CI-time trends, attached to every release with its docs.
+  gate; main's performance and CI-time trends, attached to every release with its docs; a nightly
+  soak test that fails on heap or goroutine growth.
 
 ## In flight: the improvement queue
 
@@ -47,10 +48,10 @@ For context: what the items below build on.
 | ✅ | Upstream GET retries within a budget (ADR-0035) | |
 | ✅ | API versioning by header (ADR-0036) | |
 | ✅ | Cursor paging, 50 by default (ADR-0037) | |
-| 🔄 | Bound the rate limiter's memory; key IPv6 by /64 (ADR-0038) | built, awaiting its pull request |
+| ✅ | Bound the rate limiter's memory; key IPv6 by /64 (ADR-0038) | |
 | ✅ | Check what the upstream sends back (ADR-0039) | items that break the model's rules become a 502 |
 | ✅ | `ETag` / `If-Match` for safe concurrent updates (ADR-0040) | |
-| ⏭️ | Nightly soak test, failing on heap or goroutine growth | container (k6), CI schedule |
+| ✅ | Nightly soak test, failing on heap or goroutine growth | `.github/workflows/soak.yml` |
 | ⏭️ | Check the WireMock stubs against the `/items` contract | stdlib test; see contract testing below |
 
 ## Resilience
