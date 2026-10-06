@@ -37,6 +37,13 @@ Ideas considered but not planned are listed under
 
 ### Changed
 
+- `GET /items` comes a page at a time: up to `limit` items (50 without it, at most 200), with
+  `next_cursor` to send back as `cursor` until the last page. A client that doesn't page gets the
+  first 50, not every item. Cursors are opaque, and pages stay right while items are added or
+  deleted. A `limit` out of range, or a cursor the list didn't give out, is a 400,
+  `invalid_parameter`. The upstream contract pages the same way, and the `items-list-total`
+  flag's `total` counts the page
+  ([ADR-0037](docs/decisions.md#adr-0037-the-list-is-paged-by-cursor-50-a-page-by-default)).
 - Handlers return their errors, and `httpx.Handle` answers them in one place: an `httpx.Error`
   (the client's mistake) as its status, code and message, anything else through
   `httpx.ServerError`, logged and kept from the client. The item handlers no longer each write

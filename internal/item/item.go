@@ -173,12 +173,74 @@ func Restore(id, name, description string, createdAt, updatedAt time.Time) Item 
 	return Item{ID: ID{id}, Name: Name{name}, Description: Description{description}, CreatedAt: createdAt, UpdatedAt: updatedAt}
 }
 
+// The list's pages: how many items a page holds without a limit, and at most.
+const (
+	DefaultPageSize = 50
+	MaxPageSize     = 200
+)
+
+// MaxCursorLen bounds a cursor: a Store's are short, and a client's is
+// checked before it reaches one.
+const MaxCursorLen = 256
+
+// Cursor marks a place in the list, after the last item of a page: made by a
+// Store, opaque to everyone else, and given back to list on from there. The
+// zero Cursor is the start of the list. ParseCursor checks a client's: 1 to
+// MaxCursorLen URL-safe base64 characters, so it's safe in an upstream URL;
+// whether it's one the Store made is the Store's to say (ErrInvalidCursor).
+type Cursor struct{ v string }
+
+// ErrInvalidCursor is a cursor that marks no place in the list: not one a
+// Store made, or not in the form they take.
+var ErrInvalidCursor = errors.New("the cursor isn't valid")
+
+// ParseCursor returns s as a Cursor, or ErrInvalidCursor; "" is the start.
+func ParseCursor(s string) (Cursor, error) {
+	if len(s) > MaxCursorLen {
+		return Cursor{}, ErrInvalidCursor
+	}
+	for _, c := range []byte(s) {
+		switch {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', c == '-', c == '_':
+		default:
+			return Cursor{}, ErrInvalidCursor
+		}
+	}
+	return Cursor{s}, nil
+}
+
+// NewCursor is a Store's cursor, in the form ParseCursor accepts.
+func NewCursor(s string) Cursor { return Cursor{s} }
+
+func (c Cursor) String() string { return c.v }
+
+// IsZero reports whether c is the start of the list, or, as a Listing's Next,
+// that there's no next page.
+func (c Cursor) IsZero() bool { return c.v == "" }
+
+// Page asks for one page of the list: up to Limit items (1 to MaxPageSize),
+// after Cursor.
+type Page struct {
+	Limit  int
+	Cursor Cursor
+}
+
+// Listing is one page of the list, oldest first, and where the next page
+// starts: the zero Cursor on the last page.
+type Listing struct {
+	Items []Item // non-nil
+	Next  Cursor
+}
+
 // Store is the persistence boundary for items. Handlers depend only on this
 // interface. Implementations assign ID and timestamps, and must be safe for
 // concurrent use.
 type Store interface {
-	// List returns all items, oldest first, as a non-nil slice.
-	List(ctx context.Context) ([]Item, error)
+	// List returns a page of the items, oldest first: up to p.Limit, after
+	// p.Cursor, with the cursor for the next page. A cursor it didn't make
+	// is ErrInvalidCursor. A page stays right when items are added or
+	// deleted between calls: nothing is skipped, or listed twice.
+	List(ctx context.Context, p Page) (Listing, error)
 	Get(ctx context.Context, id ID) (Item, error)
 	// Create stores a new item made from d and returns it with ID,
 	// CreatedAt and UpdatedAt set.

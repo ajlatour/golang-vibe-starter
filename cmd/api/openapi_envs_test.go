@@ -30,7 +30,9 @@ type errStore struct{}
 
 var errBoom = errors.New("boom")
 
-func (errStore) List(context.Context) ([]item.Item, error) { return nil, errBoom }
+func (errStore) List(context.Context, item.Page) (item.Listing, error) {
+	return item.Listing{}, errBoom
+}
 
 func (errStore) Get(context.Context, item.ID) (item.Item, error) { return item.Item{}, errBoom }
 
@@ -48,6 +50,7 @@ func (errStore) Delete(context.Context, item.ID) error { return errBoom }
 //
 //	ok       an in-memory store holding one item; flags off
 //	flagOn   the same, with the items-list-total flag on
+//	paged       three items, so a page of two has a next
 //	refused     the request-validation service refuses every request (403)
 //	unvalidated the request-validation service can't answer, failing closed (503)
 //	internal a store that fails with a plain error (a bug here: 500)
@@ -86,6 +89,15 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 		<-store.entered
 		t.Cleanup(func() { close(store.release); <-done })
 		return h, ""
+	case "paged":
+		// Three items, so a page of two has a next.
+		store := itemtest.NewMemStore()
+		for _, name := range []string{"a", "b", "c"} {
+			if _, err := store.Create(t.Context(), itemtest.MustDraft(name, "")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return newHandler(logger, handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: testAuth(t)}, store), ""
 	case "refused":
 		// The request-validation service refuses every request.
 		return newHandler(logger, handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: testAuth(t), Validator: fixedDecision{}}, itemtest.NewMemStore()), ""
@@ -112,7 +124,10 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 // spyStore notes that it was asked anything, and has no items.
 type spyStore struct{ asked *bool }
 
-func (s spyStore) List(context.Context) ([]item.Item, error) { *s.asked = true; return nil, nil }
+func (s spyStore) List(context.Context, item.Page) (item.Listing, error) {
+	*s.asked = true
+	return item.Listing{Items: []item.Item{}}, nil
+}
 
 func (s spyStore) Get(context.Context, item.ID) (item.Item, error) {
 	*s.asked = true
@@ -137,9 +152,9 @@ type blockingStore struct{ entered, release chan struct{} }
 
 func (s blockingStore) wait() { s.entered <- struct{}{}; <-s.release }
 
-func (s blockingStore) List(context.Context) ([]item.Item, error) {
+func (s blockingStore) List(context.Context, item.Page) (item.Listing, error) {
 	s.wait()
-	return nil, nil
+	return item.Listing{Items: []item.Item{}}, nil
 }
 
 func (s blockingStore) Get(context.Context, item.ID) (item.Item, error) {

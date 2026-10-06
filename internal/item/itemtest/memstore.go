@@ -6,9 +6,13 @@ import (
 	"cmp"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,17 +45,77 @@ func (s *MemStore) Seed(items ...item.Item) {
 	}
 }
 
-func (s *MemStore) List(_ context.Context) ([]item.Item, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	items := make([]item.Item, 0, len(s.items))
-	for _, it := range s.items {
-		items = append(items, it)
+func (s *MemStore) List(_ context.Context, p item.Page) (item.Listing, error) {
+	after, err := decodeCursor(p.Cursor)
+	if err != nil {
+		return item.Listing{}, err
 	}
-	slices.SortFunc(items, func(a, b item.Item) int {
-		return cmp.Or(a.CreatedAt.Compare(b.CreatedAt), cmp.Compare(a.ID.String(), b.ID.String()))
-	})
-	return items, nil
+	s.mu.RLock()
+	all := make([]item.Item, 0, len(s.items))
+	for _, it := range s.items {
+		all = append(all, it)
+	}
+	s.mu.RUnlock()
+	slices.SortFunc(all, compareItems)
+
+	// The page starts after the cursor's place, whatever has been added or
+	// deleted since: nothing is skipped, or listed twice.
+	start := 0
+	if after != nil {
+		// The first item strictly after the cursor's place.
+		start = sort.Search(len(all), func(i int) bool {
+			n := all[i].CreatedAt.UnixNano()
+			return n > after.nanos || (n == after.nanos && all[i].ID.String() > after.id)
+		})
+	}
+	page := all[start:min(start+p.Limit, len(all))]
+	l := item.Listing{Items: slices.Clone(page)}
+	if l.Items == nil {
+		l.Items = []item.Item{}
+	}
+	if start+p.Limit < len(all) && len(page) > 0 {
+		l.Next = encodeCursor(page[len(page)-1])
+	}
+	return l, nil
+}
+
+// compareItems orders the list: oldest first, then by ID. Times compare as
+// nanoseconds, so a time's location or monotonic reading can't tell two
+// equal ones apart.
+func compareItems(a, b item.Item) int {
+	return cmp.Or(cmp.Compare(a.CreatedAt.UnixNano(), b.CreatedAt.UnixNano()), cmp.Compare(a.ID.String(), b.ID.String()))
+}
+
+// position is a place in the list: just after the item created at nanos
+// (Unix nanoseconds) with id.
+type position struct {
+	nanos int64
+	id    string
+}
+
+// encodeCursor is the cursor for the place after it: its creation time and
+// ID, base64url, so it's opaque and safe in a URL.
+func encodeCursor(it item.Item) item.Cursor {
+	return item.NewCursor(base64.RawURLEncoding.EncodeToString(
+		[]byte(strconv.FormatInt(it.CreatedAt.UnixNano(), 10) + "." + it.ID.String())))
+}
+
+// decodeCursor reads a cursor encodeCursor made; the zero cursor is the
+// start (nil).
+func decodeCursor(c item.Cursor) (*position, error) {
+	if c.IsZero() {
+		return nil, nil
+	}
+	b, err := base64.RawURLEncoding.DecodeString(c.String())
+	if err != nil {
+		return nil, item.ErrInvalidCursor
+	}
+	nanos, id, ok := strings.Cut(string(b), ".")
+	n, err := strconv.ParseInt(nanos, 10, 64)
+	if !ok || err != nil || id == "" {
+		return nil, item.ErrInvalidCursor
+	}
+	return &position{nanos: n, id: id}, nil
 }
 
 func (s *MemStore) Get(_ context.Context, id item.ID) (item.Item, error) {

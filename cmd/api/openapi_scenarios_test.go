@@ -79,6 +79,11 @@ func scenarios(t *testing.T, s *spec) []scenario {
 			body: `{"name":"x","description":"` + strings.Repeat("a", httpx.MaxBodyBytes) + `"}`, want: 400,
 			exempt: "the 1 MiB body limit is stated in the description; JSON Schema can't express it"},
 
+		{name: "list a page with more after it", env: "paged", method: "GET", path: "/items?limit=2", op: "GET /items", want: 200},
+		{name: "list with a limit out of range", env: "ok", method: "GET", path: "/items?limit=201", op: "GET /items", want: 400},
+		{name: "list with a malformed cursor", env: "ok", method: "GET", path: "/items?cursor=no%2Fslashes", op: "GET /items", want: 400},
+		{name: "list with a cursor it didn't give out", env: "ok", method: "GET", path: "/items?cursor=bm90LWEtY3Vyc29y", op: "GET /items", want: 400},
+
 		{name: "get", env: "ok", method: "GET", path: "/items/" + seededPlaceholder, op: "GET /items/{id}", want: 200},
 		{name: "get unknown", env: "ok", method: "GET", path: "/items/nope", op: "GET /items/{id}", want: 404},
 

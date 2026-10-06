@@ -5,7 +5,7 @@
   "scenarioName": "flaky-list",
   "requiredScenarioState": "Started",
   "newScenarioState": "failed once",
-  "request": { "method": "GET", "url": "/items" },
+  "request": { "method": "GET", "urlPath": "/items" },
   "response": {
     "status": 503,
     "headers": { "Content-Type": "application/json" },

@@ -129,7 +129,9 @@ type failingStore struct{}
 
 var errStoreDown = errors.New("store is down: secret detail")
 
-func (failingStore) List(context.Context) ([]item.Item, error) { return nil, errStoreDown }
+func (failingStore) List(context.Context, item.Page) (item.Listing, error) {
+	return item.Listing{}, errStoreDown
+}
 func (failingStore) Get(context.Context, item.ID) (item.Item, error) {
 	return item.Item{}, errStoreDown
 }
@@ -272,4 +274,6 @@ type erroringStore struct {
 	err error
 }
 
-func (s erroringStore) List(context.Context) ([]item.Item, error) { return nil, s.err }
+func (s erroringStore) List(context.Context, item.Page) (item.Listing, error) {
+	return item.Listing{}, s.err
+}

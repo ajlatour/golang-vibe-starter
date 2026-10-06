@@ -118,10 +118,11 @@ func TestStoreLive(t *testing.T) {
 	ctx := t.Context()
 	store := httpstore.New(base, &http.Client{Timeout: 5 * time.Second})
 
-	list, err := store.List(ctx)
+	l, err := store.List(ctx, firstPage)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
+	list := l.Items
 	if len(list) == 0 {
 		t.Fatal("List returned no items; want seeded data")
 	}
@@ -169,7 +170,7 @@ func TestStoreLive(t *testing.T) {
 
 func TestStoreUnreachable(t *testing.T) {
 	store := httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})
-	if _, err := store.List(t.Context()); err == nil || errors.Is(err, item.ErrNotFound) {
+	if _, err := store.List(t.Context(), firstPage); err == nil || errors.Is(err, item.ErrNotFound) {
 		t.Errorf("List error = %v, want connection error", err)
 	}
 }
@@ -179,7 +180,7 @@ func TestStoreTimeout(t *testing.T) {
 	defer upstream.Close()
 
 	store := httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond})
-	if _, err := store.List(t.Context()); err == nil {
+	if _, err := store.List(t.Context(), firstPage); err == nil {
 		t.Error("List error = nil, want timeout")
 	}
 }
@@ -258,3 +259,6 @@ func TestReachable(t *testing.T) {
 		}
 	})
 }
+
+// firstPage is the first page of the list, at the API's default size.
+var firstPage = item.Page{Limit: item.DefaultPageSize}

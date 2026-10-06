@@ -19,6 +19,8 @@ const (
 	CodeDuplicateHeader Code = "duplicate_header"
 	// 400: an API-Version the API doesn't serve.
 	CodeUnsupportedAPIVersion Code = "unsupported_api_version"
+	// 400: a query parameter that isn't valid: a list's limit or cursor.
+	CodeInvalidParameter Code = "invalid_parameter"
 	// 401: no API key, or not sent as a bearer token.
 	CodeAPIKeyRequired Code = "api_key_required"
 	// 401: an API key that isn't a valid one.

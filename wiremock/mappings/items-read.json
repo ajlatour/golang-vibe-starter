@@ -1,9 +1,43 @@
 {
   "mappings": [
     {
+      "name": "list items: a page of 2, the first",
+      "priority": 3,
+      "request": {
+        "method": "GET",
+        "urlPath": "/items",
+        "queryParameters": { "limit": { "equalTo": "2" }, "cursor": { "absent": true } }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "items": [{ "id": "widget", "name": "Widget", "description": "A standard widget.", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z" }, { "id": "gadget", "name": "Gadget", "description": "A gadget with extra features.", "created_at": "2026-01-01T00:00:01Z", "updated_at": "2026-01-01T00:00:01Z" }], "next_cursor": "after-gadget" }
+      }
+    },
+    {
+      "name": "list items: the page after gadget, the last",
+      "priority": 3,
+      "request": { "method": "GET", "urlPath": "/items", "queryParameters": { "cursor": { "equalTo": "after-gadget" } } },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "items": [{ "id": "gizmo", "name": "Gizmo", "created_at": "2026-01-01T00:00:02Z", "updated_at": "2026-01-01T00:00:02Z" }] }
+      }
+    },
+    {
+      "name": "list items: a cursor this upstream didn't give out: 400",
+      "priority": 4,
+      "request": { "method": "GET", "urlPath": "/items", "queryParameters": { "cursor": { "matches": ".+" } } },
+      "response": {
+        "status": 400,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "error": "unknown cursor" }
+      }
+    },
+    {
       "name": "list items",
       "priority": 5,
-      "request": { "method": "GET", "url": "/items" },
+      "request": { "method": "GET", "urlPath": "/items" },
       "response": {
         "status": 200,
         "headers": { "Content-Type": "application/json" },

@@ -57,8 +57,25 @@
       "get": {
         "operationId": "listItems",
         "summary": "List items",
-        "description": "Returns all items, oldest first. When the `items-list-total` feature flag is on, the response also carries `total`.",
-        "parameters": [{ "$ref": "#/components/parameters/CorrelationID" }, { "$ref": "#/components/parameters/APIVersion" }],
+        "description": "Returns a page of the items, oldest first: up to `limit` (50 without it, at most 200), after `cursor`. When there are more, the response carries `next_cursor`: send it back as `cursor` for the next page; the last page has none. Pages stay right while items are added or deleted: none is skipped or listed twice. A `limit` out of range, or a cursor this list didn't give out, is a 400, `invalid_parameter`. When the `items-list-total` feature flag is on, the response also carries `total`, the number of items on this page.",
+        "parameters": [
+          { "$ref": "#/components/parameters/CorrelationID" },
+          { "$ref": "#/components/parameters/APIVersion" },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "How many items the page may hold: 1 to 200. Without it, 50.",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Where the page starts: a `next_cursor` this list gave out. Without it, the start of the list. Opaque: don't make one, or read one.",
+            "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,256}$" }
+          }
+        ],
         "responses": {
           "200": {
             "description": "The items.",
@@ -293,10 +310,15 @@
         "required": ["items"],
         "properties": {
           "items": { "type": "array", "items": { "$ref": "#/components/schemas/Item" } },
+          "next_cursor": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,256}$",
+            "description": "Where the next page starts: send it as `cursor`. Absent on the last page."
+          },
           "total": {
             "type": "integer",
             "minimum": 0,
-            "description": "The number of items. Present only when the `items-list-total` feature flag is on."
+            "description": "The number of items on this page. Present only when the `items-list-total` feature flag is on."
           }
         }
       },
@@ -315,14 +337,14 @@
           "code": {
             "type": "string",
             "description": "What the error means, for a client to act on: stable, unlike `error`. Two errors with one status can mean different things (a 403 for a read-only key, or one the validation service refused), and the code tells them apart.",
-            "enum": ["invalid_body", "duplicate_header", "unsupported_api_version", "api_key_required", "api_key_invalid", "read_only_key", "validation_refused", "not_found", "unsupported_media_type", "invalid_field", "rate_limited", "headers_too_large", "client_closed", "internal", "upstream_failed", "busy", "validation_unavailable", "upstream_timeout"]
+            "enum": ["invalid_body", "duplicate_header", "unsupported_api_version", "invalid_parameter", "api_key_required", "api_key_invalid", "read_only_key", "validation_refused", "not_found", "unsupported_media_type", "invalid_field", "rate_limited", "headers_too_large", "client_closed", "internal", "upstream_failed", "busy", "validation_unavailable", "upstream_timeout"]
           }
         }
       }
     },
     "responses": {
       "BadRequest": {
-        "description": "The body isn't usable (malformed JSON, the wrong shape or types, an unknown field, an empty body, or over 1 MiB), a header that may appear only once (Content-Type, Authorization, Client-Correlation-Id, API-Version) appears more than once, or an API-Version the API doesn't serve (`unsupported_api_version`).",
+        "description": "The body isn't usable (malformed JSON, the wrong shape or types, an unknown field, an empty body, or over 1 MiB), a header that may appear only once (Content-Type, Authorization, Client-Correlation-Id, API-Version) appears more than once, an API-Version the API doesn't serve (`unsupported_api_version`), or a query parameter that isn't valid: a list's `limit` out of range, or a `cursor` it didn't give out (`invalid_parameter`).",
         "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
