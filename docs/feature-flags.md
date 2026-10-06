@@ -12,7 +12,7 @@ restart.
 
 | Flag               | Type    | Default | Effect                                              |
 | ------------------ | ------- | ------- | --------------------------------------------------- |
-| `items-list-total` | boolean | off     | `GET /items` also returns `"total": <item count>`.  |
+| `items-list-total` | boolean | off     | `GET /items` also returns `"total"`: the number of items on the page.  |
 | `request-validation-enforce` | boolean | off | With `VALIDATOR_URL`, acts on the request-validation service's answers (403, or 503 when it can't answer). Off is shadow mode: the service is asked and its answers are logged, but every request goes through. [Request validation](request-validation.md#deploying-it-dark). |
 
 To try one locally, with the stack running:

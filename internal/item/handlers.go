@@ -3,8 +3,10 @@ package item
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
@@ -77,21 +79,57 @@ func NewResponse(it Item) Response {
 
 func handleList(store Store, flags Flags) httpx.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		items, err := store.List(r.Context())
+		p, err := parsePage(r)
+		if err != nil {
+			return err
+		}
+		l, err := store.List(r.Context(), p)
 		if err != nil {
 			return storeErr(err)
 		}
-		out := make([]Response, len(items))
-		for i, it := range items {
+		out := make([]Response, len(l.Items))
+		for i, it := range l.Items {
 			out[i] = NewResponse(it)
 		}
 		resp := map[string]any{"items": out}
+		if !l.Next.IsZero() {
+			resp["next_cursor"] = l.Next.String()
+		}
 		if flags != nil && flags.Bool(r.Context(), FlagListTotal) {
-			resp["total"] = len(items)
+			resp["total"] = len(l.Items)
 		}
 		httpx.WriteJSON(w, http.StatusOK, resp)
 		return nil
 	}
+}
+
+// The answers to a page asked for wrongly, made once.
+var (
+	invalidLimit  = httpx.NewError(http.StatusBadRequest, httpx.CodeInvalidParameter, fmt.Sprintf("limit must be a whole number from 1 to %d", MaxPageSize))
+	invalidCursor = httpx.NewError(http.StatusBadRequest, httpx.CodeInvalidParameter, "cursor isn't one this list gave out: start again without it")
+)
+
+// parsePage reads the page a list request asks for: ?limit (DefaultPageSize
+// without it) and ?cursor (the start without it).
+func parsePage(r *http.Request) (Page, error) {
+	p := Page{Limit: DefaultPageSize}
+	if r.URL.RawQuery == "" {
+		return p, nil // the first page, at the default size: nothing to parse
+	}
+	q := r.URL.Query()
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > MaxPageSize {
+			return Page{}, invalidLimit
+		}
+		p.Limit = n
+	}
+	c, err := ParseCursor(q.Get("cursor"))
+	if err != nil {
+		return Page{}, invalidCursor
+	}
+	p.Cursor = c
+	return p, nil
 }
 
 func handleGet(store Store) httpx.HandlerFunc {
@@ -208,6 +246,8 @@ func storeErr(err error) error {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return notFound
+	case errors.Is(err, ErrInvalidCursor):
+		return invalidCursor
 	case errors.Is(err, ErrStoreTimeout):
 		return withStatus{err, http.StatusGatewayTimeout}
 	case errors.Is(err, ErrStoreUnavailable):

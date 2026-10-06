@@ -38,7 +38,7 @@ func TestRetriesAGetThatFailedFast(t *testing.T) {
 	srv, calls := failing(t, 1, http.StatusServiceUnavailable)
 	var logs logtest.Buffer
 	store := httpstore.New(srv.URL, srv.Client(), httpstore.WithRetries(1), httpstore.WithLogger(logs.Logger(slog.LevelInfo)))
-	if _, err := store.List(t.Context()); err != nil {
+	if _, err := store.List(t.Context(), firstPage); err != nil {
 		t.Fatalf("List = %v, want the retry's answer", err)
 	}
 	if n := calls.Load(); n != 2 {
@@ -71,14 +71,14 @@ func TestNeverRetries(t *testing.T) {
 	t.Run("a 4xx", func(t *testing.T) {
 		srv, calls := failing(t, 5, http.StatusBadRequest)
 		store := httpstore.New(srv.URL, srv.Client(), httpstore.WithRetries(3))
-		_, _ = store.List(t.Context())
+		_, _ = store.List(t.Context(), firstPage)
 		if n := calls.Load(); n != 1 {
 			t.Errorf("a 400 was retried: %d calls", n)
 		}
 	})
 	t.Run("retries off", func(t *testing.T) {
 		srv, calls := failing(t, 5, http.StatusServiceUnavailable)
-		_, _ = httpstore.New(srv.URL, srv.Client()).List(t.Context())
+		_, _ = httpstore.New(srv.URL, srv.Client()).List(t.Context(), firstPage)
 		if n := calls.Load(); n != 1 {
 			t.Errorf("retried with retries off: %d calls", n)
 		}
@@ -91,7 +91,7 @@ func TestNeverRetries(t *testing.T) {
 		}))
 		defer srv.Close()
 		store := httpstore.New(srv.URL, &http.Client{Timeout: 50 * time.Millisecond}, httpstore.WithRetries(3))
-		_, err := store.List(t.Context())
+		_, err := store.List(t.Context(), firstPage)
 		if !errors.Is(err, item.ErrStoreTimeout) || calls.Load() != 1 {
 			t.Errorf("a timeout: %v after %d calls; want ErrStoreTimeout after one", err, calls.Load())
 		}
@@ -101,7 +101,7 @@ func TestNeverRetries(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		store := httpstore.New(srv.URL, srv.Client(), httpstore.WithRetries(3))
 		cancel()
-		_, _ = store.List(ctx)
+		_, _ = store.List(ctx, firstPage)
 		if n := calls.Load(); n > 1 {
 			t.Errorf("retried for a client that had gone: %d calls", n)
 		}
@@ -115,7 +115,7 @@ func TestRetryBudget(t *testing.T) {
 	store := httpstore.New(srv.URL, srv.Client(), httpstore.WithRetries(1))
 	const requests = 100
 	for range requests {
-		_, _ = store.List(t.Context())
+		_, _ = store.List(t.Context(), firstPage)
 	}
 	retries := calls.Load() - requests
 	// The 10 saved up, and a tenth of a retry per request: at most 20.

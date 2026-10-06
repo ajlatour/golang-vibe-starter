@@ -126,7 +126,7 @@ func TestStoreNoLoggerByDefault(t *testing.T) {
 	upstream := httptest.NewServer(nettest.Status(http.StatusBadGateway, ""))
 	defer upstream.Close()
 	// Must not panic or write anywhere without WithLogger.
-	_, _ = httpstore.New(upstream.URL, upstream.Client()).List(t.Context())
+	_, _ = httpstore.New(upstream.URL, upstream.Client()).List(t.Context(), firstPage)
 }
 
 func TestUpstreamErrorFields(t *testing.T) {
@@ -134,7 +134,7 @@ func TestUpstreamErrorFields(t *testing.T) {
 		upstream := httptest.NewServer(nettest.Status(http.StatusBadGateway, ""))
 		defer upstream.Close()
 
-		_, err := httpstore.New(upstream.URL, upstream.Client()).List(t.Context())
+		_, err := httpstore.New(upstream.URL, upstream.Client()).List(t.Context(), firstPage)
 		var ue *httpstore.UpstreamError
 		if !errors.As(err, &ue) {
 			t.Fatalf("error = %v (%T), want *httpstore.UpstreamError", err, err)
@@ -145,7 +145,7 @@ func TestUpstreamErrorFields(t *testing.T) {
 	})
 
 	t.Run("no response has no status", func(t *testing.T) {
-		_, err := httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second}).List(t.Context())
+		_, err := httpstore.New(nettest.DeadURL(), &http.Client{Timeout: time.Second}).List(t.Context(), firstPage)
 		var ue *httpstore.UpstreamError
 		if !errors.As(err, &ue) || ue.Status != 0 {
 			t.Fatalf("error = %v, want *httpstore.UpstreamError with status 0", err)
@@ -180,7 +180,7 @@ func TestUpstreamTimeoutLogged(t *testing.T) {
 
 	var logs logtest.Buffer
 	store := httpstore.New(upstream.URL, &http.Client{Timeout: 50 * time.Millisecond}, httpstore.WithLogger(debugLogger(&logs)))
-	if _, err := store.List(t.Context()); err == nil {
+	if _, err := store.List(t.Context(), firstPage); err == nil {
 		t.Fatal("List() error = nil, want a timeout")
 	}
 	lines := logs.Records(t)
@@ -209,7 +209,7 @@ func TestUpstreamCancelledIsDebug(t *testing.T) {
 	cancel()
 	var logs logtest.Buffer
 	store := httpstore.New(upstream.URL, upstream.Client(), httpstore.WithLogger(debugLogger(&logs)))
-	_, err := store.List(ctx)
+	_, err := store.List(ctx, firstPage)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want one wrapping context.Canceled", err)
 	}
@@ -274,7 +274,7 @@ func TestUpstreamErrorsAreRedactedAndBounded(t *testing.T) {
 	t.Run("credentials in the base URL", func(t *testing.T) {
 		base := "http://alice:s3cret@" + strings.TrimPrefix(nettest.DeadURL(), "http://")
 
-		_, err := httpstore.New(base, &http.Client{Timeout: time.Second}).List(t.Context())
+		_, err := httpstore.New(base, &http.Client{Timeout: time.Second}).List(t.Context(), firstPage)
 		if err == nil {
 			t.Fatal("expected an error")
 		}
@@ -291,7 +291,7 @@ func TestUpstreamErrorsAreRedactedAndBounded(t *testing.T) {
 		}))
 		defer upstream.Close()
 
-		_, err := httpstore.New(upstream.URL, upstream.Client()).List(t.Context())
+		_, err := httpstore.New(upstream.URL, upstream.Client()).List(t.Context(), firstPage)
 		if err == nil || len(err.Error()) > 400 {
 			t.Errorf("error is %d bytes, want it capped well under 400: %.120q", len(err.Error()), err)
 		}

@@ -83,3 +83,25 @@ Feature: Items
     When I DELETE "/items/no-such-item"
     Then the response status is 404
     And the JSON field "error" is "item not found"
+
+  Scenario: The list comes a page at a time
+    When I GET "/items?limit=2"
+    Then the response status is 200
+    And the JSON array "items" has 2 elements
+    And the JSON field "next_cursor" is "after-gadget"
+
+  Scenario: The next page follows the cursor, and the last has none
+    When I GET "/items?limit=2&cursor=after-gadget"
+    Then the response status is 200
+    And the JSON array "items" has 1 element
+    And the JSON field "next_cursor" is absent
+
+  Scenario: A cursor the list didn't give out is refused
+    When I GET "/items?cursor=made-up"
+    Then the response status is 400
+    And the JSON field "code" is "invalid_parameter"
+
+  Scenario: A limit out of range is refused, before the upstream is asked
+    When I GET "/items?limit=0"
+    Then the response status is 400
+    And the JSON field "code" is "invalid_parameter"

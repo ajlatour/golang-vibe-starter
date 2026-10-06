@@ -66,7 +66,7 @@ the code.
 | ------ | ------------- | ------- | --------------------------------------------- |
 | GET    | `/healthz`    | 200     | Liveness: `{"status":"ok"}`.                  |
 | GET    | `/readyz`     | 200/503 | Readiness: whether to send this instance traffic. |
-| GET    | `/items`      | 200     | List items: `{"items":[...]}`, oldest first.  |
+| GET    | `/items`      | 200     | List items, a page at a time: `{"items":[...], "next_cursor":"..."}`, oldest first ([Paging](#paging)). |
 | POST   | `/items`      | 201     | Create an item. Sets a `Location` header.     |
 | GET    | `/items/{id}` | 200     | Get one item.                                 |
 | PUT    | `/items/{id}` | 200     | Replace an item's `name` and `description`.   |
@@ -77,6 +77,22 @@ the code.
 trimmed of surrounding whitespace; `description` is optional, at most 2000 characters. Bodies are limited to 1 MiB, and unknown fields are rejected.
 An item ID is 1 to 128 letters, digits, `-` and `_`; no item has any other ID, so any other ID is a
 404, answered by the API without asking the upstream.
+
+### Paging
+
+`GET /items` returns a page: up to `limit` items (50 without it, at most 200), oldest first. When
+there are more, the response has `next_cursor`; send it back as `cursor` for the next page, and
+stop when a page has none:
+
+```sh
+scripts/api GET '/items?limit=2'                       # {"items":[...2], "next_cursor":"..."}
+scripts/api GET '/items?limit=2&cursor=<next_cursor>'  # the next 2, and so on
+```
+
+A cursor is opaque: use it as given, and don't build one. Pages stay right while items are added
+or deleted: none is skipped or listed twice. A `limit` out of range, or a cursor the list didn't
+give out, is a 400, `invalid_parameter`
+([ADR-0037](docs/decisions.md#adr-0037-the-list-is-paged-by-cursor-50-a-page-by-default)).
 
 `/healthz` says the process is alive: the container's healthcheck restarts it if not. `/readyz`
 says whether to send it traffic: 503 once it starts shutting down (see `SHUTDOWN_DELAY`), or if it
@@ -99,6 +115,7 @@ apart errors that share a status:
 | ------ | ------ | ---- |
 | 400 | `invalid_body` | The body is malformed JSON, the wrong shape or types, has an unknown field, is empty, or is over 1 MiB |
 | 400 | `duplicate_header` | A header that may appear only once is sent twice |
+| 400 | `invalid_parameter` | A query parameter that isn't valid: a list's `limit` out of range, or a `cursor` it didn't give out ([Paging](#paging)) |
 | 400 | `unsupported_api_version` | An `API-Version` the API doesn't serve ([Versioning](#versioning)) |
 | 401 | `api_key_required` | No API key, or not sent as `Authorization: Bearer <key>` (with `WWW-Authenticate: Bearer`) |
 | 401 | `api_key_invalid` | An API key that isn't valid |

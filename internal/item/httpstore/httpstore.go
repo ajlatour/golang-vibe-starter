@@ -14,6 +14,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -63,18 +64,31 @@ func New(baseURL string, client *http.Client, opts ...Option) *Store {
 	return s
 }
 
-func (s *Store) List(ctx context.Context) ([]item.Item, error) {
+func (s *Store) List(ctx context.Context, p item.Page) (item.Listing, error) {
 	var out struct {
-		Items []upstreamItem `json:"items"`
+		Items      []upstreamItem `json:"items"`
+		NextCursor string         `json:"next_cursor"`
 	}
-	if err := s.do(ctx, http.MethodGet, "/items", nil, http.StatusOK, &out); err != nil {
-		return nil, err
+	// Built by hand: a limit is digits and a cursor URL-safe characters
+	// (item.ParseCursor), so neither needs escaping, and url.Values would
+	// cost a map and its encoding on every list.
+	path := "/items?limit=" + strconv.Itoa(p.Limit)
+	if !p.Cursor.IsZero() {
+		path += "&cursor=" + p.Cursor.String()
 	}
-	items := make([]item.Item, len(out.Items))
+	if err := s.do(ctx, http.MethodGet, path, nil, http.StatusOK, &out); err != nil {
+		return item.Listing{}, err
+	}
+	l := item.Listing{Items: make([]item.Item, len(out.Items))}
 	for i, u := range out.Items {
-		items[i] = u.item()
+		l.Items[i] = u.item()
 	}
-	return items, nil
+	// The upstream's cursor goes back to it as it came; only a malformed
+	// one is dropped, which ends the list here rather than send it on.
+	if next, err := item.ParseCursor(out.NextCursor); err == nil {
+		l.Next = next
+	}
+	return l, nil
 }
 
 func (s *Store) Get(ctx context.Context, id item.ID) (item.Item, error) {
@@ -157,7 +171,9 @@ func itemPath(id item.ID) string {
 // status; and, if the call failed, one more line saying so (see
 // WithLogger). Never headers or bodies.
 func (s *Store) do(ctx context.Context, method, path string, body any, want int, out any) error {
-	call := method + " " + logx.Truncate(path, logx.MaxLoggedPath)
+	// The query string (a list's limit and cursor, which is the client's)
+	// is never logged, like any request's.
+	call := method + " " + logx.Truncate(pathOnly(path), logx.MaxLoggedPath)
 	s.budget.earn()
 	var status int
 	var err error
@@ -208,7 +224,7 @@ func (s *Store) roundTrip(ctx context.Context, method, path string, body any, wa
 		URL:    s.baseURL + path,
 		// Everything that reaches an error message, and so a log line, uses
 		// the truncated path.
-		Label:            fmt.Sprintf("upstream %s %s", method, logx.Truncate(path, logx.MaxLoggedPath)),
+		Label:            fmt.Sprintf("upstream %s %s", method, logx.Truncate(pathOnly(path), logx.MaxLoggedPath)),
 		In:               body,
 		Out:              out,
 		Want:             want,
@@ -222,8 +238,13 @@ func (s *Store) roundTrip(ctx context.Context, method, path string, body any, wa
 // plain-text 404 means the route itself is missing, i.e. the base URL is
 // misconfigured, and stays a generic error.
 func notFoundIsErrNotFound(resp *http.Response) error {
-	if resp.StatusCode == http.StatusNotFound && isJSON(resp.Header) {
+	switch {
+	case resp.StatusCode == http.StatusNotFound && isJSON(resp.Header):
 		return item.ErrNotFound
+	case resp.StatusCode == http.StatusBadRequest && isJSON(resp.Header) && resp.Request.URL.Query().Has("cursor"):
+		// The upstream refused a list's cursor: one it didn't make, or no
+		// longer knows. The limit is always one it takes.
+		return item.ErrInvalidCursor
 	}
 	return nil
 }
@@ -265,4 +286,12 @@ func (s *Store) Reachable(ctx context.Context) error {
 	}
 	_ = resp.Body.Close() // only the answer mattered, not its body
 	return nil
+}
+
+// pathOnly is path without its query string, as logged and in errors: a
+// list's query holds the client's cursor, and query strings are never
+// logged.
+func pathOnly(path string) string {
+	p, _, _ := strings.Cut(path, "?")
+	return p
 }

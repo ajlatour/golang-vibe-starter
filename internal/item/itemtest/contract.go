@@ -2,6 +2,8 @@ package itemtest
 
 import (
 	"errors"
+	"fmt"
+	"slices"
 	"sync"
 	"testing"
 
@@ -47,7 +49,7 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 			t.Errorf("Update timestamps wrong: created %+v, updated %+v", created, updated)
 		}
 
-		list, err := s.List(ctx)
+		list, err := listAll(t, s)
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -74,7 +76,7 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 			}
 			want = append(want, it.ID)
 		}
-		list, err := s.List(ctx)
+		list, err := listAll(t, s)
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -122,12 +124,108 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 	})
 
 	t.Run("list empty is non-nil", func(t *testing.T) {
-		list, err := newStore(t).List(t.Context())
+		l, err := newStore(t).List(t.Context(), item.Page{Limit: item.DefaultPageSize})
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
-		if list == nil {
-			t.Error("List = nil, want empty slice so it encodes as []")
+		if l.Items == nil || !l.Next.IsZero() {
+			t.Errorf("List = %+v, want an empty, non-nil page (so it encodes as []) and no next", l)
+		}
+	})
+
+	t.Run("pages", func(t *testing.T) {
+		ctx := t.Context()
+		s := newStore(t)
+		var want []item.ID
+		for i := range 5 {
+			it, err := s.Create(ctx, MustDraft(string(rune('a'+i)), ""))
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			want = append(want, it.ID)
+		}
+		// Pages of 2: 2, 2, then 1 with no next.
+		var got []item.ID
+		var sizes []int
+		p := item.Page{Limit: 2}
+		for {
+			l, err := s.List(ctx, p)
+			if err != nil {
+				t.Fatalf("List(%+v): %v", p, err)
+			}
+			sizes = append(sizes, len(l.Items))
+			for _, it := range l.Items {
+				got = append(got, it.ID)
+			}
+			if l.Next.IsZero() {
+				break
+			}
+			if len(sizes) > 5 {
+				t.Fatal("more pages than items: the cursor doesn't move")
+			}
+			p.Cursor = l.Next
+		}
+		if fmt.Sprint(sizes) != "[2 2 1]" {
+			t.Errorf("page sizes = %v, want [2 2 1]", sizes)
+		}
+		if !slices.Equal(sortedIDs(got), sortedIDs(want)) || len(got) != len(want) {
+			t.Errorf("pages listed %v, want each of %v once", got, want)
+		}
+	})
+
+	t.Run("pages stay right while the list changes", func(t *testing.T) {
+		ctx := t.Context()
+		s := newStore(t)
+		var ids []item.ID
+		for i := range 4 {
+			it, err := s.Create(ctx, MustDraft(string(rune('a'+i)), ""))
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			ids = append(ids, it.ID)
+		}
+		first, err := s.List(ctx, item.Page{Limit: 2})
+		if err != nil || first.Next.IsZero() {
+			t.Fatalf("first page: %+v, %v; want 2 items and a next", first, err)
+		}
+		// Between pages, an item already listed is deleted, and one is added.
+		if err := s.Delete(ctx, first.Items[0].ID); err != nil {
+			t.Fatal(err)
+		}
+		added, err := s.Create(ctx, MustDraft("late", ""))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rest []item.ID
+		for p := (item.Page{Limit: 2, Cursor: first.Next}); ; {
+			l, err := s.List(ctx, p)
+			if err != nil {
+				t.Fatalf("next page: %v", err)
+			}
+			for _, it := range l.Items {
+				rest = append(rest, it.ID)
+			}
+			if l.Next.IsZero() {
+				break
+			}
+			p.Cursor = l.Next
+		}
+		// Nothing listed twice, nothing not yet listed skipped: the rest is
+		// the items after the first page, and the one added since.
+		want := append(slices.Clone(ids[2:]), added.ID)
+		if !slices.Equal(sortedIDs(rest), sortedIDs(want)) {
+			t.Errorf("after the first page, listed %v; want %v", rest, want)
+		}
+	})
+
+	t.Run("a cursor it didn't make", func(t *testing.T) {
+		s := newStore(t)
+		c, err := item.ParseCursor("bm90LWEtY3Vyc29y") // well formed, but not this store's
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.List(t.Context(), item.Page{Limit: 10, Cursor: c}); !errors.Is(err, item.ErrInvalidCursor) {
+			t.Errorf("List with a foreign cursor: %v, want ErrInvalidCursor", err)
 		}
 	})
 
@@ -144,7 +242,7 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 			})
 		}
 		wg.Wait()
-		list, err := s.List(ctx)
+		list, err := listAll(t, s)
 		if err != nil {
 			t.Fatalf("List: %v", err)
 		}
@@ -160,4 +258,34 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 func sameItem(a, b item.Item) bool {
 	return a.ID == b.ID && a.Name == b.Name && a.Description == b.Description &&
 		a.CreatedAt.Equal(b.CreatedAt) && a.UpdatedAt.Equal(b.UpdatedAt)
+}
+
+// listAll follows a store's pages to the end, as a client would, and
+// returns every item.
+func listAll(t *testing.T, s item.Store) ([]item.Item, error) {
+	t.Helper()
+	var all []item.Item
+	p := item.Page{Limit: item.MaxPageSize}
+	for range 1000 {
+		l, err := s.List(t.Context(), p)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, l.Items...)
+		if l.Next.IsZero() {
+			return all, nil
+		}
+		p.Cursor = l.Next
+	}
+	t.Fatal("a thousand pages and no end: the cursor doesn't move")
+	return nil, nil
+}
+
+func sortedIDs(ids []item.ID) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = id.String()
+	}
+	slices.Sort(out)
+	return out
 }
