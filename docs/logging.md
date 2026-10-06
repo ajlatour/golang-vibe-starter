@@ -40,6 +40,7 @@ include `.git`; without it, container logs show `version=devel`.
 | `route`       | `response sent`, error lines | Matched route pattern, e.g. `GET /items/{id}`. Group by this, not `path`. Empty if no route matched. Not on `request received`: routing hasn't happened yet. |
 | `path`        | `request received`, `response sent`, error lines | Raw URL path. The query string is never logged. |
 | `content_length` | `request received`  | Size of the request body the client declared, in bytes; -1 if unknown. The body itself is never logged. |
+| `client_ip`   | `request received`, `response sent` | The IP address the request's connection came from: behind a load balancer, the balancer's, since proxy headers are never trusted. Off with `LOG_CLIENT_IP=off`. |
 | `status`      | `response sent`        | Response status code.                                        |
 | `response_error` | `response sent`, when the response was an error | The error message the client was sent (`{"error": "..."}`): why the request was refused, or what failed. Capped at 200 characters, since it can quote the client's own input. |
 | `bytes`       | `response sent`        | Response body size.                                          |
@@ -88,7 +89,7 @@ upstream, comes back, and leaves the API.
 
 | Message | Level | Fields | When |
 | ------- | ----- | ------ | ---- |
-| `request received` | INFO; DEBUG for `/healthz` | `method`, `path`, `content_length` | A request arrives. |
+| `request received` | INFO; DEBUG for `/healthz` | `method`, `path`, `content_length` | A request arrives. With `LOG_CLIENT_IP` on (the default), this and `response sent` add `client_ip`. |
 | `upstream request sent` | INFO | `upstream` | Before each call to the upstream. |
 | `upstream response received` | INFO | `upstream`, `upstream_status`, `upstream_duration_ms` | The upstream answered, with any status. |
 | `response sent` | INFO; DEBUG for `/healthz`; ERROR for 5xx | `method`, `route`, `path`, `status`, `bytes`, `duration_ms` | The reply goes to the client. An error response adds `response_error`, what the client was told. |
@@ -199,6 +200,10 @@ What is never logged:
 - URL credentials. A URL goes into a log only through `(*url.URL).Redacted()`, and any error that
   can come from `http.Client.Do` goes through `logx.RedactURLError` first, because net/http puts
   the URL in the error text.
+
+What is logged that may be personal data: `client_ip`, the address each request came from, and
+`api_key`, a key's configured name. An IP address is personal data in many jurisdictions;
+`LOG_CLIENT_IP=off` leaves it out, where a deployment's rules say to.
 
 Bounds: `path` and `upstream` paths are cut at 512 characters, and the upstream and flagd error
 messages at 200, with a trailing `…`. Use `logx.Truncate` for any other logged value that comes

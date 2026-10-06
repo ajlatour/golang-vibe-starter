@@ -154,3 +154,34 @@ func TestResponseSentSaysWhy(t *testing.T) {
 type wrapped struct{ http.ResponseWriter }
 
 func (w wrapped) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// TestClientIP checks WithClientIP puts the connection's address, without
+// its port, on both of a request's lines, and that without it neither line
+// carries one.
+func TestClientIP(t *testing.T) {
+	for _, tt := range []struct {
+		remoteAddr string
+		opts       []MiddlewareOption
+		want       any // client_ip, or nil for none
+	}{
+		{"192.0.2.7:51234", []MiddlewareOption{WithClientIP()}, "192.0.2.7"},
+		{"[2001:db8::7]:51234", []MiddlewareOption{WithClientIP()}, "2001:db8::7"},
+		{"192.0.2.7", []MiddlewareOption{WithClientIP()}, "192.0.2.7"}, // no port: as it is
+		{"192.0.2.7:51234", nil, nil},
+	} {
+		var logs logtest.Buffer
+		h := Middleware(logs.Logger(slog.LevelInfo), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), tt.opts...)
+		req := httptest.NewRequest(http.MethodGet, "/items", nil)
+		req.RemoteAddr = tt.remoteAddr
+		h.ServeHTTP(httptest.NewRecorder(), req)
+		recs := logs.Records(t)
+		if len(recs) != 2 {
+			t.Fatalf("%d lines, want request received and response sent", len(recs))
+		}
+		for _, r := range recs {
+			if got := r[logx.KeyClientIP]; got != tt.want {
+				t.Errorf("%s, options %d: %s has client_ip %v, want %v", tt.remoteAddr, len(tt.opts), r["msg"], got, tt.want)
+			}
+		}
+	}
+}

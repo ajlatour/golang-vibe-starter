@@ -41,6 +41,9 @@ type config struct {
 	// goroutines ("runtime stats"); zero logs none.
 	RuntimeStatsInterval time.Duration
 
+	// LogClientIP adds client_ip to each request's log lines.
+	LogClientIP bool
+
 	// HeaderGuard is the header guard's policy: headerguard.DefaultPolicy,
 	// with the mode and limits overridden by the environment.
 	HeaderGuard headerguard.Policy
@@ -92,6 +95,11 @@ func loadConfig(getenv func(string) string) (config, error) {
 		// the only view of memory over time, and one every 5 minutes costs
 		// nothing worth counting.
 		RuntimeStatsInterval: envconfig.Optional(env, "RUNTIME_STATS_INTERVAL", 5*time.Minute, parseNonNegativeDuration),
+
+		// On by default: which client sent a request is a first question
+		// when debugging. An IP address is personal data in many
+		// jurisdictions, so a deployment can turn it off.
+		LogClientIP: envconfig.Optional(env, "LOG_CLIENT_IP", true, parseOnOff),
 	}
 
 	// The header guard: the defaults live in headerguard.DefaultPolicy, and
@@ -191,4 +199,15 @@ func parseNonNegativeDuration(v string) (time.Duration, error) {
 		err = fmt.Errorf("must not be negative, got %s", v)
 	}
 	return d, err
+}
+
+// parseOnOff reads an on/off setting.
+func parseOnOff(v string) (bool, error) {
+	switch v {
+	case "on":
+		return true, nil
+	case "off":
+		return false, nil
+	}
+	return false, fmt.Errorf("want on or off, got %q", v)
 }

@@ -21,6 +21,9 @@ Ideas considered but not planned are listed under
   - `using runtime` at startup: the Go version, `GOMAXPROCS` and `GOMEMLIMIT`.
   - `service failed`, when the service stops on an error: logged as a JSON line like the rest,
     where it was only plain text on stderr.
+  - `client_ip` on `request received` and `response sent`: the address the connection came from
+    (behind a load balancer, the balancer's). An IP address is personal data in many
+    jurisdictions, so `LOG_CLIENT_IP=off` leaves it out.
 
 ## [0.3.2] - 2026-10-06
 

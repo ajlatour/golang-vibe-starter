@@ -131,7 +131,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 
 	// Ready while this instance can reach the upstream, until shutdown.
 	readiness := httpx.NewReadiness(logger, time.Second, time.Second, httpx.Check{Name: "upstream", Fn: store.Reachable})
-	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness, Metrics: metrics},
+	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness, Metrics: metrics, ClientIP: cfg.LogClientIP},
 		store, item.WithFlags(evaluator))
 	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, handler,
 		httpx.MaxHeaderBytes(serverHeaderLimit(cfg.HeaderGuard)),
@@ -193,6 +193,8 @@ type handlerConfig struct {
 	Readiness *httpx.Readiness
 	// Metrics records every request, for /metrics. Nil records nothing.
 	Metrics *httpmetrics.Recorder
+	// ClientIP logs each request's client IP (LOG_CLIENT_IP).
+	ClientIP bool
 }
 
 // newHandler builds the API's root handler. From the outside in: the standard
@@ -221,6 +223,9 @@ func newHandler(logger *slog.Logger, cfg handlerConfig, items item.Store, opts .
 	var mwOpts []httpx.MiddlewareOption
 	if cfg.Metrics != nil {
 		mwOpts = append(mwOpts, httpx.WithMetrics(cfg.Metrics))
+	}
+	if cfg.ClientIP {
+		mwOpts = append(mwOpts, httpx.WithClientIP())
 	}
 	return httpx.Middleware(logger, limit.InFlight(limits,
 		headerguard.Middleware(logger, cfg.Guard, apikey.Middleware(logger, auth, limit.PerClient(limits, identifyByKey, httpx.RecordRoute(mux))))),

@@ -233,3 +233,26 @@ func TestLoadConfigRuntimeStatsInterval(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadConfigLogClientIP(t *testing.T) {
+	env := func(v string) func(string) string {
+		return func(k string) string {
+			switch k {
+			case "UPSTREAM_URL":
+				return "http://mock:8080"
+			case "LOG_CLIENT_IP":
+				return v
+			}
+			return ""
+		}
+	}
+	for v, want := range map[string]bool{"": true, "on": true, "off": false} {
+		got, err := loadConfig(env(v))
+		if err != nil || got.LogClientIP != want {
+			t.Errorf("LOG_CLIENT_IP=%q: %v, %v; want %v", v, got.LogClientIP, err, want)
+		}
+	}
+	if _, err := loadConfig(env("yes")); err == nil {
+		t.Error("LOG_CLIENT_IP=yes: no error, want one")
+	}
+}
