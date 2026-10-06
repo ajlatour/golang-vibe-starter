@@ -10,6 +10,8 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+## [0.3.0] - 2026-10-06
+
 ### Added
 
 - CI's own time is tracked: after every successful CI run on `main`, a new workflow
