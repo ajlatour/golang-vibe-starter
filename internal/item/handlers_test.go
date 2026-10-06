@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
@@ -276,4 +277,81 @@ type erroringStore struct {
 
 func (s erroringStore) List(context.Context, item.Page) (item.Listing, error) {
 	return item.Listing{}, s.err
+}
+
+// TestETags checks the conditional requests: an item's ETag on reads and
+// writes, If-None-Match answered 304, and a write with an If-Match the item
+// no longer matches refused with 412, leaving the item as it was.
+func TestETags(t *testing.T) {
+	store := itemtest.NewMemStore()
+	seeded, err := store.Create(t.Context(), itemtest.MustDraft("seeded", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), store)
+	path := "/items/" + seeded.ID.String()
+	do := func(method, body string, header ...string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		for i := 0; i+1 < len(header); i += 2 {
+			req.Header.Set(header[i], header[i+1])
+		}
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+
+	got := do(http.MethodGet, "")
+	tag := got.Header().Get("ETag")
+	if got.Code != 200 || !strings.HasPrefix(tag, `"`) || tag != item.ETag(seeded) {
+		t.Fatalf("GET: %d, ETag %q; want 200 and the item's tag", got.Code, tag)
+	}
+	if rec := do(http.MethodGet, "", "If-None-Match", tag); rec.Code != http.StatusNotModified || rec.Body.Len() != 0 {
+		t.Errorf("GET with its own tag: %d %q, want an empty 304", rec.Code, rec.Body)
+	}
+	if rec := do(http.MethodGet, "", "If-None-Match", "W/"+tag); rec.Code != http.StatusNotModified {
+		t.Errorf("GET with the weak form of its tag: %d, want 304 (If-None-Match compares weakly)", rec.Code)
+	}
+
+	// A write with the current tag goes through, and the item has a new one.
+	put := do(http.MethodPut, `{"name":"renamed"}`, "If-Match", tag)
+	newTag := put.Header().Get("ETag")
+	if put.Code != 200 || newTag == "" || newTag == tag {
+		t.Fatalf("PUT with the current tag: %d, ETag %q; want 200 and a new tag", put.Code, newTag)
+	}
+	// The old tag is stale now: a write with it is refused, and changes nothing.
+	stale := do(http.MethodPut, `{"name":"lost update"}`, "If-Match", tag)
+	if stale.Code != http.StatusPreconditionFailed || !strings.Contains(stale.Body.String(), `"code":"precondition_failed"`) {
+		t.Errorf("PUT with a stale tag: %d %s, want 412 precondition_failed", stale.Code, stale.Body)
+	}
+	if rec := do(http.MethodDelete, "", "If-Match", tag); rec.Code != http.StatusPreconditionFailed {
+		t.Errorf("DELETE with a stale tag: %d, want 412", rec.Code)
+	}
+	if rec := do(http.MethodPut, `{"name":"x"}`, "If-Match", "W/"+newTag); rec.Code != http.StatusPreconditionFailed {
+		t.Errorf("PUT with a weak tag: %d, want 412 (If-Match compares strongly)", rec.Code)
+	}
+	if it, _ := store.Get(t.Context(), seeded.ID); it.Name.String() != "renamed" {
+		t.Errorf("after refused writes the name is %q, want renamed", it.Name)
+	}
+	if rec := do(http.MethodDelete, "", "If-Match", "*"); rec.Code != http.StatusNoContent {
+		t.Errorf("DELETE with If-Match *: %d, want 204", rec.Code)
+	}
+	if rec := do(http.MethodPut, `{"name":"x"}`, "If-Match", "*"); rec.Code != http.StatusPreconditionFailed {
+		t.Errorf("PUT with If-Match * on a deleted item: %d, want 412", rec.Code)
+	}
+}
+
+// TestETagChangesWithContent checks two versions of an item with the same
+// timestamp, a change within one tick of the clock, still have different
+// tags.
+func TestETagChangesWithContent(t *testing.T) {
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	a := item.Restore("w", "Widget", "", at, at)
+	b := item.Restore("w", "Widget 2", "", at, at)
+	if item.ETag(a) == item.ETag(b) {
+		t.Error("two different names, one timestamp: the same ETag")
+	}
+	if item.ETag(a) != item.ETag(item.Restore("w", "Widget", "", at, at)) {
+		t.Error("the same item has two ETags")
+	}
 }

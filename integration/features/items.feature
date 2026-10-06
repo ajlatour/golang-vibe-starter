@@ -105,3 +105,18 @@ Feature: Items
     When I GET "/items?limit=0"
     Then the response status is 400
     And the JSON field "code" is "invalid_parameter"
+
+  Scenario: A write with a stale ETag is refused, and changes nothing
+    Given I send the header "If-Match" with value "stale"
+    When I PUT "/items/widget" with body:
+      """
+      {"name": "Lost update"}
+      """
+    Then the response status is 412
+    And the JSON field "code" is "precondition_failed"
+
+  Scenario: Asking for a read that hasn't changed gets a 304
+    Given I send the header "If-None-Match" with value "*"
+    When I GET "/items/widget"
+    Then the response status is 304
+    And the response body is empty

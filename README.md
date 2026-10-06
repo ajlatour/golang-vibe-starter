@@ -122,6 +122,7 @@ apart errors that share a status:
 | 403 | `read_only_key` | A write with a read-only API key |
 | 403 | `validation_refused` | The request-validation service refused the request ([Request validation](docs/request-validation.md)) |
 | 404 | `not_found` | No item has that ID |
+| 412 | `precondition_failed` | A write whose `If-Match` the item no longer matches: it changed since you read it ([Concurrent updates](#concurrent-updates)) |
 | 415 | `unsupported_media_type` | A request body not sent as `Content-Type: application/json` |
 | 422 | `invalid_field` | A value breaks a rule: `name` missing, blank or too long, or `description` too long |
 | 429 | `rate_limited` | Over the client's rate limit (with `Retry-After`) |
@@ -141,6 +142,21 @@ Every response also carries `X-Content-Type-Options: nosniff`, so a browser neve
 anything but its declared type, and `Cache-Control: no-store`, so nothing keeps a copy of it. An
 error body describes the problem in JSON's terms (`field "name" must be a string`), never the
 service's internals.
+
+### Concurrent updates
+
+Every item response carries an `ETag`, the item's version, which changes whenever the item does.
+Send it back to make a request conditional:
+
+- `If-Match: <etag>` on a `PUT` or `DELETE` writes only if the item is still that version;
+  otherwise the answer is 412, `precondition_failed`, and nothing changes. So two clients can't
+  silently overwrite each other's changes: the second gets a 412, reads the item again, and
+  decides. `If-Match: *` means any version, as long as the item exists.
+- `If-None-Match: <etag>` on a `GET` answers 304, with no body, while the item is unchanged.
+
+Without them, requests behave as before. The check reads the item before the write, so two writers
+racing in that moment can both pass; the upstream taking `If-Match` itself would close that
+([ADR-0040](docs/decisions.md#adr-0040-items-have-etags-and-writes-can-be-conditional)).
 
 ### Versioning
 

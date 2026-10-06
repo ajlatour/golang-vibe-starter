@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
@@ -142,6 +143,13 @@ func handleGet(store Store) httpx.HandlerFunc {
 		if err != nil {
 			return storeErr(err)
 		}
+		tag := ETag(it)
+		w.Header()[etagKey] = []string{tag}
+		// A client holding this version already needn't have it again.
+		if inm := r.Header.Get("If-None-Match"); inm != "" && etagMatches(inm, tag, true) {
+			w.WriteHeader(http.StatusNotModified)
+			return nil
+		}
 		httpx.WriteJSON(w, http.StatusOK, NewResponse(it))
 		return nil
 	}
@@ -158,6 +166,7 @@ func handleCreate(store Store) httpx.HandlerFunc {
 			return storeErr(err)
 		}
 		w.Header().Set("Location", "/items/"+it.ID.String())
+		w.Header()[etagKey] = []string{ETag(it)}
 		httpx.WriteJSON(w, http.StatusCreated, NewResponse(it))
 		return nil
 	}
@@ -173,10 +182,14 @@ func handleUpdate(store Store) httpx.HandlerFunc {
 		if err != nil {
 			return err
 		}
+		if err := checkIfMatch(r, store, id); err != nil {
+			return err
+		}
 		it, err := store.Update(r.Context(), id, d)
 		if err != nil {
 			return storeErr(err)
 		}
+		w.Header()[etagKey] = []string{ETag(it)}
 		httpx.WriteJSON(w, http.StatusOK, NewResponse(it))
 		return nil
 	}
@@ -186,6 +199,9 @@ func handleDelete(store Store) httpx.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		id, err := pathID(r)
 		if err != nil {
+			return err
+		}
+		if err := checkIfMatch(r, store, id); err != nil {
 			return err
 		}
 		if err := store.Delete(r.Context(), id); err != nil {
@@ -267,3 +283,97 @@ func (e withStatus) HTTPStatus() int { return e.status }
 func (e withStatus) Unwrap() error   { return e.error }
 
 var _ httpx.StatusError = withStatus{}
+
+// etagKey is ETag's canonical form, for setting it without canonicalizing
+// the name, an allocation, on every response.
+var etagKey = http.CanonicalHeaderKey("ETag")
+
+// ETag is an item's entity tag: it changes whenever the item does. It hashes
+// what a client sees change (the name and description) with when it last
+// changed, so two changes in one tick of the clock still differ, and the
+// same item always has the same tag. A strong tag, quoted, as HTTP has them.
+func ETag(it Item) string {
+	// FNV-1a, inline and on the stack: hash/fnv's, or formatting the time,
+	// would cost allocations on every response.
+	h := uint64(fnvOffset)
+	h = fnvString(h, it.Name.String())
+	h = fnvString(h, it.Description.String())
+	n := uint64(it.UpdatedAt.UnixNano())
+	for i := range 8 {
+		h = (h ^ (n >> (8 * i) & 0xff)) * fnvPrime
+	}
+	var buf [16]byte // a quote, up to 13 base-36 digits, a quote
+	b := append(buf[:0], '"')
+	b = strconv.AppendUint(b, h, 36)
+	b = append(b, '"')
+	return string(b)
+}
+
+const (
+	fnvOffset = 14695981039346656037
+	fnvPrime  = 1099511628211
+)
+
+// fnvString mixes s, and a separator after it, into h: the separator keeps
+// "ab"+"c" and "a"+"bc" apart.
+func fnvString(h uint64, s string) uint64 {
+	for i := 0; i < len(s); i++ {
+		h = (h ^ uint64(s[i])) * fnvPrime
+	}
+	return (h ^ 0xff) * fnvPrime
+}
+
+// preconditionFailed answers a write whose If-Match the item no longer
+// matches.
+var preconditionFailed = httpx.NewError(http.StatusPreconditionFailed, httpx.CodePreconditionFailed,
+	"the item has changed since that version: get it again, and send its new ETag")
+
+// checkIfMatch enforces a write's If-Match: the item must still be the
+// version the client last saw (or, for "*", exist at all), else 412, so a
+// write never overwrites a change the client hasn't seen. Without the header
+// the write goes ahead, as it always did.
+//
+// The check reads the item, then the write follows: two writers racing in
+// between can both pass. Closing that needs the upstream to take If-Match
+// itself, which the contract can grow when there's a real upstream; until
+// then this catches the common case, a client acting on a stale copy.
+func checkIfMatch(r *http.Request, store Store, id ID) error {
+	im := r.Header.Get("If-Match")
+	if im == "" {
+		return nil
+	}
+	cur, err := store.Get(r.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		return preconditionFailed // nothing matches an item that isn't there
+	}
+	if err != nil {
+		return storeErr(err)
+	}
+	if !etagMatches(im, ETag(cur), false) {
+		return preconditionFailed
+	}
+	return nil
+}
+
+// etagMatches reports whether a conditional header (If-Match, If-None-Match:
+// "*" or a comma-separated list of entity tags) matches tag. If-Match
+// compares strongly, so a weak tag (W/"...") never matches; If-None-Match
+// weakly, ignoring the W/ (RFC 9110, 13.1).
+func etagMatches(header, tag string, weak bool) bool {
+	for _, t := range strings.Split(header, ",") {
+		t = strings.TrimSpace(t)
+		if t == "*" {
+			return true
+		}
+		if w, ok := strings.CutPrefix(t, "W/"); ok {
+			if !weak {
+				continue
+			}
+			t = w
+		}
+		if t == tag {
+			return true
+		}
+	}
+	return false
+}

@@ -23,6 +23,11 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Conditional requests: every item response carries an `ETag`, a `PUT` or `DELETE` with `If-Match`
+  goes ahead only if the item is still that version (else a 412, `precondition_failed`), and a `GET`
+  with a matching `If-None-Match` is a 304. Clients that use them can't silently overwrite each
+  other's changes
+  ([ADR-0040](docs/decisions.md#adr-0040-items-have-etags-and-writes-can-be-conditional)).
 - Upstream GETs are retried once (`UPSTREAM_RETRIES`, 0 to 3) when the upstream fails fast: a
   refused or reset connection, or a 5xx. Never a write, a timeout, or a 4xx. Retries share a
   budget of about one per ten requests, so a down upstream isn't hit harder, and each is logged,
