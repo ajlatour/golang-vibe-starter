@@ -1,0 +1,100 @@
+{
+  "sha": "71201e5e57f196b3abaffe593c3e17b12aef182d",
+  "time": "2026-10-06T09:33:57Z",
+  "subject": "Merge pull request #24 from ajlatour/request-validation",
+  "benchmarks": {
+    "cmd/api API/GET_/items": {
+      "B/op": 19592.5,
+      "allocs/op": 152,
+      "sec/op": 0.00018704650000000002
+    },
+    "cmd/api API/GET_/items/{id}": {
+      "B/op": 16354.5,
+      "allocs/op": 134,
+      "sec/op": 0.00011888300000000001
+    },
+    "cmd/api API/GET_/items/{id},_not_found": {
+      "B/op": 16213,
+      "allocs/op": 136,
+      "sec/op": 0.00010682000000000001
+    },
+    "cmd/api API/POST_/items": {
+      "B/op": 19804,
+      "allocs/op": 174,
+      "sec/op": 0.00013863200000000002
+    },
+    "cmd/api API/POST_/items,_invalid": {
+      "B/op": 8661.5,
+      "allocs/op": 45,
+      "sec/op": 0.0000134135
+    },
+    "cmd/api API/PUT_/items/{id}": {
+      "B/op": 19166.5,
+      "allocs/op": 170,
+      "sec/op": 0.0001341345
+    },
+    "internal/apikey Middleware/10_keys": {
+      "B/op": 368,
+      "allocs/op": 2,
+      "sec/op": 5.320500000000001e-7
+    },
+    "internal/apikey Middleware/1_keys": {
+      "B/op": 368,
+      "allocs/op": 2,
+      "sec/op": 3.3340000000000006e-7
+    },
+    "internal/headerguard Middleware/GET,_passes": {
+      "B/op": 0,
+      "allocs/op": 0,
+      "sec/op": 3.075e-7
+    },
+    "internal/headerguard Middleware/GET,_strips_a_proxy_header": {
+      "B/op": 6000,
+      "allocs/op": 20,
+      "sec/op": 0.0000032785
+    },
+    "internal/headerguard Middleware/POST_JSON,_passes": {
+      "B/op": 0,
+      "allocs/op": 0,
+      "sec/op": 3.0770000000000004e-7
+    },
+    "internal/httpx Middleware/caller's_ID": {
+      "B/op": 7643,
+      "allocs/op": 34,
+      "sec/op": 0.000007666
+    },
+    "internal/httpx Middleware/generated_ID": {
+      "B/op": 7307,
+      "allocs/op": 33,
+      "sec/op": 0.000007697000000000001
+    },
+    "internal/logx LogLine/below_the_level": {
+      "B/op": 0,
+      "allocs/op": 0,
+      "sec/op": 1.1795e-8
+    },
+    "internal/logx LogLine/json": {
+      "B/op": 192,
+      "allocs/op": 5,
+      "sec/op": 0.0000018525
+    },
+    "internal/logx LogLine/text": {
+      "B/op": 176,
+      "allocs/op": 3,
+      "sec/op": 0.0000018030000000000001
+    }
+  },
+  "load": {
+    "median_ms": 1.134031,
+    "p99_ms": 2.618035,
+    "error_rate": 0,
+    "requests": 10752,
+    "cpu_per_request_us": 727.2125186011906,
+    "alloc_per_request_bytes": 19148.54910714286,
+    "gc_per_1000_requests": 7.8125,
+    "memory_peak_mib": 16.48,
+    "validator_median_ms": 0.38176868746321363,
+    "validator_p99_ms": 0.8340384615384594,
+    "validator_calls_per_request": 1
+  }
+}
