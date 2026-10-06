@@ -10,6 +10,12 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+### Changed
+
+- The OpenAPI spec's `info.version` is the latest release's: `make release-prepare` sets it with
+  the changelog, a test fails if the two disagree, and the Release workflow refuses a tag that
+  doesn't match it. It said 0.1.0 through the 0.2.0 release, and now says 0.2.0.
+
 ## [0.2.0] - 2026-10-05
 
 ### Added
