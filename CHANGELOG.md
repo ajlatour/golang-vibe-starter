@@ -10,6 +10,8 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+## [0.2.0] - 2026-10-05
+
 ### Added
 
 - `FLAGS_CACHE_TTL` (1s): the API keeps each flag value flagd serves for that long, so it asks flagd
