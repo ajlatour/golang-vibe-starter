@@ -101,27 +101,39 @@ func ptr(v float64) *float64 { return &v }
 // readRecords reads every record in dir, oldest first by file name, which the
 // workflow starts with the time.
 func readRecords(dir string) ([]record, error) {
-	files, err := filepath.Glob(filepath.Join(dir, "*.json"))
-	if err != nil {
-		return nil, err
-	}
-	slices.Sort(files)
 	var out []record
-	for _, f := range files {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			return nil, err
-		}
+	err := readDir(dir, func(path string, b []byte) error {
 		var r record
 		if err := json.Unmarshal(b, &r); err != nil {
-			return nil, fmt.Errorf("%s: %w", f, err)
+			return fmt.Errorf("%s: %w", path, err)
 		}
 		out = append(out, r)
+		return nil
+	})
+	return out, err
+}
+
+// readDir calls f with each JSON file in dir, in name order, and fails if
+// there are none.
+func readDir(dir string, f func(path string, b []byte) error) error {
+	files, err := filepath.Glob(filepath.Join(dir, "*.json"))
+	if err != nil {
+		return err
 	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf("%s: no records", dir)
+	if len(files) == 0 {
+		return fmt.Errorf("%s: no records", dir)
 	}
-	return out, nil
+	slices.Sort(files)
+	for _, path := range files {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if err := f(path, b); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // series is one line on a chart: a value per record, NaN where it has none.
@@ -133,18 +145,28 @@ type series struct {
 type chart struct {
 	title, unit, note string
 	series            []series
+	// points are the commits along the x axis, one per value of each
+	// series; nil for the performance records'.
+	points []record
 }
 
 // runTrends is `report trends`: an HTML page charting the records.
 func runTrends(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("trends", flag.ContinueOnError)
 	dir := fs.String("records", "", "the directory of records")
+	ciDir := fs.String("ci-records", "", "a directory of CI records (report ci-record), to chart too")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	recs, err := readRecords(*dir)
 	if err != nil {
 		return err
+	}
+	var ciRecs []ciRecord
+	if *ciDir != "" {
+		if ciRecs, err = readCIRecords(*ciDir); err != nil {
+			return err
+		}
 	}
 
 	load := func(name string, f func(*loadRecord) *float64) series {
@@ -204,6 +226,9 @@ func runTrends(args []string, out io.Writer) error {
 		{title: "Time per request, by route", unit: "µs", note: "BenchmarkAPI, in-process: the median of 6 runs on a shared runner.",
 			series: bench("sec/op", 1e6)},
 	}
+	if len(ciRecs) > 0 {
+		charts = append(charts, ciCharts(ciRecs)...)
+	}
 	return writeTrendsPage(out, recs, charts)
 }
 
@@ -235,7 +260,11 @@ svg text { fill: var(--muted); font-size: 11px; } svg .grid { stroke: var(--grid
 			continue
 		}
 		p("<section><h2>%s <span style=\"color:var(--muted);font-weight:normal\">(%s)</span></h2><p class=\"note\">%s</p>\n", html.EscapeString(c.title), html.EscapeString(c.unit), html.EscapeString(c.note))
-		writeChart(w, recs, c)
+		points := c.points
+		if points == nil {
+			points = recs
+		}
+		writeChart(w, points, c)
 		p(`<div class="legend">`)
 		for i, s := range c.series {
 			p(`<span style="--c:%s">%s</span>`, palette[i%len(palette)], html.EscapeString(s.name))

@@ -193,6 +193,7 @@ says so.
 | PERF-1 | At 200 requests a second the p99 stays under 25ms and errors under 0.1% (the `load` profile, on the local stack). | The service's latency budget | `perf/profiles.json`, `perf/profiles_test.go` |
 | PERF-2 | A pull request doesn't add allocations per request, unless labelled `perf-ok`; timing, CPU and memory changes are reported. | Exact signals gate, noisy ones inform (ADR-0013) | `.github/workflows/perf.yml`, `perf/report/report_test.go` |
 | PERF-3 | `main`'s performance is recorded after every merge. | Catches slow drift (ADR-0024) | `.github/workflows/perf-trends.yml`, `perf/report/trends_test.go` |
+| PERF-4 | CI's time on `main`, by job and step, is recorded after every successful run. | A slower pipeline slows every merge (ADR-0024) | `.github/workflows/ci-times.yml`, `perf/report/ci_test.go`, `perf/save_record_test.go` |
 
 ### Observability
 

@@ -191,12 +191,15 @@ bench: ## Run the Go benchmarks, BENCH_COUNT times each, into bin/bench/current.
 	@mkdir -p $(BENCH_OUT)
 	go test -run '^$$' -bench . -benchmem -count $(BENCH_COUNT) ./... | tee $(BENCH_OUT)/current.txt
 
-perf-trends: ## Chart main's performance over time from the perf-data branch: bin/perf/trends.html
+perf-trends: ## Chart main's performance and CI times over time from the perf-data branch: bin/perf/trends.html
 	git fetch -q origin perf-data
 	rm -rf bin/perf/trends-data && mkdir -p bin/perf/trends-data
 	git archive FETCH_HEAD records | tar -x -C bin/perf/trends-data
+	@# CI times (ci-times.yml) are charted once there are any.
+	@if git cat-file -e FETCH_HEAD:ci 2>/dev/null; then git archive FETCH_HEAD ci | tar -x -C bin/perf/trends-data; fi
 	go build -C perf/report -o $(CURDIR)/bin/perf-report .
-	bin/perf-report trends -records bin/perf/trends-data/records > bin/perf/trends.html
+	bin/perf-report trends -records bin/perf/trends-data/records \
+		$$([ -d bin/perf/trends-data/ci ] && echo -ci-records bin/perf/trends-data/ci) > bin/perf/trends.html
 	@echo "open bin/perf/trends.html"
 
 bench-compare: ## Run the benchmarks here and at BENCH_BASE (default main), interleaved, and compare them

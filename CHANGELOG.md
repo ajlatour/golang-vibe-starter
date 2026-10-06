@@ -10,6 +10,13 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+### Added
+
+- CI's own time is tracked: after every successful CI run on `main`, a new workflow
+  (`ci-times.yml`) saves the pipeline's time, each job's time and wait for a runner, and each
+  step's time to the `perf-data` branch, and `make perf-trends` charts the pipeline and its jobs
+  beside the performance trends ([Pipeline time](docs/performance.md#pipeline-time)).
+
 ### Changed
 
 - The OpenAPI spec's `info.version` is the latest release's: `make release-prepare` sets it with

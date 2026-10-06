@@ -17,7 +17,8 @@
 // blocking, because shared CI runners are too noisy to gate on.
 //
 // `report record` and `report trends` keep and chart main's performance
-// over time; see trends.go.
+// over time; see trends.go. `report ci-record` keeps how long each CI run on
+// main took, by job and step, for `report trends` to chart too; see ci.go.
 //
 // This is its own module, like integration/, so that the service itself
 // stays standard library only.
@@ -40,6 +41,8 @@ func main() {
 			run = runRecord
 		case "trends":
 			run = runTrends
+		case "ci-record":
+			run = runCIRecord
 		}
 		if run != nil {
 			if err := run(os.Args[2:], os.Stdout); err != nil {

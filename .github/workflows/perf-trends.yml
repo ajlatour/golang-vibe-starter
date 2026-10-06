@@ -74,23 +74,4 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git ls-remote --exit-code --heads origin perf-data > /dev/null; then
-            git fetch -q --depth 1 origin perf-data
-            git worktree add -q -B perf-data data FETCH_HEAD
-          else
-            git worktree add -q --orphan -b perf-data data
-            printf '%s\n' "# Performance records" "" \
-              "One JSON file per commit on main, written by .github/workflows/perf-trends.yml." \
-              "Run \`make perf-trends\` on main to chart them." > data/README.md
-          fi
-          mkdir -p data/records
-          cp "$RUNNER_TEMP/record.json" "data/records/$(date -u +%Y%m%dT%H%M%S)-${GITHUB_SHA::7}.json"
-          cd data
-          git add -A
-          git commit -q -m "Record the performance of ${GITHUB_SHA::7}"
-          # Another record may have landed meanwhile: rebase onto it and retry.
-          for attempt in 1 2 3; do
-            git push -q origin HEAD:perf-data && exit 0
-            git fetch -q origin perf-data && git rebase -q FETCH_HEAD
-          done
-          exit 1
+          sh perf/save-record.sh records "$RUNNER_TEMP/record.json" "Record the performance of ${GITHUB_SHA::7}"

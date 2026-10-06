@@ -259,3 +259,24 @@ The page is drawn by the report tool, with no JavaScript or chart library.
 
 The timings come from shared runners, so a single point means little; look for steps and slopes.
 Allocations are exact, so a step in them is always a real change.
+
+## Pipeline time
+
+How long CI takes is tracked the same way. After every successful CI run on `main`, the CI times
+workflow (`.github/workflows/ci-times.yml`) reads the run from the GitHub API and saves one JSON
+file per run under `ci/` on the `perf-data` branch, with:
+
+- the pipeline's time, from the run starting to its last job finishing, which is how long a merge
+  waits for its checks;
+- each job's running time, and how long it waited for a runner;
+- each step's time, for working out what made a job slower.
+
+`make perf-trends` charts the pipeline's time and each job's beside the performance charts, once
+there are records. The jobs run in parallel, so the slowest one, usually `fuzz` or `lint`, sets
+the pipeline's time.
+
+It runs after CI rather than inside it, so it sees every job's finished timings, and a failure in
+it never fails CI. Only successful runs are recorded: a failed or cancelled run stopped early and
+would read as a faster pipeline. A re-run of failed jobs keeps its jobs' times but has no pipeline
+time, because the jobs it carried over ran before it started. Like the other timings, these come
+from shared runners, so look for steps and slopes rather than single points.
