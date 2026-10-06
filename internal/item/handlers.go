@@ -44,11 +44,13 @@ func RegisterRoutes(mux *http.ServeMux, logger *slog.Logger, store Store, opts .
 	for _, opt := range opts {
 		opt(&o)
 	}
-	mux.Handle("GET /items", handleList(logger, store, o.flags))
-	mux.Handle("POST /items", handleCreate(logger, store))
-	mux.Handle("GET /items/{id}", handleGet(logger, store))
-	mux.Handle("PUT /items/{id}", handleUpdate(logger, store))
-	mux.Handle("DELETE /items/{id}", handleDelete(logger, store))
+	// Each handler returns its error, and httpx.Handle answers it: the
+	// client's mistakes as httpx.Errors, everything else as a logged 5xx.
+	mux.Handle("GET /items", httpx.Handle(logger, handleList(store, o.flags)))
+	mux.Handle("POST /items", httpx.Handle(logger, handleCreate(store)))
+	mux.Handle("GET /items/{id}", httpx.Handle(logger, handleGet(store)))
+	mux.Handle("PUT /items/{id}", httpx.Handle(logger, handleUpdate(store)))
+	mux.Handle("DELETE /items/{id}", httpx.Handle(logger, handleDelete(store)))
 }
 
 // Request is the body of a create or replace, as the API accepts it: what
@@ -73,12 +75,11 @@ func NewResponse(it Item) Response {
 	return Response{ID: it.ID.String(), Name: it.Name.String(), Description: it.Description.String(), CreatedAt: it.CreatedAt, UpdatedAt: it.UpdatedAt}
 }
 
-func handleList(logger *slog.Logger, store Store, flags Flags) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func handleList(store Store, flags Flags) httpx.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
 		items, err := store.List(r.Context())
 		if err != nil {
-			storeError(logger, w, r, err)
-			return
+			return storeErr(err)
 		}
 		out := make([]Response, len(items))
 		for i, it := range items {
@@ -89,116 +90,130 @@ func handleList(logger *slog.Logger, store Store, flags Flags) http.HandlerFunc 
 			resp["total"] = len(items)
 		}
 		httpx.WriteJSON(w, http.StatusOK, resp)
+		return nil
 	}
 }
 
-func handleGet(logger *slog.Logger, store Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id, ok := pathID(w, r)
-		if !ok {
-			return
+func handleGet(store Store) httpx.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		id, err := pathID(r)
+		if err != nil {
+			return err
 		}
 		it, err := store.Get(r.Context(), id)
 		if err != nil {
-			storeError(logger, w, r, err)
-			return
+			return storeErr(err)
 		}
 		httpx.WriteJSON(w, http.StatusOK, NewResponse(it))
+		return nil
 	}
 }
 
-func handleCreate(logger *slog.Logger, store Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		d, ok := decodeDraft(w, r)
-		if !ok {
-			return
+func handleCreate(store Store) httpx.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		d, err := decodeDraft(w, r)
+		if err != nil {
+			return err
 		}
 		it, err := store.Create(r.Context(), d)
 		if err != nil {
-			storeError(logger, w, r, err)
-			return
+			return storeErr(err)
 		}
 		w.Header().Set("Location", "/items/"+it.ID.String())
 		httpx.WriteJSON(w, http.StatusCreated, NewResponse(it))
+		return nil
 	}
 }
 
-func handleUpdate(logger *slog.Logger, store Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id, ok := pathID(w, r)
-		if !ok {
-			return
+func handleUpdate(store Store) httpx.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		id, err := pathID(r)
+		if err != nil {
+			return err
 		}
-		d, ok := decodeDraft(w, r)
-		if !ok {
-			return
+		d, err := decodeDraft(w, r)
+		if err != nil {
+			return err
 		}
 		it, err := store.Update(r.Context(), id, d)
 		if err != nil {
-			storeError(logger, w, r, err)
-			return
+			return storeErr(err)
 		}
 		httpx.WriteJSON(w, http.StatusOK, NewResponse(it))
+		return nil
 	}
 }
 
-func handleDelete(logger *slog.Logger, store Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id, ok := pathID(w, r)
-		if !ok {
-			return
+func handleDelete(store Store) httpx.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		id, err := pathID(r)
+		if err != nil {
+			return err
 		}
 		if err := store.Delete(r.Context(), id); err != nil {
-			storeError(logger, w, r, err)
-			return
+			return storeErr(err)
 		}
 		w.WriteHeader(http.StatusNoContent)
+		return nil
 	}
 }
 
+// The client errors with fixed messages, made once, so answering them
+// allocates nothing: a 404 for an ID no item has, and a 422 for each of the
+// model's rules. Never modified.
+var (
+	notFound = httpx.NewError(http.StatusNotFound, httpx.CodeNotFound, ErrNotFound.Error())
+
+	invalidField = map[error]*httpx.Error{
+		errNameRequired:    httpx.NewError(http.StatusUnprocessableEntity, httpx.CodeInvalidField, errNameRequired.Error()),
+		errNameTooLong:     httpx.NewError(http.StatusUnprocessableEntity, httpx.CodeInvalidField, errNameTooLong.Error()),
+		errDescriptionLong: httpx.NewError(http.StatusUnprocessableEntity, httpx.CodeInvalidField, errDescriptionLong.Error()),
+	}
+)
+
 // pathID returns the request's {id}. If it isn't an ID (see ID), no item can
-// have it: pathID answers 404, as for any unknown item, without asking the
-// store, and returns false.
-func pathID(w http.ResponseWriter, r *http.Request) (ID, bool) {
+// have it: the error answers 404, as for any unknown item, without asking
+// the store.
+func pathID(r *http.Request) (ID, error) {
 	id, err := ParseID(r.PathValue("id"))
 	if err != nil {
-		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, ErrNotFound.Error())
-		return ID{}, false
+		return ID{}, notFound
 	}
-	return id, true
+	return id, nil
 }
 
 // decodeDraft reads the JSON request body shared by create and update, and
-// makes a Draft of it. If it can't, it has already written the 400 (unreadable
-// body) or 422 (a field breaks a rule) response and returns false.
-func decodeDraft(w http.ResponseWriter, r *http.Request) (Draft, bool) {
+// makes a Draft of it, or returns the error to answer: 400 for a body that
+// can't be read, 422 for a field that breaks a rule.
+func decodeDraft(w http.ResponseWriter, r *http.Request) (Draft, error) {
 	var req Request
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeInvalidBody, err.Error())
-		return Draft{}, false
+		return Draft{}, &httpx.Error{Status: http.StatusBadRequest, Code: httpx.CodeInvalidBody, Message: err.Error(), Err: err}
 	}
 	d, err := NewDraft(req.Name, req.Description)
 	if err != nil {
-		httpx.WriteError(w, http.StatusUnprocessableEntity, httpx.CodeInvalidField, err.Error())
-		return Draft{}, false
+		if e, ok := invalidField[err]; ok {
+			return Draft{}, e
+		}
+		return Draft{}, &httpx.Error{Status: http.StatusUnprocessableEntity, Code: httpx.CodeInvalidField, Message: err.Error(), Err: err}
 	}
-	return d, true
+	return d, nil
 }
 
-// storeError answers a Store's error: ErrNotFound is a 404, ErrStoreTimeout a
-// 504, ErrStoreUnavailable a 502, and anything else a 500, each 5xx logged by
-// httpx.ServerError.
-func storeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err error) {
+// storeErr says what a Store's error means to the client: ErrNotFound is a
+// 404, ErrStoreTimeout a 504, ErrStoreUnavailable a 502, and anything else
+// a 500. The 5xxs go to httpx.ServerError (through httpx.Handle), which logs
+// them and keeps their details from the client.
+func storeErr(err error) error {
 	switch {
 	case errors.Is(err, ErrNotFound):
-		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, ErrNotFound.Error())
+		return notFound
 	case errors.Is(err, ErrStoreTimeout):
-		httpx.ServerError(logger, w, r, withStatus{err, http.StatusGatewayTimeout})
+		return withStatus{err, http.StatusGatewayTimeout}
 	case errors.Is(err, ErrStoreUnavailable):
-		httpx.ServerError(logger, w, r, withStatus{err, http.StatusBadGateway})
-	default:
-		httpx.ServerError(logger, w, r, err)
+		return withStatus{err, http.StatusBadGateway}
 	}
+	return err
 }
 
 // withStatus gives err the status httpx.ServerError should answer it with,

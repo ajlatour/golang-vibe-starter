@@ -57,7 +57,7 @@ outside in:
 | 5 | Per-client rate limit | `internal/limit` | 429 | After authentication, so a client is its key (ADR-0018) |
 | 6 | Request validation, with `VALIDATOR_URL` | `internal/validator`, over `internal/jsoncall` | 403, or 503 when the service can't answer and the API fails closed | After the rate limit, so a client's flood never reaches the validation service (ADR-0032) |
 | 7 | Routing | `net/http.ServeMux`, wrapped by `httpx.RecordRoute` | 404, 405 | Innermost, so the matched route reaches the outer stages (ADR-0023) |
-| 8 | Handlers | `internal/item` | 400, 404, 422 | Decode, validate (IDs per ADR-0017), call the store |
+| 8 | Handlers | `internal/item`, through `httpx.Handle` | 400, 404, 422 | Decode, validate (IDs per ADR-0017), call the store. Each returns its error, and `httpx.Handle` answers it in one place: an `httpx.Error` as its status and code, anything else as a logged 5xx (ADR-0033) |
 | 9 | The store | `internal/item/httpstore`, over `internal/jsoncall` | 502, 504 | Upstream failures become 502, or 504 on a timeout, never 500 (ADR-0007, ADR-0019) |
 
 `/healthz` and `/readyz` sit at stage 7 but skip stages 2, 4, 5 and 6: a busy or misconfigured

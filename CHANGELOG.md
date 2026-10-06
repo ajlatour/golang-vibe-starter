@@ -21,6 +21,13 @@ Ideas considered but not planned are listed under
   ([ADR-0033](docs/decisions.md#adr-0033-errors-carry-a-stable-code-from-one-list)). Additive: the
   `error` field is unchanged.
 
+### Changed
+
+- Handlers return their errors, and `httpx.Handle` answers them in one place: an `httpx.Error`
+  (the client's mistake) as its status, code and message, anything else through
+  `httpx.ServerError`, logged and kept from the client. The item handlers no longer each write
+  their errors. Responses are as before, and no allocations are added.
+
 ## [0.4.0] - 2026-10-06
 
 ### Added
