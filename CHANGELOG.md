@@ -12,6 +12,11 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- W3C trace context: a request's `traceparent` header, or a new trace without one, puts its log
+  lines in the trace (`trace_id`), and every call the API makes onward (the upstream, the validation
+  service, flagd) carries the trace on, with a span ID of its own. No tracing SDK: when
+  OpenTelemetry is added, its spans join the traces already flowing
+  ([ADR-0034](docs/decisions.md#adr-0034-w3c-trace-context-is-carried-through-without-a-tracing-sdk)).
 - Every error response carries a stable `code` beside its message: `{"error": "...", "code":
   "rate_limited"}`. The message is for people and may be reworded; the code is for clients to act
   on, and tells apart errors that share a status (a 403 for a read-only key or a validation
@@ -30,6 +35,12 @@ Ideas considered but not planned are listed under
 - The outage tracking the flag client and request validation each had, the same code twice, is
   one package, `internal/outage`, for any dependency on the request path. Behaviour is unchanged.
 
+
+### Fixed
+
+- `make fuzz`, and so CI's fuzz job, hadn't fuzzed the item ID parser since 0.3.1: its target was
+  still listed under the test's old name, and fuzzing a test that doesn't exist passes having done
+  nothing. It's fuzzed again, and a target that doesn't exist now fails the job.
 ## [0.4.0] - 2026-10-06
 
 ### Added

@@ -79,20 +79,22 @@ updates this table, and so the architecture, in the same pull request.
 | `internal/apikey` | protection | Authenticates API keys | `internal/httpx`, `internal/logx` |
 | `internal/validator` | protection | Checks every request against the request-validation service, and fails closed or open when it can't answer (ADR-0032) | `internal/httpx`, `internal/jsoncall`, `internal/logx`, `internal/outage` |
 | `internal/limit` | protection | In-flight cap and per-client rate limit; told who a client is (ADR-0031) | `internal/httpx` |
-| `internal/httpx` | plumbing | Serving, middleware, JSON helpers, readiness | `internal/logx` |
-| `internal/jsoncall` | plumbing | One JSON-over-HTTP call, for every outbound client | `internal/logx` |
+| `internal/httpx` | plumbing | Serving, middleware, JSON helpers, readiness | `internal/logx`, `internal/tracectx` |
+| `internal/jsoncall` | plumbing | One JSON-over-HTTP call, for every outbound client | `internal/logx`, `internal/tracectx` |
 | `internal/envconfig` | plumbing | Environment variables and the settings every service shares | `internal/logx` |
 | `internal/profiling` | plumbing | pprof and runtime metrics on a private listener | `internal/logx` |
 | `internal/outage` | foundation | Whether a dependency on the request path is answering: one log line each way, the cost, and at most one try per retry interval during an outage | nothing |
+| `internal/tracectx` | foundation | W3C trace context: parses `traceparent`, starts traces, makes the header for outbound calls (ADR-0034) | nothing |
 | `internal/httpmetrics` | foundation | Request metrics in Prometheus's text format | nothing |
-| `internal/logx` | foundation | The logger, field names, per-request log state, redaction | nothing |
+| `internal/logx` | foundation | The logger, field names, per-request log state, redaction | `internal/tracectx` |
 | `flagd` | foundation | The flag definitions, embedded as the fallback defaults | nothing |
 | `internal/item/itemtest` | test support | In-memory `Store` and the contract every `Store` must pass | `internal/item` |
 | `internal/logtest` | test support | Capturing and parsing logs; the log contract | nothing |
 | `internal/nettest` | test support | Dead, hanging and failing upstream stubs | nothing |
 
 Only test files may import a test support package. The foundations import nothing from the
-module, so everything can use them without a cycle.
+module but each other (`internal/logx` keeps the request's trace, from `internal/tracectx`), so
+everything can use them without a cycle.
 
 ## Runtime behaviour
 

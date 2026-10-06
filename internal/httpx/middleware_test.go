@@ -188,3 +188,51 @@ func TestClientIP(t *testing.T) {
 		}
 	}
 }
+
+// TestTraceContext checks a request's log lines carry its trace ID: the
+// caller's, from a valid traceparent, else a new trace's, the same on every
+// line of the request.
+func TestTraceContext(t *testing.T) {
+	const sent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	for _, tt := range []struct {
+		name, header string
+		want         string // "" for a new trace
+	}{
+		{"the caller's", sent, "4bf92f3577b34da6a3ce929d0e0e4736"},
+		{"none sent", "", ""},
+		{"a malformed one", "00-not-a-trace", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var logs logtest.Buffer
+			var seen string
+			// Through logx's context handler, as the service logs.
+			logger := slog.New(logx.NewContextHandler(logs.Handler(slog.LevelInfo)))
+			h := Middleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if p, ok := logx.Trace(r.Context()); ok {
+					seen = p.TraceIDString()
+				}
+			}))
+			req := httptest.NewRequest(http.MethodGet, "/items", nil)
+			if tt.header != "" {
+				req.Header.Set("traceparent", tt.header)
+			}
+			h.ServeHTTP(httptest.NewRecorder(), req)
+			recs := logs.Records(t)
+			first, _ := recs[0][logx.KeyTraceID].(string)
+			if len(first) != 32 || first != seen {
+				t.Fatalf("trace_id %q, handler saw %q: want one 32-hex ID, the same", first, seen)
+			}
+			if tt.want != "" && first != tt.want {
+				t.Errorf("trace_id = %s, want the caller's %s", first, tt.want)
+			}
+			if tt.want == "" && first == "4bf92f3577b34da6a3ce929d0e0e4736" {
+				t.Error("a new trace reused the example's ID")
+			}
+			for _, r := range recs {
+				if r[logx.KeyTraceID] != first {
+					t.Errorf("%s has trace_id %v, want %s on every line", r["msg"], r[logx.KeyTraceID], first)
+				}
+			}
+		})
+	}
+}

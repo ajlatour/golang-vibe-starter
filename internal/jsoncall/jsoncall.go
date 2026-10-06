@@ -16,7 +16,12 @@ import (
 	"sync"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
+	"github.com/ajlatour/golang-vibe-starter/internal/tracectx"
 )
+
+// traceparentKey is the traceparent header's canonical form, for setting it
+// without canonicalizing it on every call.
+var traceparentKey = http.CanonicalHeaderKey(tracectx.Header)
 
 // DefaultMaxResponseBytes caps how much of a response is read when Call
 // doesn't set its own cap.
@@ -115,6 +120,11 @@ func (c Call) Do(ctx context.Context) (status int, err error) {
 		return fail(KindRequest, 0, "%w", err)
 	}
 	req.Header.Set("Accept", "application/json")
+	// The call joins the request's trace, as a span of its own
+	// (internal/tracectx).
+	if trace, ok := logx.Trace(ctx); ok {
+		req.Header[traceparentKey] = []string{trace.Child().String()}
+	}
 	if c.In != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

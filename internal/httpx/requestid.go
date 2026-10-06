@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
+	"github.com/ajlatour/golang-vibe-starter/internal/tracectx"
 )
 
 // RequestIDHeader carries the request's correlation ID. A caller may send one
@@ -20,6 +21,10 @@ const maxRequestIDLen = 128
 // assignRequestID gives each request a correlation ID: the caller's, if it
 // sent a valid one, or a new random one. The ID goes into the request context
 // (where the log handler picks it up) and the response header.
+//
+// It also takes the request's W3C trace context: the caller's traceparent, if
+// it sent a valid one, or a new trace. Its trace ID goes on every log line of
+// the request, and outbound calls carry the trace on (internal/tracectx).
 func assignRequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get(RequestIDHeader)
@@ -27,7 +32,13 @@ func assignRequestID(next http.Handler) http.Handler {
 			id = rand.Text()
 		}
 		w.Header().Set(RequestIDHeader, id)
-		next.ServeHTTP(w, r.WithContext(logx.WithRequestID(r.Context(), id)))
+		ctx := logx.WithRequestID(r.Context(), id)
+		trace, ok := tracectx.Parse(r.Header.Get(tracectx.Header))
+		if !ok {
+			trace = tracectx.New()
+		}
+		logx.SetTrace(ctx, trace)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

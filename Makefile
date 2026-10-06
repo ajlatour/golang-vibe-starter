@@ -137,14 +137,18 @@ vuln: ## Check all three modules for known vulnerabilities the code can reach
 	go run -C perf/report golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
 # The fuzz tests, as package:Function. go test fuzzes one at a time.
-FUZZ_TARGETS := internal/httpx:FuzzDecodeJSON internal/httpx:FuzzCorrelationID \
-	internal/headerguard:FuzzMiddleware internal/item:FuzzValidID \
+FUZZ_TARGETS := internal/httpx:FuzzDecodeJSON internal/httpx:FuzzCorrelationID internal/tracectx:FuzzParse \
+	internal/headerguard:FuzzMiddleware internal/item:FuzzParseID \
 	internal/apikey:FuzzParseKeys internal/httpmetrics:FuzzObserve
 FUZZTIME ?= 30s
 
 fuzz: ## Fuzz the code that handles untrusted input, FUZZTIME (30s) per target
+	@# A target that doesn't exist (renamed, say) would otherwise "pass" having
+	@# fuzzed nothing, so each must be there first.
 	@for t in $(FUZZ_TARGETS); do \
-		pkg=$${t%%:*}; fn=$${t#*:}; echo "fuzzing $$fn in $$pkg for $(FUZZTIME)"; \
+		pkg=$${t%%:*}; fn=$${t#*:}; \
+		go test ./$$pkg -list "^$$fn$$" | grep -qx "$$fn" || { echo "fuzz: no $$fn in $$pkg: update FUZZ_TARGETS"; exit 1; }; \
+		echo "fuzzing $$fn in $$pkg for $(FUZZTIME)"; \
 		go test ./$$pkg -run '^$$' -fuzz "^$$fn$$" -fuzztime $(FUZZTIME) 2>&1 | tail -n 3 || exit 1; \
 	done
 

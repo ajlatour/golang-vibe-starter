@@ -115,7 +115,9 @@ apart errors that share a status:
 | 504 | `upstream_timeout` | The upstream didn't answer within `UPSTREAM_TIMEOUT` |
 
 Every response carries a `Client-Correlation-Id` header. Send your own to tie the service's log
-lines to yours, or quote the one returned when reporting a problem.
+lines to yours, or quote the one returned when reporting a problem. A W3C `traceparent` header,
+if you send one, puts the request in your trace: its log lines carry the trace ID (`trace_id`),
+and the calls the API makes onward carry the trace on.
 
 Every response also carries `X-Content-Type-Options: nosniff`, so a browser never treats a body as
 anything but its declared type, and `Cache-Control: no-store`, so nothing keeps a copy of it. An
