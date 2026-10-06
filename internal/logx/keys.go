@@ -40,6 +40,8 @@ const (
 	KeyUpstream           = "upstream" // "METHOD /path" of the call
 	KeyUpstreamStatus     = "upstream_status"
 	KeyUpstreamDurationMS = "upstream_duration_ms"
+	KeyAttempt            = "attempt" // which try a retried upstream call is about to make: 2 for the first retry
+	KeyRetries            = "retries" // how often an upstream GET may be retried (UPSTREAM_RETRIES)
 
 	// Header screening (internal/headerguard).
 	KeyReason  = "reason"  // why a request was rejected, e.g. "header too large"

@@ -256,3 +256,27 @@ func TestLoadConfigLogClientIP(t *testing.T) {
 		t.Error("LOG_CLIENT_IP=yes: no error, want one")
 	}
 }
+
+func TestLoadConfigUpstreamRetries(t *testing.T) {
+	env := func(v string) func(string) string {
+		return func(k string) string {
+			switch k {
+			case "UPSTREAM_URL":
+				return "http://mock:8080"
+			case "UPSTREAM_RETRIES":
+				return v
+			}
+			return ""
+		}
+	}
+	for v, want := range map[string]int{"": 1, "0": 0, "3": 3} {
+		if got, err := loadConfig(env(v)); err != nil || got.UpstreamRetries != want {
+			t.Errorf("UPSTREAM_RETRIES=%q: %d, %v; want %d", v, got.UpstreamRetries, err, want)
+		}
+	}
+	for _, bad := range []string{"-1", "4", "many"} {
+		if _, err := loadConfig(env(bad)); err == nil {
+			t.Errorf("UPSTREAM_RETRIES=%s: no error, want one", bad)
+		}
+	}
+}

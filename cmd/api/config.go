@@ -19,6 +19,9 @@ type config struct {
 	envconfig.Service
 	UpstreamURL     *url.URL
 	UpstreamTimeout time.Duration
+	// UpstreamRetries is how often a GET to the upstream is tried again
+	// after a fast failure (httpstore.WithRetries).
+	UpstreamRetries int
 
 	// FlagsURL is the OFREP endpoint of the flagd sidecar. Nil disables
 	// feature flags: every flag then takes its default.
@@ -85,6 +88,10 @@ func loadConfig(getenv func(string) string) (config, error) {
 		// talking to the wrong one is worse than failing at startup.
 		UpstreamURL:     envconfig.Required(env, "UPSTREAM_URL", parseHTTPURL),
 		UpstreamTimeout: envconfig.Optional(env, "UPSTREAM_TIMEOUT", 5*time.Second, envconfig.ParsePositiveDuration),
+		// One retry: enough to ride out a dropped connection or a restart
+		// behind a load balancer, and the budget keeps it from adding load
+		// when the upstream is really down.
+		UpstreamRetries: envconfig.Optional(env, "UPSTREAM_RETRIES", 1, parseRetries),
 
 		// Optional: flags are an add-on, and without a sidecar the service
 		// runs with every flag at its default. The timeout is short by
@@ -240,4 +247,13 @@ func parseFailureMode(v string) (bool, error) {
 		return true, nil
 	}
 	return false, fmt.Errorf("want closed or open, got %q", v)
+}
+
+// parseRetries reads UPSTREAM_RETRIES: 0 to 3.
+func parseRetries(v string) (int, error) {
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 || n > 3 {
+		return 0, fmt.Errorf("want 0 to 3, got %q", v)
+	}
+	return n, nil
 }

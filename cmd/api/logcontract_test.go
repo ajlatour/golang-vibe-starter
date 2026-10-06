@@ -170,10 +170,14 @@ func TestLogContract(t *testing.T) {
 		t.Error("no log lines carry the client's correlation ID client-corr-1")
 	}
 	// The full story of one failing request, in order: it arrives, the
-	// upstream call goes out, the upstream's 503 comes back, the call is
-	// reported failed, the handler logs the error, and the 502 goes out.
+	// upstream call goes out, the upstream's 503 comes back, and the GET is
+	// tried once more (UPSTREAM_RETRIES, 1), getting a 503 again; then the
+	// call is reported failed, the handler logs the error, and the 502 goes
+	// out.
 	wantBoom := []string{
-		"request received", "upstream request sent", "upstream response received",
+		"request received",
+		"upstream request sent", "upstream response received", "upstream request retried",
+		"upstream request sent", "upstream response received",
 		"upstream request failed", "internal error", "response sent",
 	}
 	if got := logtest.Msgs(byID["client-boom"]); !slices.Equal(got, wantBoom) {
@@ -302,11 +306,12 @@ func checkPairing(t *testing.T, byID map[string][]map[string]any) {
 			t.Errorf("request %s: want exactly one request received and one response sent, got %q", id, got)
 		}
 
-		// An outcome is a response, or a failure that has no response.
+		// An outcome is a response, or a failure, or a retry, that has no
+		// response: every attempt has exactly one.
 		outcomes := count("upstream response received")
 		for _, m := range recs {
 			msg := m["msg"]
-			if (msg == "upstream request failed" || msg == "upstream request cancelled") && m["upstream_status"] == nil {
+			if (msg == "upstream request failed" || msg == "upstream request cancelled" || msg == "upstream request retried") && m["upstream_status"] == nil {
 				outcomes++
 			}
 		}

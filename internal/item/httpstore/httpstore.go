@@ -29,6 +29,8 @@ type Store struct {
 	baseURL string
 	client  *http.Client
 	logger  *slog.Logger
+	retries int          // see WithRetries
+	budget  *retryBudget // shared by every call
 }
 
 var _ item.Store = (*Store)(nil)
@@ -54,7 +56,7 @@ func WithLogger(logger *slog.Logger) Option {
 // "http://mock:8080", optionally with a path prefix) using client. The
 // client should have a timeout set.
 func New(baseURL string, client *http.Client, opts ...Option) *Store {
-	s := &Store{baseURL: strings.TrimRight(baseURL, "/"), client: client, logger: slog.New(slog.DiscardHandler)}
+	s := &Store{baseURL: strings.TrimRight(baseURL, "/"), client: client, logger: slog.New(slog.DiscardHandler), budget: newRetryBudget()}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -156,15 +158,28 @@ func itemPath(id item.ID) string {
 // WithLogger). Never headers or bodies.
 func (s *Store) do(ctx context.Context, method, path string, body any, want int, out any) error {
 	call := method + " " + logx.Truncate(path, logx.MaxLoggedPath)
-	s.logger.LogAttrs(ctx, slog.LevelInfo, "upstream request sent", slog.String(logx.KeyUpstream, call))
-
-	start := time.Now()
-	status, err := s.roundTrip(ctx, method, path, body, want, out)
-	elapsed := time.Since(start)
-	attrs := upstreamAttrs(call, status, elapsed)
-
-	if status != 0 {
-		s.logger.LogAttrs(ctx, slog.LevelInfo, "upstream response received", attrs...)
+	s.budget.earn()
+	var status int
+	var err error
+	var elapsed time.Duration
+	var attrs []slog.Attr
+	for attempt := 1; ; attempt++ {
+		s.logger.LogAttrs(ctx, slog.LevelInfo, "upstream request sent", slog.String(logx.KeyUpstream, call))
+		start := time.Now()
+		status, err = s.roundTrip(ctx, method, path, body, want, out)
+		elapsed = time.Since(start)
+		attrs = upstreamAttrs(call, status, elapsed)
+		if status != 0 {
+			s.logger.LogAttrs(ctx, slog.LevelInfo, "upstream response received", attrs...)
+		}
+		if err == nil || attempt > s.retries || !retriable(ctx, method, err) || !s.budget.spend() {
+			break
+		}
+		s.logger.LogAttrs(ctx, slog.LevelInfo, "upstream request retried",
+			append(attrs, slog.Int(logx.KeyAttempt, attempt+1), slog.Any(logx.KeyError, err))...)
+		if !pause(ctx) {
+			break
+		}
 	}
 
 	switch {

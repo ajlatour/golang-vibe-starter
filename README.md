@@ -159,6 +159,7 @@ The API reads these environment variables:
 | --------------------- | ---------- | ---------------------------------------------------------- |
 | `UPSTREAM_URL`        | (required) | Base URL of the items upstream. May include a path prefix, but no query string or fragment. |
 | `UPSTREAM_TIMEOUT`    | `5s`       | Timeout for each upstream request.                         |
+| `UPSTREAM_RETRIES`    | `1`        | How often a GET to the upstream is tried again after a fast failure (refused, reset, or a 5xx; never a timeout, never a write), 0 to 3. Retries share a budget of about one per ten requests, so a down upstream isn't hit harder. |
 | `FLAGS_URL`           |            | flagd OFREP base URL, e.g. `http://flagd:8016`, without a query string or fragment. Unset disables flags. |
 | `FLAGS_TIMEOUT`       | `500ms`    | Timeout for each flag evaluation.                          |
 | `FLAGS_CACHE_TTL`     | `1s`       | How long a flag's value is kept after flagd serves it, so a change in flagd shows within this; during a flagd outage, how often flagd is retried, with the evaluations in between taking their defaults at once. `0s` asks flagd every time. |

@@ -95,13 +95,18 @@ func initScenario(sc *godog.ScenarioContext, s stack) {
 // --- the stack -------------------------------------------------------------
 
 func (w *world) resetUpstream() error {
-	resp, err := w.client.Post(w.stack.wiremock+"/__admin/mappings/reset", "application/json", nil)
-	if err != nil {
-		return fmt.Errorf("reset WireMock: %w", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("reset WireMock: %s", resp.Status)
+	// The mappings, and the scenarios' states, which a mappings reset
+	// leaves as they were: a fault that fails once (flaky-list) must start
+	// from the start.
+	for _, path := range []string{"/__admin/mappings/reset", "/__admin/scenarios/reset"} {
+		resp, err := w.client.Post(w.stack.wiremock+path, "application/json", nil)
+		if err != nil {
+			return fmt.Errorf("reset WireMock: %w", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("reset WireMock %s: %s", path, resp.Status)
+		}
 	}
 	return nil
 }

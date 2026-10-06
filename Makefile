@@ -87,6 +87,7 @@ fault: ## Switch on a WireMock fault: make fault FAULT=unavailable
 
 fault-reset: ## Switch off every fault (back to the mounted stubs)
 	@curl -fsS -o /dev/null -X POST $(WIREMOCK_URL)/__admin/mappings/reset
+	@curl -fsS -o /dev/null -X POST $(WIREMOCK_URL)/__admin/scenarios/reset
 	@echo "faults off"
 
 ##@ Checks and tests

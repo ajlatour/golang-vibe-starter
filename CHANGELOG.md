@@ -12,6 +12,11 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Upstream GETs are retried once (`UPSTREAM_RETRIES`, 0 to 3) when the upstream fails fast: a
+  refused or reset connection, or a 5xx. Never a write, a timeout, or a 4xx. Retries share a
+  budget of about one per ten requests, so a down upstream isn't hit harder, and each is logged,
+  `upstream request retried`
+  ([ADR-0035](docs/decisions.md#adr-0035-upstream-gets-are-retried-once-within-a-budget)).
 - W3C trace context: a request's `traceparent` header, or a new trace without one, puts its log
   lines in the trace (`trace_id`), and every call the API makes onward (the upstream, the validation
   service, flagd) carries the trace on, with a span ID of its own. No tracing SDK: when
