@@ -18,14 +18,15 @@ make release-tag VERSION=v0.1.0       # on main, once it's merged
 ```
 
 `release-prepare` turns the changelog's Unreleased section into `## [0.1.0] - <today>`, under a
-new empty Unreleased, and commits it on the branch `release-v0.1.0`. It refuses an empty
+new empty Unreleased, sets the OpenAPI spec's `info.version` to `0.1.0`
+(`scripts/spec-version.sh`), and commits both on the branch `release-v0.1.0`. It refuses an empty
 Unreleased, or a version already released. `release-tag` checks `main` has that section, tags it,
 and pushes the tag.
 
 ## What the tag publishes
 
-The workflow checks the tag is on a commit that's on `main` and that the changelog has the
-version's section, runs `make check` once more on the tagged commit, then publishes:
+The workflow checks the tag is on a commit that's on `main`, that the changelog has the
+version's section, and that `docs/openapi.json` is that version, runs `make check` once more on the tagged commit, then publishes:
 
 | What | Where |
 | ---- | ----- |

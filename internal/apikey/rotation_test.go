@@ -46,9 +46,19 @@ func TestParseKeysLimitsAndLayout(t *testing.T) {
 func TestWatchFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "keys")
+	// Each version of the file replaces the last in one step, as a mounted
+	// secret is swapped. os.WriteFile empties the file before writing it, and
+	// a test paused between the two for longer than two checks (a busy runner,
+	// the race detector) would let the watcher see an empty file settle: not
+	// acted on, but logged, which the exact log count below would trip over.
+	// The watcher's handling of a file caught mid-write is in watch_test.go.
 	write := func(content string) {
 		t.Helper()
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		tmp := filepath.Join(dir, "keys.tmp")
+		if err := os.WriteFile(tmp, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(tmp, path); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -101,6 +111,10 @@ func TestWatchFile(t *testing.T) {
 
 	write(entry("third", "gvs_three"))
 	waitFor("third (write)")
+	// The watcher logs a reload just after putting the keys in force: stop it,
+	// and wait for it to return, so its last line is written before reading.
+	cancel()
+	<-done
 
 	var got []string
 	for _, r := range logs.Records(t) {

@@ -52,6 +52,13 @@ jobs:
             exit 1
           fi
           sh scripts/changelog.sh notes "$TAG" > "$RUNNER_TEMP/notes.md"
+          # The spec names the API version it describes; make release-prepare
+          # set it, so a mismatch means the tag isn't the latest release.
+          spec=$(jq -r .info.version docs/openapi.json)
+          if [ "$spec" != "${TAG#v}" ]; then
+            echo "$TAG doesn't match docs/openapi.json, which is version $spec; tag the latest release (make release-prepare sets both)."
+            exit 1
+          fi
           echo "VERSION=$TAG" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

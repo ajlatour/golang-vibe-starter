@@ -223,6 +223,7 @@ release-prepare: ## Turn Unreleased into VERSION on a branch, for a pull request
 	git pull -q --ff-only origin main
 	git checkout -q -b release-$(VERSION)
 	sh scripts/changelog.sh cut $(VERSION)
+	sh scripts/spec-version.sh $(VERSION)
 	git commit -q -am "Release $(VERSION)"
 	@echo "Now push release-$(VERSION), open a pull request, and once it's merged: make release-tag VERSION=$(VERSION)"
 
