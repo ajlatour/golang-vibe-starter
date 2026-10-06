@@ -28,6 +28,9 @@ Ideas considered but not planned are listed under
   with a matching `If-None-Match` is a 304. Clients that use them can't silently overwrite each
   other's changes
   ([ADR-0040](docs/decisions.md#adr-0040-items-have-etags-and-writes-can-be-conditional)).
+- A nightly soak test on `main`: 30 minutes of steady load, failing if the API's live heap or
+  goroutines grew, with each night's result kept on the `perf-data` branch (`make perf-soak`
+  locally; [Soak](docs/performance.md#soak)).
 - Upstream GETs are retried once (`UPSTREAM_RETRIES`, 0 to 3) when the upstream fails fast: a
   refused or reset connection, or a 5xx. Never a write, a timeout, or a 4xx. Retries share a
   budget of about one per ten requests, so a down upstream isn't hit harder, and each is logged,

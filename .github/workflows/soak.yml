@@ -1,0 +1,103 @@
+name: Soak
+
+# Runs main under steady load for half an hour every night and fails if the
+# API's heap or goroutines grew meanwhile: the slow leaks that a pull
+# request's 20-second comparison can't show. Each result is saved on the
+# perf-data branch under soak/, like the other records. See
+# docs/performance.md#soak.
+
+on:
+  schedule:
+    # 03:17 UTC: off the hour, when scheduled runs bunch up.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soak
+  cancel-in-progress: false
+
+jobs:
+  soak:
+    # Forks inherit the schedule; only this repository's main is soaked.
+    if: github.event_name != 'schedule' || github.repository == 'ajlatour/golang-vibe-starter'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      # To push to perf-data. Only main's own code runs here.
+      contents: write
+    env:
+      VERSION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: perf/report/go.sum
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/docker-gobuild
+          key: docker-gobuild-${{ hashFiles('cmd/api/Dockerfile', 'go.mod') }}-${{ github.run_id }}
+          restore-keys: docker-gobuild-${{ hashFiles('cmd/api/Dockerfile', 'go.mod') }}-
+
+      - name: Start the stack
+        env:
+          GOCACHE_DIR: ${{ runner.temp }}/docker-gobuild
+        run: |
+          sh scripts/build-api-image.sh golang-vibe-starter-api:head .
+          API_IMAGE=golang-vibe-starter-api:head docker compose up -d --no-build --wait
+
+      - name: Soak
+        run: |
+          status=0
+          sh perf/soak.sh bin/perf/soak || status=$?
+          # Judged below whatever k6 said; its verdict fails the job at the end.
+          echo "$status" > bin/perf/soak/k6-status
+
+      - name: Judge growth
+        id: judge
+        run: |
+          go build -C perf/report -o "$RUNNER_TEMP/report" .
+          status=0
+          "$RUNNER_TEMP/report" soak -samples bin/perf/soak/soak.samples.tsv \
+            -record "$RUNNER_TEMP/soak.json" -sha "$GITHUB_SHA" -subject "$(git log -1 --format=%s)" \
+            > bin/perf/soak/summary.md || status=$?
+          cat bin/perf/soak/summary.md | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          # 2 is a run that couldn't be judged (too few samples): no record.
+          if [ "$status" -ge 2 ]; then exit "$status"; fi
+
+      - name: Logs from the stack
+        if: failure() || steps.judge.outputs.status != '0'
+        run: docker compose logs --no-color --tail 500
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down
+
+      - name: Save the record to the perf-data branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          sh perf/save-record.sh soak "$RUNNER_TEMP/soak.json" "Record the soak test of ${GITHUB_SHA::7}"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: soak
+          path: bin/perf/soak/
+
+      - name: Verdict
+        run: |
+          if [ "${{ steps.judge.outputs.status }}" != 0 ]; then
+            echo "::error::The API's heap or goroutines grew under steady load: see the summary, and the run's artifact for every sample."
+            exit 1
+          fi
+          if [ "$(cat bin/perf/soak/k6-status)" != 0 ]; then
+            echo "::error::The soak profile crossed its thresholds: k6's output is in the run's artifact (soak.txt)."
+            exit 1
+          fi

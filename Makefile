@@ -48,7 +48,7 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
 	lint api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check docs-release godoc spec spec-lint \
-	release-prepare release-tag perf perf-profile bench bench-compare load-compare perf-compare perf-data perf-trends monitor
+	release-prepare release-tag perf perf-profile perf-soak bench bench-compare load-compare perf-compare perf-data perf-trends monitor
 
 ##@ Help
 
@@ -191,6 +191,11 @@ perf: ## Start the stack and run a k6 profile (default PROFILE=smoke): make perf
 perf-profile: ## Run a k6 profile and capture CPU, heap, allocation and goroutine profiles (default PROFILE=load)
 	$(COMPOSE) up -d --build --wait
 	sh perf/profile.sh $(or $(PROFILE),load) $(PPROF_URL) bin/perf/pprof-$$(date +%Y%m%d-%H%M%S)
+
+perf-soak: ## Run the 30-minute soak profile and check the API's heap and goroutines don't grow (the nightly Soak workflow)
+	$(COMPOSE) up -d --build --wait
+	sh perf/soak.sh bin/perf/soak $(PROFILE)
+	go run -C perf/report . soak -samples $(CURDIR)/bin/perf/soak/soak.samples.tsv $(SOAK_ARGS)
 
 bench: ## Run the Go benchmarks, BENCH_COUNT times each, into bin/bench/current.txt
 	@mkdir -p $(BENCH_OUT)

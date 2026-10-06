@@ -20,6 +20,7 @@ load, containers and the Go runtime on one live dashboard: see
 | `make perf-compare` | Both, written up as the comment CI posts on a pull request: `bin/perf/report.md` |
 | `make perf PROFILE=<name>` | Starts the stack and runs a k6 profile (default `smoke`) |
 | `make perf-profile PROFILE=<name>` | Runs a k6 profile (default `load`) and captures pprof profiles during and after it |
+| `make perf-soak` | Runs the 30-minute `soak` profile and checks the API's heap and goroutines didn't grow, as the nightly Soak workflow does |
 | `make perf-trends` | Charts `main`'s performance over time, from the records CI keeps: `bin/perf/trends.html` |
 | `make monitor` | Starts the stack with Prometheus, Grafana and cAdvisor: a live dashboard at http://localhost:3000 |
 
@@ -68,9 +69,10 @@ percentiles, overall and per phase. The summary is also saved as JSON in `bin/pe
 own thresholds, so the last step whose thresholds all hold is the answer. Crossing thresholds is
 the point, so `make perf PROFILE=stress` succeeds either way.
 
-**Soak** finds what only time shows: memory, goroutines or connections that grow. Run it with
-`make perf-profile PROFILE=soak` and compare the heap and goroutine profiles from the start and
-the end (below).
+**Soak** finds what only time shows: memory, goroutines or connections that grow. It runs every
+night on `main` and fails if the API's heap or goroutines grew ([Soak](#soak)); `make perf-soak`
+runs it the same way locally. To see what grew, run `make perf-profile PROFILE=soak` and compare
+the heap and goroutine profiles from the start and the end (below).
 
 ### The thresholds
 
@@ -267,6 +269,32 @@ Every release attaches its documentation with these charts in it: the docs site'
 history page, built from the records up to the release, and the records themselves
 ([Releasing](releasing.md#what-the-tag-publishes)). `make docs-release` builds that site locally;
 `make docs` leaves the page as a note pointing here, so building the docs needs no records.
+
+## Soak
+
+A leak doesn't show in a pull request's 20-second comparison, and barely in a 3-minute load test.
+So every night, the Soak workflow (`.github/workflows/soak.yml`) runs `main` under the `soak`
+profile, 30 minutes at 200 requests a second, while `perf/soak.sh` reads the API's runtime metrics
+once a minute: the live heap (what the last GC kept), the goroutines, and all the memory the
+runtime holds.
+
+`report soak` then judges the samples, leaving out the first 5 minutes, while the heap and the
+connection pools settle. The heap rises and falls with every GC cycle, and goroutines with the
+requests in flight, but a leak raises the low points. So it compares the lowest value in the
+first third of the rest of the run with the lowest in the last third, and fails when:
+
+- the live heap grew by more than 25% and more than 4 MiB, or
+- the goroutines grew by more than 25% and more than 10.
+
+Both conditions must hold, so neither a small heap's noise nor a large one's drift fails it. The
+runtime's total memory is shown for context, never failed on: it lags the heap, and returns to the
+operating system slowly. The run also fails if k6 crossed the profile's thresholds.
+
+The verdict and its table are in the run's summary, every sample in its artifact, and the result
+on the `perf-data` branch under `soak/`, one file per night. A run whose metrics were mostly out
+of reach can't be judged either way, and fails without a record. When it fails on growth, run
+`make perf-profile PROFILE=soak` and compare the heap and goroutine profiles from the start and
+the end.
 
 ## Pipeline time
 

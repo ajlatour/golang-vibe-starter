@@ -1,7 +1,8 @@
 #!/bin/sh
 # Saves a record to the perf-data branch, the history that `make perf-trends`
 # charts. The workflows that measure main run it: perf-trends.yml for the
-# performance records, ci-times.yml for the CI timings.
+# performance records, ci-times.yml for the CI timings, soak.yml for the
+# nightly soak test's.
 #
 #   sh perf/save-record.sh <dir> <record.json> <commit message>
 #
