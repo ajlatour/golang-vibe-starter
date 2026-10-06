@@ -1,0 +1,28 @@
+{
+  "mappings": [
+    {
+      "name": "validator: refuses one path, to show a refusal",
+      "priority": 2,
+      "request": {
+        "method": "POST",
+        "url": "/validate",
+        "bodyPatterns": [{ "matchesJsonPath": { "expression": "$.path", "equalTo": "/items/refused-by-validator" } }]
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "allow": false, "reason": "the local stub refuses this path" }
+      }
+    },
+    {
+      "name": "validator: allows everything else",
+      "priority": 5,
+      "request": { "method": "POST", "url": "/validate" },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "allow": true }
+      }
+    }
+  ]
+}

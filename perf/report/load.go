@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -29,7 +30,50 @@ type loadSide struct {
 	gcCycles      float64
 	goroutinesMax float64
 	metricReqs    float64
+
+	// The calls to the request-validation service, over the runs whose API
+	// made any: how many, their total time, the histogram's cumulative
+	// counts by upper bound, and those runs' requests.
+	validatorRuns    int
+	validatorCalls   float64
+	validatorSeconds float64
+	validatorBuckets map[float64]float64
+	validatorReqs    float64
 }
+
+// validatorQuantile estimates a quantile of the validation calls' duration,
+// in seconds, from the histogram, as Prometheus's histogram_quantile does:
+// linearly within the bucket the rank falls in. A rank past the last finite
+// bound answers that bound.
+func (s loadSide) validatorQuantile(q float64) float64 {
+	bounds := make([]float64, 0, len(s.validatorBuckets))
+	for le := range s.validatorBuckets {
+		bounds = append(bounds, le)
+	}
+	slices.Sort(bounds)
+	total := s.validatorBuckets[math.Inf(1)]
+	if total == 0 {
+		return 0
+	}
+	rank := q * total
+	prevLE, prevCount := 0.0, 0.0
+	for _, le := range bounds {
+		count := s.validatorBuckets[le]
+		if count >= rank {
+			if math.IsInf(le, 1) {
+				return prevLE
+			}
+			if count == prevCount {
+				return le
+			}
+			return prevLE + (le-prevLE)*(rank-prevCount)/(count-prevCount)
+		}
+		prevLE, prevCount = le, count
+	}
+	return prevLE
+}
+
+func (s loadSide) validatorPerRequest() float64 { return s.validatorCalls / s.validatorReqs }
 
 func (s loadSide) cpuPerRequest() float64    { return s.cpuSeconds / s.metricReqs }      // seconds
 func (s loadSide) allocsPerRequest() float64 { return s.allocBytes / s.metricReqs }      // bytes
@@ -151,6 +195,18 @@ func readLoadSide(dir, prefix string) (loadSide, error) {
 			side.gcCycles += res.gcCycles
 			side.goroutinesMax = max(side.goroutinesMax, res.goroutines)
 			side.metricReqs += reqs
+		}
+		if res.hasValidator {
+			side.validatorRuns++
+			side.validatorCalls += res.validatorCalls
+			side.validatorSeconds += res.validatorSeconds
+			side.validatorReqs += reqs
+			if side.validatorBuckets == nil {
+				side.validatorBuckets = map[float64]float64{}
+			}
+			for le, n := range res.validatorBuckets {
+				side.validatorBuckets[le] += n
+			}
 		}
 	}
 	n := float64(side.runs)

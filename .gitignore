@@ -17,3 +17,6 @@ coverage.*
 .DS_Store
 .idea/
 .vscode/
+
+# The report tool, when built in place (go build -C perf/report); make builds it into bin/.
+/perf/report/report

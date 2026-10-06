@@ -23,6 +23,15 @@ type resources struct {
 	allocBytes float64
 	gcCycles   float64
 	goroutines float64 // at the end
+
+	// From the API's validator_* metrics, when it checks requests against a
+	// validation service (VALIDATOR_URL): the calls made during the run,
+	// their total time, and the histogram's cumulative counts by upper
+	// bound, all as the change over the run.
+	hasValidator     bool
+	validatorCalls   float64
+	validatorSeconds float64
+	validatorBuckets map[float64]float64 // le (+Inf included) -> calls at or under it
 }
 
 // readResources reads the resource files for the run whose k6 summary is at
@@ -39,8 +48,41 @@ func readResources(summaryPath string) resources {
 		r.allocBytes = end["go_gc_heap_allocs_bytes_total"] - start["go_gc_heap_allocs_bytes_total"]
 		r.gcCycles = end["go_gc_cycles_total_gc_cycles_total"] - start["go_gc_cycles_total_gc_cycles_total"]
 		r.goroutines = end["go_sched_goroutines_goroutines"]
+		r.readValidator(start, end)
 	}
 	return r
+}
+
+// The API's validation-call histogram (internal/httpmetrics.Calls).
+const (
+	validatorCount  = "validator_call_duration_seconds_count"
+	validatorSum    = "validator_call_duration_seconds_sum"
+	validatorBucket = "validator_call_duration_seconds_bucket{le=\""
+)
+
+// readValidator takes the validation calls made during the run from the
+// metrics before and after it, if the API made any.
+func (r *resources) readValidator(start, end map[string]float64) {
+	e, ok1 := end[validatorCount]
+	s, ok2 := start[validatorCount]
+	if !ok1 || !ok2 || e-s <= 0 {
+		return
+	}
+	r.hasValidator = true
+	r.validatorCalls = e - s
+	r.validatorSeconds = end[validatorSum] - start[validatorSum]
+	r.validatorBuckets = map[float64]float64{}
+	for k, v := range end {
+		le, ok := strings.CutPrefix(k, validatorBucket)
+		if !ok {
+			continue
+		}
+		bound, err := strconv.ParseFloat(strings.TrimSuffix(le, "\"}"), 64) // "+Inf" parses as +Inf
+		if err != nil {
+			continue
+		}
+		r.validatorBuckets[bound] = v - start[k]
+	}
 }
 
 var ansiEscape = regexp.MustCompile("\x1b\\[[0-9;]*[A-Za-z]")
@@ -93,7 +135,8 @@ func parseMiB(s string) (float64, bool) {
 	return 0, false
 }
 
-// readProm reads the unlabelled samples of a Prometheus text file.
+// readProm reads the samples of a Prometheus text file: an unlabelled one
+// under its name, a labelled one under its name and labels, as written.
 func readProm(path string) (map[string]float64, bool) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -101,8 +144,9 @@ func readProm(path string) (map[string]float64, bool) {
 	}
 	out := map[string]float64{}
 	for _, line := range strings.Split(string(b), "\n") {
+		// A labelled series is kept under its whole name, labels and all.
 		name, value, ok := strings.Cut(line, " ")
-		if !ok || strings.HasPrefix(line, "#") || strings.Contains(name, "{") {
+		if !ok || strings.HasPrefix(line, "#") {
 			continue
 		}
 		if v, err := strconv.ParseFloat(value, 64); err == nil {

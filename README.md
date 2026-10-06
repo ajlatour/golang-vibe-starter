@@ -169,6 +169,9 @@ The API reads these environment variables:
 | `MAX_IN_FLIGHT`       | `512`      | The most requests served at once; more get 503 with `Retry-After`. `0` is no cap. |
 | `RATE_LIMIT`          | `100`      | Requests per second each client may make on average; more get 429 with `Retry-After`. A client is its API key, or its IP address without one. `0` is no limit. |
 | `RATE_BURST`          | `200`      | Requests a client may make at once after a quiet spell. |
+| `VALIDATOR_URL`       |            | Base URL of the request-validation service every request but the probes is checked against (`POST /validate`; see [Request validation](docs/request-validation.md)), without a query string or fragment. Unset checks nothing, and logs a warning. |
+| `VALIDATOR_TIMEOUT`   | `300ms`    | Timeout for each validation call. It's on every request's path, so keep it short. |
+| `VALIDATOR_FAILURE_MODE` | `closed` | When the validation service can't answer: `closed` refuses requests (503), `open` lets them through unchecked. |
 | `LOG_CLIENT_IP`       | `on`       | `off` leaves the client's IP address (`client_ip`) out of the request log lines. It's the connection's address, so behind a load balancer the balancer's. An IP address is personal data in many jurisdictions. |
 | `RUNTIME_STATS_INTERVAL` | `5m`   | How often to log the Go runtime's heap, memory and goroutines (`runtime stats`), the view of memory over time where the logs are all there is. `0s` logs none. |
 | `PPROF_ADDR`          |            | Where to serve the runtime profiles (pprof) and metrics (`/metrics`: requests by route, and the Go runtime), e.g. `127.0.0.1:6061`. Unset serves neither. Keep it private: see [Performance](docs/performance.md#profiling). |
@@ -207,6 +210,8 @@ documentation (the code's doc comments) at http://localhost:6060.
   and load-test tuning.
 - [Feature flags](docs/feature-flags.md): the flags, what happens when flagd can't answer, and
   adding a flag.
+- [Request validation](docs/request-validation.md): checking every request against an external
+  service, its contract, and failing closed or open when it can't answer.
 - [Logging](docs/logging.md): every field and message, how to read a request's log lines, and the
   rules for adding a log line.
 

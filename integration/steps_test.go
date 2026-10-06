@@ -58,6 +58,7 @@ func initScenario(sc *godog.ScenarioContext, s stack) {
 	})
 
 	sc.Step(`^the upstream fault "([^"]+)" is active$`, w.activateFault)
+	sc.Step(`^requests are checked again within (\d+(?:\.\d+)?) seconds? of the fault ending$`, w.recoverValidation)
 	sc.Step(`^the feature flag "([^"]+)" is (on|off)$`, w.setFlag)
 
 	sc.Step(`^I send the correlation ID "([^"]*)"$`, w.sendCorrelationID)
@@ -345,4 +346,28 @@ func (w *world) bodyForError() string {
 		return string(w.body[:max]) + "…"
 	}
 	return string(w.body)
+}
+
+// recoverValidation ends the faults and waits until a request gets through
+// again: the API, having seen the validation service fail, asks it again
+// only once a second (ADR-0032), so for up to a second after the fault ends
+// it still refuses. Waiting here checks that recovery, and leaves the next
+// scenario a service that answers.
+func (w *world) recoverValidation(within float64) error {
+	if err := w.resetUpstream(); err != nil {
+		return err
+	}
+	deadline := time.Now().Add(time.Duration(within * float64(time.Second)))
+	for {
+		if err := w.do(http.MethodGet, "/items", nil); err != nil {
+			return err
+		}
+		if w.status == http.StatusOK {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("requests still get %d %s %.1fs after the fault ended", w.status, w.body, within)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }

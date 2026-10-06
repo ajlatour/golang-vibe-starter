@@ -209,3 +209,78 @@ func TestTrendsFragment(t *testing.T) {
 	}
 	mustContain(t, frag, "Latency under load", "CI pipeline time", "CI time per job")
 }
+
+// withValidator adds the API's validation-call histogram to a side's metric
+// snapshots, as the change over each run: 50 calls at or under 2.5ms, 99 under
+// 5ms, 100 under 10ms.
+func withValidator(t *testing.T, dir, side string) {
+	t.Helper()
+	start := "validator_call_duration_seconds_count 0\nvalidator_call_duration_seconds_sum 0\n"
+	end := "validator_call_duration_seconds_count 100\nvalidator_call_duration_seconds_sum 0.3\n" +
+		`validator_call_duration_seconds_bucket{le="0.001"} 0` + "\n" +
+		`validator_call_duration_seconds_bucket{le="0.0025"} 50` + "\n" +
+		`validator_call_duration_seconds_bucket{le="0.005"} 99` + "\n" +
+		`validator_call_duration_seconds_bucket{le="0.01"} 100` + "\n" +
+		`validator_call_duration_seconds_bucket{le="+Inf"} 100` + "\n"
+	for i := 1; i <= 2; i++ {
+		stem := filepath.Join(dir, side+"-"+string(rune('0'+i)))
+		for name, add := range map[string]string{".metrics-start.prom": start, ".metrics-end.prom": end} {
+			f, err := os.OpenFile(stem+name, os.O_APPEND|os.O_WRONLY, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = f.WriteString(add)
+			f.Close()
+		}
+	}
+}
+
+// TestReportValidator checks the PR report's request validation section:
+// the calls' median and p99 from the histogram, calls per request, and a
+// dash for a base that made none.
+func TestReportValidator(t *testing.T) {
+	dir := k6Dir(t, [3]float64{1, 2, 0}, [3]float64{1, 2, 0})
+	withResources(t, dir, "base", 10, 15, 0.1, 2048*1000)
+	withResources(t, dir, "head", 10, 15, 0.1, 2048*1000)
+	withValidator(t, dir, "head")
+	report, _ := render(t, options{baseName: "main", loadDir: dir})
+	mustContain(t, report, "### Request validation",
+		"| Median call | — | 2.50ms | |", "| p99 call | — | 5.00ms | |", "| Calls per request | — | 0.10 | |")
+
+	withValidator(t, dir, "base")
+	report, _ = render(t, options{baseName: "main", loadDir: dir})
+	mustContain(t, report, "| Median call | 2.50ms | 2.50ms | +0.0% |")
+
+	none := k6Dir(t, [3]float64{1, 2, 0}, [3]float64{1, 2, 0})
+	withResources(t, none, "base", 10, 15, 0.1, 2048*1000)
+	withResources(t, none, "head", 10, 15, 0.1, 2048*1000)
+	if report, _ := render(t, options{baseName: "main", loadDir: none}); strings.Contains(report, "Request validation") {
+		t.Error("a report without validation calls has the section")
+	}
+}
+
+// TestRecordValidator checks main's record keeps the validation calls, and
+// the trends page charts them.
+func TestRecordValidator(t *testing.T) {
+	dir := headDir(t)
+	withValidator(t, dir, "head")
+	var out strings.Builder
+	err := runRecord([]string{"-sha", "abc1234", "-subject", "s", "-time", "2026-10-06T10:00:00Z",
+		"-bench", benchOutput(t, "cmd/api", 6, map[string][3]float64{"API/GET": {40000, 17000, 138}}), "-load", dir}, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var r record
+	if err := json.Unmarshal([]byte(out.String()), &r); err != nil {
+		t.Fatal(err)
+	}
+	l := r.Load
+	if l == nil || deref(l.ValidatorMedianMS) != 2.5 || deref(l.ValidatorP99MS) != 5.0 || deref(l.ValidatorCallsPerRequest) != 0.1 {
+		t.Fatalf("validator in the record = %v, %v, %v; want 2.5ms, 5ms, 0.1 a request", deref(l.ValidatorMedianMS), deref(l.ValidatorP99MS), deref(l.ValidatorCallsPerRequest))
+	}
+	var page strings.Builder
+	if err := runTrends([]string{"-records", writeRecords(t, r)}, &page); err != nil {
+		t.Fatal(err)
+	}
+	mustContain(t, page.String(), "Request validation call", "abc1234 p99: 5.00 ms")
+}

@@ -8,6 +8,14 @@
         "off": false
       },
       "defaultVariant": "off"
+    },
+    "request-validation-enforce": {
+      "state": "ENABLED",
+      "variants": {
+        "on": true,
+        "off": false
+      },
+      "defaultVariant": "off"
     }
   }
 }

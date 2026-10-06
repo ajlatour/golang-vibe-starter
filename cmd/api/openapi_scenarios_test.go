@@ -158,7 +158,12 @@ func scenarios(t *testing.T, s *spec) []scenario {
 		if _, has := o.Op["requestBody"]; has {
 			body = okBody
 		}
-		for env, want := range map[string]int{"ratelimited": http.StatusTooManyRequests, "overloaded": http.StatusServiceUnavailable} {
+		for env, want := range map[string]int{
+			"ratelimited": http.StatusTooManyRequests, "overloaded": http.StatusServiceUnavailable,
+			// Request validation (internal/validator): refused, and unable
+			// to answer while failing closed.
+			"refused": http.StatusForbidden, "unvalidated": http.StatusServiceUnavailable,
+		} {
 			list = append(list, scenario{
 				name: o.Key() + " " + env, env: env, method: strings.ToUpper(o.Method), path: path, op: o.Key(),
 				body: body, want: want, exempt: "refused for its rate, not its body",
