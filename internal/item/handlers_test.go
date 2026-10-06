@@ -27,9 +27,9 @@ func TestHandlers(t *testing.T) {
 		{
 			name: "list", method: http.MethodGet, path: "/items", wantStatus: http.StatusOK,
 			check: func(t *testing.T, rec *httptest.ResponseRecorder, _ item.Store, seeded item.Item) {
-				var got struct{ Items []item.Item }
+				var got struct{ Items []item.Response }
 				decodeBody(t, rec, &got)
-				if len(got.Items) != 1 || got.Items[0].ID != seeded.ID {
+				if len(got.Items) != 1 || got.Items[0].ID != seeded.ID.String() {
 					t.Errorf("items = %+v, want [%s]", got.Items, seeded.ID)
 				}
 			},
@@ -37,9 +37,9 @@ func TestHandlers(t *testing.T) {
 		{
 			name: "get", method: http.MethodGet, path: "/items/{id}", wantStatus: http.StatusOK,
 			check: func(t *testing.T, rec *httptest.ResponseRecorder, _ item.Store, seeded item.Item) {
-				var got item.Item
+				var got item.Response
 				decodeBody(t, rec, &got)
-				if !sameItem(got, seeded) {
+				if !sameResponse(got, item.NewResponse(seeded)) {
 					t.Errorf("item = %+v, want %+v", got, seeded)
 				}
 			},
@@ -50,7 +50,7 @@ func TestHandlers(t *testing.T) {
 			body:       `{"name":"  new thing  ","description":"desc"}`,
 			wantStatus: http.StatusCreated,
 			check: func(t *testing.T, rec *httptest.ResponseRecorder, store item.Store, _ item.Item) {
-				var got item.Item
+				var got item.Response
 				decodeBody(t, rec, &got)
 				if got.ID == "" || got.Name != "new thing" || got.Description != "desc" {
 					t.Errorf("item = %+v, want trimmed name and description", got)
@@ -58,7 +58,7 @@ func TestHandlers(t *testing.T) {
 				if loc := rec.Header().Get("Location"); loc != "/items/"+got.ID {
 					t.Errorf("Location = %q, want /items/%s", loc, got.ID)
 				}
-				if _, err := store.Get(context.Background(), got.ID); err != nil {
+				if _, err := store.Get(context.Background(), itemtest.MustID(got.ID)); err != nil {
 					t.Errorf("created item not in store: %v", err)
 				}
 			},
@@ -77,9 +77,9 @@ func TestHandlers(t *testing.T) {
 			body:       `{"name":"renamed"}`,
 			wantStatus: http.StatusOK,
 			check: func(t *testing.T, rec *httptest.ResponseRecorder, _ item.Store, seeded item.Item) {
-				var got item.Item
+				var got item.Response
 				decodeBody(t, rec, &got)
-				if got.ID != seeded.ID || got.Name != "renamed" || !got.CreatedAt.Equal(seeded.CreatedAt) {
+				if got.ID != seeded.ID.String() || got.Name != "renamed" || !got.CreatedAt.Equal(seeded.CreatedAt) {
 					t.Errorf("item = %+v, want renamed seed with original CreatedAt", got)
 				}
 			},
@@ -101,14 +101,14 @@ func TestHandlers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := itemtest.NewMemStore()
-			seeded, err := store.Create(t.Context(), item.Item{Name: "seeded"})
+			seeded, err := store.Create(t.Context(), itemtest.MustDraft("seeded", ""))
 			if err != nil {
 				t.Fatalf("seed: %v", err)
 			}
 			mux := http.NewServeMux()
 			item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), store)
 
-			path := strings.ReplaceAll(tt.path, "{id}", seeded.ID)
+			path := strings.ReplaceAll(tt.path, "{id}", seeded.ID.String())
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, httptest.NewRequest(tt.method, path, strings.NewReader(tt.body)))
 
@@ -128,15 +128,17 @@ type failingStore struct{}
 
 var errStoreDown = errors.New("store is down: secret detail")
 
-func (failingStore) List(context.Context) ([]item.Item, error)      { return nil, errStoreDown }
-func (failingStore) Get(context.Context, string) (item.Item, error) { return item.Item{}, errStoreDown }
-func (failingStore) Create(context.Context, item.Item) (item.Item, error) {
+func (failingStore) List(context.Context) ([]item.Item, error) { return nil, errStoreDown }
+func (failingStore) Get(context.Context, item.ID) (item.Item, error) {
 	return item.Item{}, errStoreDown
 }
-func (failingStore) Update(context.Context, item.Item) (item.Item, error) {
+func (failingStore) Create(context.Context, item.Draft) (item.Item, error) {
 	return item.Item{}, errStoreDown
 }
-func (failingStore) Delete(context.Context, string) error { return errStoreDown }
+func (failingStore) Update(context.Context, item.ID, item.Draft) (item.Item, error) {
+	return item.Item{}, errStoreDown
+}
+func (failingStore) Delete(context.Context, item.ID) error { return errStoreDown }
 
 func TestHandlersStoreError(t *testing.T) {
 	mux := http.NewServeMux()
@@ -195,7 +197,7 @@ func TestListTotalFlag(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			store := itemtest.NewMemStore()
 			for _, name := range []string{"a", "b"} {
-				if _, err := store.Create(t.Context(), item.Item{Name: name}); err != nil {
+				if _, err := store.Create(t.Context(), itemtest.MustDraft(name, "")); err != nil {
 					t.Fatalf("seed: %v", err)
 				}
 			}
@@ -206,7 +208,7 @@ func TestListTotalFlag(t *testing.T) {
 			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/items", nil))
 
 			var got struct {
-				Items []item.Item
+				Items []item.Response
 				Total *int
 			}
 			decodeBody(t, rec, &got)
@@ -236,7 +238,7 @@ func TestPlainStoreErrorStaysA500(t *testing.T) {
 	}
 }
 
-func sameItem(a, b item.Item) bool {
+func sameResponse(a, b item.Response) bool {
 	return a.ID == b.ID && a.Name == b.Name && a.Description == b.Description &&
 		a.CreatedAt.Equal(b.CreatedAt) && a.UpdatedAt.Equal(b.UpdatedAt)
 }

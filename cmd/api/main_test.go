@@ -29,7 +29,7 @@ import (
 // cancels the context and checks for a clean shutdown.
 func TestRun(t *testing.T) {
 	upstreamStore := itemtest.NewMemStore()
-	seeded, err := upstreamStore.Create(t.Context(), item.Item{Name: "from upstream"})
+	seeded, err := upstreamStore.Create(t.Context(), itemtest.MustDraft("from upstream", ""))
 	if err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestRun(t *testing.T) {
 	})
 
 	t.Run("item comes from upstream", func(t *testing.T) {
-		resp, err := http.Get(base + "/items/" + seeded.ID)
+		resp, err := http.Get(base + "/items/" + seeded.ID.String())
 		if err != nil {
 			t.Fatalf("GET item: %v", err)
 		}
@@ -67,11 +67,11 @@ func TestRun(t *testing.T) {
 		if resp.Header.Get(httpx.RequestIDHeader) == "" {
 			t.Errorf("response has no %s header", httpx.RequestIDHeader)
 		}
-		var got item.Item
+		var got item.Response
 		if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		if got.ID != seeded.ID || got.Name != seeded.Name {
+		if got.ID != seeded.ID.String() || got.Name != seeded.Name.String() {
 			t.Errorf("item = %+v, want %+v", got, seeded)
 		}
 	})

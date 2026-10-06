@@ -16,8 +16,8 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 )
 
-// TestOpenAPIItemSchemaMatchesStruct fails if the Item schema and item.Item
-// disagree about which fields exist and which are always present, and checks
+// TestOpenAPIItemSchemaMatchesStruct fails if the Item schema and
+// item.Response, the shape the API sends an item in, disagree about which fields exist and which are always present, and checks
 // the input limits the spec states against the constants the code enforces.
 func TestOpenAPIItemSchemaMatchesStruct(t *testing.T) {
 	s := loadSpec(t)
@@ -28,13 +28,13 @@ func TestOpenAPIItemSchemaMatchesStruct(t *testing.T) {
 	for _, r := range schema["required"].([]any) {
 		required[r.(string)] = true
 	}
-	typ := reflect.TypeOf(item.Item{})
+	typ := reflect.TypeOf(item.Response{})
 	fields := map[string]bool{}
 	for i := range typ.NumField() {
 		name, opts, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
 		fields[name] = true
 		if _, ok := props[name]; !ok {
-			t.Errorf("item.Item has JSON field %q, which the Item schema doesn't describe", name)
+			t.Errorf("item.Response has JSON field %q, which the Item schema doesn't describe", name)
 		}
 		if always := !strings.Contains(opts, "omitempty"); always != required[name] {
 			t.Errorf("field %q: always present in Go = %v, required in the spec = %v", name, always, required[name])
@@ -42,7 +42,7 @@ func TestOpenAPIItemSchemaMatchesStruct(t *testing.T) {
 	}
 	for name := range props {
 		if !fields[name] {
-			t.Errorf("the Item schema describes %q, which item.Item doesn't have", name)
+			t.Errorf("the Item schema describes %q, which item.Response doesn't have", name)
 		}
 	}
 

@@ -27,7 +27,7 @@ func BenchmarkAPI(b *testing.B) {
 	upstreamStore := itemtest.NewMemStore()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for _, id := range []string{"widget", "gadget", "gizmo"} {
-		upstreamStore.Seed(item.Item{ID: id, Name: strings.ToUpper(id[:1]) + id[1:], Description: "An item.", CreatedAt: at, UpdatedAt: at})
+		upstreamStore.Seed(item.Restore(id, strings.ToUpper(id[:1])+id[1:], "An item.", at, at))
 	}
 	upstreamMux := http.NewServeMux()
 	item.RegisterRoutes(upstreamMux, slog.New(slog.DiscardHandler), upstreamStore)

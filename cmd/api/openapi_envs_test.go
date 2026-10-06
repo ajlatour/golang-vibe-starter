@@ -31,17 +31,17 @@ var errBoom = errors.New("boom")
 
 func (errStore) List(context.Context) ([]item.Item, error) { return nil, errBoom }
 
-func (errStore) Get(context.Context, string) (item.Item, error) { return item.Item{}, errBoom }
+func (errStore) Get(context.Context, item.ID) (item.Item, error) { return item.Item{}, errBoom }
 
-func (errStore) Create(context.Context, item.Item) (item.Item, error) {
+func (errStore) Create(context.Context, item.Draft) (item.Item, error) {
 	return item.Item{}, errBoom
 }
 
-func (errStore) Update(context.Context, item.Item) (item.Item, error) {
+func (errStore) Update(context.Context, item.ID, item.Draft) (item.Item, error) {
 	return item.Item{}, errBoom
 }
 
-func (errStore) Delete(context.Context, string) error { return errBoom }
+func (errStore) Delete(context.Context, item.ID) error { return errBoom }
 
 // handlerFor builds the real service handler for an environment:
 //
@@ -58,11 +58,11 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 	switch env {
 	case "ok", "flagOn":
 		store := itemtest.NewMemStore()
-		seeded, err := store.Create(t.Context(), item.Item{Name: "seeded", Description: "first"})
+		seeded, err := store.Create(t.Context(), itemtest.MustDraft("seeded", "first"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		return newHandler(logger, handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: testAuth(t)}, store, item.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID
+		return newHandler(logger, handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: testAuth(t)}, store, item.WithFlags(fixedFlags(env == "flagOn"))), seeded.ID.String()
 	case "ratelimited":
 		// The test client (its key) has spent its only token, and gets
 		// another in about 11 days.
@@ -103,22 +103,22 @@ type spyStore struct{ asked *bool }
 
 func (s spyStore) List(context.Context) ([]item.Item, error) { *s.asked = true; return nil, nil }
 
-func (s spyStore) Get(context.Context, string) (item.Item, error) {
+func (s spyStore) Get(context.Context, item.ID) (item.Item, error) {
 	*s.asked = true
 	return item.Item{}, item.ErrNotFound
 }
 
-func (s spyStore) Create(context.Context, item.Item) (item.Item, error) {
+func (s spyStore) Create(context.Context, item.Draft) (item.Item, error) {
 	*s.asked = true
 	return item.Item{}, nil
 }
 
-func (s spyStore) Update(context.Context, item.Item) (item.Item, error) {
+func (s spyStore) Update(context.Context, item.ID, item.Draft) (item.Item, error) {
 	*s.asked = true
 	return item.Item{}, item.ErrNotFound
 }
 
-func (s spyStore) Delete(context.Context, string) error { *s.asked = true; return item.ErrNotFound }
+func (s spyStore) Delete(context.Context, item.ID) error { *s.asked = true; return item.ErrNotFound }
 
 // blockingStore holds every call until release is closed, after saying on
 // entered that one has arrived.
@@ -131,19 +131,19 @@ func (s blockingStore) List(context.Context) ([]item.Item, error) {
 	return nil, nil
 }
 
-func (s blockingStore) Get(context.Context, string) (item.Item, error) {
+func (s blockingStore) Get(context.Context, item.ID) (item.Item, error) {
 	s.wait()
 	return item.Item{}, item.ErrNotFound
 }
 
-func (s blockingStore) Create(context.Context, item.Item) (item.Item, error) {
+func (s blockingStore) Create(context.Context, item.Draft) (item.Item, error) {
 	s.wait()
 	return item.Item{}, nil
 }
 
-func (s blockingStore) Update(context.Context, item.Item) (item.Item, error) {
+func (s blockingStore) Update(context.Context, item.ID, item.Draft) (item.Item, error) {
 	s.wait()
 	return item.Item{}, nil
 }
 
-func (s blockingStore) Delete(context.Context, string) error { s.wait(); return nil }
+func (s blockingStore) Delete(context.Context, item.ID) error { s.wait(); return nil }

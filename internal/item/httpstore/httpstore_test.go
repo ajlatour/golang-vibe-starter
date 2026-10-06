@@ -12,6 +12,7 @@ import (
 
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
 )
 
@@ -46,7 +47,7 @@ func TestStoreUpstreamResponses(t *testing.T) {
 			}))
 			defer upstream.Close()
 
-			_, err := httpstore.New(upstream.URL, upstream.Client()).Get(t.Context(), "a")
+			_, err := httpstore.New(upstream.URL, upstream.Client()).Get(t.Context(), itemtest.MustID("a"))
 
 			switch {
 			case tt.wantNotFound:
@@ -90,7 +91,7 @@ func TestStoreRequests(t *testing.T) {
 			defer upstream.Close()
 
 			store := httpstore.New(upstream.URL+tt.baseURL, upstream.Client())
-			if _, err := store.Get(t.Context(), tt.id); err != nil {
+			if _, err := store.Get(t.Context(), itemtest.MustID(tt.id)); err != nil {
 				t.Fatalf("Get: %v", err)
 			}
 			if gotPath != tt.wantPath {
@@ -125,7 +126,7 @@ func TestStoreLive(t *testing.T) {
 		t.Fatal("List returned no items; want seeded data")
 	}
 	for _, it := range list {
-		if it.ID == "" || it.Name == "" || it.CreatedAt.IsZero() || it.UpdatedAt.IsZero() {
+		if it.ID.IsZero() || it.Name.String() == "" || it.CreatedAt.IsZero() || it.UpdatedAt.IsZero() {
 			t.Errorf("List item missing fields: %+v", it)
 		}
 	}
@@ -137,31 +138,31 @@ func TestStoreLive(t *testing.T) {
 		t.Errorf("Get = %+v, want %+v (as listed)", got, list[0])
 	}
 
-	created, err := store.Create(ctx, item.Item{Name: "live test", Description: `say "hi"`})
+	created, err := store.Create(ctx, itemtest.MustDraft("live test", `say "hi"`))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if created.ID == "" || created.Name != "live test" || created.Description != `say "hi"` || created.CreatedAt.IsZero() {
+	if created.ID.IsZero() || created.Name.String() != "live test" || created.Description.String() != `say "hi"` || created.CreatedAt.IsZero() {
 		t.Errorf("Create = %+v, want ID, timestamps and echoed fields", created)
 	}
-	updated, err := store.Update(ctx, item.Item{ID: created.ID, Name: "live renamed"})
+	updated, err := store.Update(ctx, created.ID, itemtest.MustDraft("live renamed", ""))
 	if err != nil {
 		t.Fatalf("Update(%q): %v", created.ID, err)
 	}
-	if updated.ID != created.ID || updated.Name != "live renamed" || updated.Description != "" {
+	if updated.ID != created.ID || updated.Name.String() != "live renamed" || updated.Description.String() != "" {
 		t.Errorf("Update = %+v, want ID %q with replaced fields", updated, created.ID)
 	}
 	if err := store.Delete(ctx, created.ID); err != nil {
 		t.Errorf("Delete(%q): %v", created.ID, err)
 	}
 
-	if _, err := store.Get(ctx, "does-not-exist"); !errors.Is(err, item.ErrNotFound) {
+	if _, err := store.Get(ctx, itemtest.MustID("does-not-exist")); !errors.Is(err, item.ErrNotFound) {
 		t.Errorf("Get unknown error = %v, want ErrNotFound", err)
 	}
-	if _, err := store.Update(ctx, item.Item{ID: "does-not-exist", Name: "x"}); !errors.Is(err, item.ErrNotFound) {
+	if _, err := store.Update(ctx, itemtest.MustID("does-not-exist"), itemtest.MustDraft("x", "")); !errors.Is(err, item.ErrNotFound) {
 		t.Errorf("Update unknown error = %v, want ErrNotFound", err)
 	}
-	if err := store.Delete(ctx, "does-not-exist"); !errors.Is(err, item.ErrNotFound) {
+	if err := store.Delete(ctx, itemtest.MustID("does-not-exist")); !errors.Is(err, item.ErrNotFound) {
 		t.Errorf("Delete unknown error = %v, want ErrNotFound", err)
 	}
 }
@@ -183,10 +184,11 @@ func TestStoreTimeout(t *testing.T) {
 	}
 }
 
-// TestInvalidIDsNeverReachTheUpstream checks the store refuses an ID that
-// can't name an item (see item.ValidID) without calling the upstream, so a
-// crafted ID can't be normalized or decoded into another route there.
-func TestInvalidIDsNeverReachTheUpstream(t *testing.T) {
+// TestZeroIDNeverReachesTheUpstream checks the store refuses the zero ID
+// without calling the upstream. An item.ID can't hold a crafted one (".." or
+// "..%2F..%2Fadmin", which an upstream might normalize or decode into another
+// route): item.ParseID refuses those, as its tests and fuzz test check.
+func TestZeroIDNeverReachesTheUpstream(t *testing.T) {
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -195,16 +197,15 @@ func TestInvalidIDsNeverReachTheUpstream(t *testing.T) {
 	defer upstream.Close()
 	store := httpstore.New(upstream.URL, upstream.Client())
 
-	for _, id := range []string{"", ".", "..", "../admin", "..%2F..%2Fadmin", "a/b", "a b", "x?q=1", "x#f", strings.Repeat("a", item.MaxIDLen+1)} {
-		if _, err := store.Get(t.Context(), id); !errors.Is(err, item.ErrNotFound) {
-			t.Errorf("Get(%q) error = %v, want ErrNotFound", id, err)
-		}
-		if _, err := store.Update(t.Context(), item.Item{ID: id, Name: "x"}); !errors.Is(err, item.ErrNotFound) {
-			t.Errorf("Update(%q) error = %v, want ErrNotFound", id, err)
-		}
-		if err := store.Delete(t.Context(), id); !errors.Is(err, item.ErrNotFound) {
-			t.Errorf("Delete(%q) error = %v, want ErrNotFound", id, err)
-		}
+	var zero item.ID
+	if _, err := store.Get(t.Context(), zero); !errors.Is(err, item.ErrNotFound) {
+		t.Errorf("Get(zero ID) error = %v, want ErrNotFound", err)
+	}
+	if _, err := store.Update(t.Context(), zero, itemtest.MustDraft("x", "")); !errors.Is(err, item.ErrNotFound) {
+		t.Errorf("Update(zero ID) error = %v, want ErrNotFound", err)
+	}
+	if err := store.Delete(t.Context(), zero); !errors.Is(err, item.ErrNotFound) {
+		t.Errorf("Delete(zero ID) error = %v, want ErrNotFound", err)
 	}
 	if n := calls.Load(); n != 0 {
 		t.Errorf("the upstream was called %d times", n)
@@ -224,7 +225,7 @@ func TestUpstreamRedirectIsAFailure(t *testing.T) {
 	defer upstream.Close()
 
 	store := httpstore.New(upstream.URL, &http.Client{Timeout: time.Second})
-	_, err := store.Create(t.Context(), item.Item{Name: "x"})
+	_, err := store.Create(t.Context(), itemtest.MustDraft("x", ""))
 	var uerr *httpstore.UpstreamError
 	if !errors.As(err, &uerr) || uerr.Status != http.StatusTemporaryRedirect || uerr.HTTPStatus() != http.StatusBadGateway {
 		t.Errorf("Create error = %v; want an UpstreamError for the 307, answered as 502", err)

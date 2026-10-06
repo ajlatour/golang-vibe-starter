@@ -2,7 +2,6 @@ package itemtest
 
 import (
 	"errors"
-	"strings"
 	"sync"
 	"testing"
 
@@ -18,14 +17,14 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 		ctx := t.Context()
 		s := newStore(t)
 
-		created, err := s.Create(ctx, item.Item{Name: "widget", Description: "a widget"})
+		created, err := s.Create(ctx, MustDraft("widget", "a widget"))
 		if err != nil {
 			t.Fatalf("Create: %v", err)
 		}
-		if created.ID == "" || created.CreatedAt.IsZero() || !created.UpdatedAt.Equal(created.CreatedAt) {
+		if created.ID.IsZero() || created.CreatedAt.IsZero() || !created.UpdatedAt.Equal(created.CreatedAt) {
 			t.Fatalf("Create returned %+v, want ID and equal non-zero timestamps", created)
 		}
-		if created.Name != "widget" || created.Description != "a widget" {
+		if created.Name.String() != "widget" || created.Description.String() != "a widget" {
 			t.Errorf("Create returned %+v, want input fields preserved", created)
 		}
 
@@ -37,11 +36,11 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 			t.Errorf("Get = %+v, want %+v", got, created)
 		}
 
-		updated, err := s.Update(ctx, item.Item{ID: created.ID, Name: "gadget"})
+		updated, err := s.Update(ctx, created.ID, MustDraft("gadget", ""))
 		if err != nil {
 			t.Fatalf("Update: %v", err)
 		}
-		if updated.Name != "gadget" || updated.Description != "" {
+		if updated.Name.String() != "gadget" || updated.Description.String() != "" {
 			t.Errorf("Update did not replace fields: %+v", updated)
 		}
 		if !updated.CreatedAt.Equal(created.CreatedAt) || updated.UpdatedAt.Before(created.UpdatedAt) {
@@ -67,9 +66,9 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 	t.Run("list order", func(t *testing.T) {
 		ctx := t.Context()
 		s := newStore(t)
-		var want []string
+		var want []item.ID
 		for _, name := range []string{"a", "b", "c"} {
-			it, err := s.Create(ctx, item.Item{Name: name})
+			it, err := s.Create(ctx, MustDraft(name, ""))
 			if err != nil {
 				t.Fatalf("Create: %v", err)
 			}
@@ -91,32 +90,33 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 		}
 	})
 
-	t.Run("invalid IDs are never found", func(t *testing.T) {
+	// An item.ID can't hold an invalid ID (item.ParseID's tests cover those),
+	// but it can be zero, which names no item.
+	t.Run("the zero ID is never found", func(t *testing.T) {
 		ctx := t.Context()
 		s := newStore(t)
-		for _, id := range []string{"", ".", "..", "../x", "a/b", "%2E%2E", "a b", strings.Repeat("a", item.MaxIDLen+1)} {
-			if _, err := s.Get(ctx, id); !errors.Is(err, item.ErrNotFound) {
-				t.Errorf("Get(%q) error = %v, want ErrNotFound", id, err)
-			}
-			if _, err := s.Update(ctx, item.Item{ID: id, Name: "x"}); !errors.Is(err, item.ErrNotFound) {
-				t.Errorf("Update(%q) error = %v, want ErrNotFound", id, err)
-			}
-			if err := s.Delete(ctx, id); !errors.Is(err, item.ErrNotFound) {
-				t.Errorf("Delete(%q) error = %v, want ErrNotFound", id, err)
-			}
+		var zero item.ID
+		if _, err := s.Get(ctx, zero); !errors.Is(err, item.ErrNotFound) {
+			t.Errorf("Get(zero ID) error = %v, want ErrNotFound", err)
+		}
+		if _, err := s.Update(ctx, zero, MustDraft("x", "")); !errors.Is(err, item.ErrNotFound) {
+			t.Errorf("Update(zero ID) error = %v, want ErrNotFound", err)
+		}
+		if err := s.Delete(ctx, zero); !errors.Is(err, item.ErrNotFound) {
+			t.Errorf("Delete(zero ID) error = %v, want ErrNotFound", err)
 		}
 	})
 
 	t.Run("missing ID", func(t *testing.T) {
 		ctx := t.Context()
 		s := newStore(t)
-		if _, err := s.Get(ctx, "nope"); !errors.Is(err, item.ErrNotFound) {
+		if _, err := s.Get(ctx, MustID("nope")); !errors.Is(err, item.ErrNotFound) {
 			t.Errorf("Get error = %v, want ErrNotFound", err)
 		}
-		if _, err := s.Update(ctx, item.Item{ID: "nope", Name: "x"}); !errors.Is(err, item.ErrNotFound) {
+		if _, err := s.Update(ctx, MustID("nope"), MustDraft("x", "")); !errors.Is(err, item.ErrNotFound) {
 			t.Errorf("Update error = %v, want ErrNotFound", err)
 		}
-		if err := s.Delete(ctx, "nope"); !errors.Is(err, item.ErrNotFound) {
+		if err := s.Delete(ctx, MustID("nope")); !errors.Is(err, item.ErrNotFound) {
 			t.Errorf("Delete error = %v, want ErrNotFound", err)
 		}
 	})
@@ -138,7 +138,7 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 		var wg sync.WaitGroup
 		for range n {
 			wg.Go(func() {
-				if _, err := s.Create(ctx, item.Item{Name: "x"}); err != nil {
+				if _, err := s.Create(ctx, MustDraft("x", "")); err != nil {
 					t.Errorf("Create: %v", err)
 				}
 			})
@@ -154,10 +154,9 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 	})
 }
 
-// sameItem compares items with time.Equal, since timestamps that went
-// through JSON lose their monotonic clock reading and location pointer.
-
-// sameItem compares the fields a store must round-trip.
+// sameItem compares the fields a store must round-trip, timestamps with
+// time.Equal, since those that went through JSON lose their monotonic clock
+// reading and location pointer.
 func sameItem(a, b item.Item) bool {
 	return a.ID == b.ID && a.Name == b.Name && a.Description == b.Description &&
 		a.CreatedAt.Equal(b.CreatedAt) && a.UpdatedAt.Equal(b.UpdatedAt)

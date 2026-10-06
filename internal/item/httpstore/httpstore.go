@@ -63,59 +63,87 @@ func New(baseURL string, client *http.Client, opts ...Option) *Store {
 
 func (s *Store) List(ctx context.Context) ([]item.Item, error) {
 	var out struct {
-		Items []item.Item `json:"items"`
+		Items []upstreamItem `json:"items"`
 	}
 	if err := s.do(ctx, http.MethodGet, "/items", nil, http.StatusOK, &out); err != nil {
 		return nil, err
 	}
-	if out.Items == nil {
-		out.Items = []item.Item{}
+	items := make([]item.Item, len(out.Items))
+	for i, u := range out.Items {
+		items[i] = u.item()
 	}
-	return out.Items, nil
+	return items, nil
 }
 
-func (s *Store) Get(ctx context.Context, id string) (item.Item, error) {
-	if !item.ValidID(id) {
+func (s *Store) Get(ctx context.Context, id item.ID) (item.Item, error) {
+	if id.IsZero() {
 		return item.Item{}, item.ErrNotFound
 	}
-	var it item.Item
-	err := s.do(ctx, http.MethodGet, itemPath(id), nil, http.StatusOK, &it)
-	return it, err
+	var out upstreamItem
+	if err := s.do(ctx, http.MethodGet, itemPath(id), nil, http.StatusOK, &out); err != nil {
+		return item.Item{}, err
+	}
+	return out.item(), nil
 }
 
-func (s *Store) Create(ctx context.Context, it item.Item) (item.Item, error) {
-	var out item.Item
-	err := s.do(ctx, http.MethodPost, "/items", itemInput{Name: it.Name, Description: it.Description}, http.StatusCreated, &out)
-	return out, err
+func (s *Store) Create(ctx context.Context, d item.Draft) (item.Item, error) {
+	var out upstreamItem
+	if err := s.do(ctx, http.MethodPost, "/items", newUpstreamInput(d), http.StatusCreated, &out); err != nil {
+		return item.Item{}, err
+	}
+	return out.item(), nil
 }
 
-func (s *Store) Update(ctx context.Context, it item.Item) (item.Item, error) {
-	if !item.ValidID(it.ID) {
+func (s *Store) Update(ctx context.Context, id item.ID, d item.Draft) (item.Item, error) {
+	if id.IsZero() {
 		return item.Item{}, item.ErrNotFound
 	}
-	var out item.Item
-	err := s.do(ctx, http.MethodPut, itemPath(it.ID), itemInput{Name: it.Name, Description: it.Description}, http.StatusOK, &out)
-	return out, err
+	var out upstreamItem
+	if err := s.do(ctx, http.MethodPut, itemPath(id), newUpstreamInput(d), http.StatusOK, &out); err != nil {
+		return item.Item{}, err
+	}
+	return out.item(), nil
 }
 
-func (s *Store) Delete(ctx context.Context, id string) error {
-	if !item.ValidID(id) {
+func (s *Store) Delete(ctx context.Context, id item.ID) error {
+	if id.IsZero() {
 		return item.ErrNotFound
 	}
 	return s.do(ctx, http.MethodDelete, itemPath(id), nil, http.StatusNoContent, nil)
 }
 
-// itemInput is the request body sent upstream to create or replace an item:
-// the same shape the API's own handlers accept.
-type itemInput struct {
+// upstreamItem is an item as the upstream sends it. It's the upstream's own
+// shape, translated here, so the model depends on neither it nor the API's:
+// the two happen to match today, and needn't.
+type upstreamItem struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// item is u in the model's terms. The upstream is where items are kept, so
+// they're restored as it has them (see item.Restore).
+func (u upstreamItem) item() item.Item {
+	return item.Restore(u.ID, u.Name, u.Description, u.CreatedAt, u.UpdatedAt)
+}
+
+// upstreamInput is the request body sent upstream to create or replace an
+// item.
+type upstreamInput struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
-// itemPath is the upstream path of the item with id. Callers check the ID
-// with item.ValidID first, so the escaping is a second line of defence.
-func itemPath(id string) string {
-	return "/items/" + url.PathEscape(id)
+func newUpstreamInput(d item.Draft) upstreamInput {
+	return upstreamInput{Name: d.Name().String(), Description: d.Description().String()}
+}
+
+// itemPath is the upstream path of the item with id. An item.ID can only hold
+// a valid ID (see item.ID), so the escaping is a second line of defence.
+func itemPath(id item.ID) string {
+	return "/items/" + url.PathEscape(id.String())
 }
 
 // do sends a request with an optional JSON body and decodes a JSON response

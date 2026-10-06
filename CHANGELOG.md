@@ -10,6 +10,15 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+### Changed
+
+- The item model enforces its own rules: an item's ID, name and description are value objects that
+  can only be made valid, and stores take a validated draft rather than a loose item. The model no
+  longer has a JSON shape: the API's is the handlers' (`item.Request`, `item.Response`) and the
+  upstream's is `httpstore`'s, each translated at its edge, so either can change without the
+  other ([ADR-0030](docs/decisions.md#adr-0030-the-item-model-enforces-its-rules-and-wire-formats-stay-at-the-edges)).
+  The API behaves as before.
+
 ## [0.3.0] - 2026-10-06
 
 ### Added
