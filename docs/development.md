@@ -45,6 +45,7 @@ don't, and its message says what to fix.
 | A log field name | A `Key` constant in `internal/logx/keys.go` and the Fields table in `docs/logging.md` | `internal/logx/schema_test.go`; a raw string key fails the build |
 | A feature flag | `flagd/flags.json`, and the package's `FlagKeys` in code | The service won't start if a listed flag is missing; `cmd/api/main_test.go` |
 | A header rule or default limit (`headerguard.DefaultPolicy`) | `docs/openapi.json` (the 400, 415 and 431 responses) and the Request headers section of the README | `cmd/api/openapi_test.go` produces each status on every operation; `integration/features/headers.feature` |
+| A WireMock stub of the upstream (`wiremock/`), or the `/items` contract | The stubs, to the contract: a success in the spec's status and body schema, an error as `{"error": "..."}`, a 404 as JSON | `cmd/api/openapi_stubs_test.go` checks every stub's route, status and body against `docs/openapi.json`, and that every operation's success, and an item's 404, is stubbed |
 | A store implementation | Nothing: run it through `itemtest.StoreContract` | The same contract `httpstore.Store` and the in-memory fake pass |
 | A route, status or header rule a caller would hit, or `scripts/api` | `docs/curl.md`, which needs a successful call of every route | `cmd/api/curl_test.go` runs every command on the page, and the script, against the real handlers |
 | A benchmarked path, adding allocations on purpose | Nothing: add the `perf-ok` label to the pull request | The Performance workflow fails a pull request that allocates more per operation; see [pull request reports](performance.md#pull-request-reports) |
@@ -76,6 +77,10 @@ The tests don't need Docker. `httpstore.Store` and the API are tested against an
 Beyond the unit tests, this includes the checks in the table above: the OpenAPI drift test, the
 log contract test (the whole service, with secrets planted to prove they never reach a log line),
 and the log schema tests.
+
+The stubs themselves are held to `docs/openapi.json` without Docker
+(`cmd/api/openapi_stubs_test.go`, in the table above). Templated bodies are rendered with sample
+values first; a template helper the test doesn't know fails it, rather than going unchecked.
 
 One opt-in test checks `httpstore.Store` against the running WireMock, to catch drift between the stubs
 and what the API's client expects. It's skipped unless `LIVE_UPSTREAM_URL` is set:

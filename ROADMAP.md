@@ -52,7 +52,7 @@ For context: what the items below build on.
 | ✅ | Check what the upstream sends back (ADR-0039) | items that break the model's rules become a 502 |
 | ✅ | `ETag` / `If-Match` for safe concurrent updates (ADR-0040) | |
 | ✅ | Nightly soak test, failing on heap or goroutine growth | `.github/workflows/soak.yml` |
-| ⏭️ | Check the WireMock stubs against the `/items` contract | stdlib test; see contract testing below |
+| ✅ | Check the WireMock stubs against the `/items` contract | `cmd/api/openapi_stubs_test.go`; see contract testing below |
 
 ## Resilience
 
