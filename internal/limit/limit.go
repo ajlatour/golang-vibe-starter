@@ -13,6 +13,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"sync"
 	"time"
@@ -96,10 +97,14 @@ type Identity struct {
 type Identify func(*http.Request) (Identity, bool)
 
 // clientName names who a request comes from, for the per-client limit: the
-// identity identify gave it, if any, else its connection's IP address. Proxy
-// headers such as X-Forwarded-For are never trusted (the header guard removes
-// them), so behind a proxy every unidentified request shares the proxy's
-// address.
+// identity identify gave it, if any, else its connection's IP address, or for
+// IPv6, its /64. Proxy headers such as X-Forwarded-For are never trusted (the
+// header guard removes them), so behind a proxy every unidentified request
+// shares the proxy's address.
+//
+// An IPv6 client is its /64 because that's what one subscriber is usually
+// given, and moving between its addresses costs nothing: keyed by address,
+// one client could take as many limits as it liked, and fill memory with them.
 func clientName(r *http.Request, id Identity, identified bool) string {
 	if identified {
 		return "id:" + id.Client
@@ -107,6 +112,11 @@ func clientName(r *http.Request, id Identity, identified bool) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
+	}
+	if addr, err := netip.ParseAddr(host); err == nil && addr.Is6() && !addr.Is4In6() {
+		if p, err := addr.Prefix(64); err == nil {
+			return "ip6:" + p.String()
+		}
 	}
 	return "ip:" + host
 }
@@ -117,13 +127,24 @@ type bucket struct {
 	rate, burst float64 // the client's limit when the bucket was last used
 }
 
-// limiter holds a token bucket per client.
+// limiter holds a token bucket per client, for at most maxClients of them.
 type limiter struct {
-	now       func() time.Time
-	mu        sync.Mutex
-	buckets   map[string]*bucket
-	lastSweep time.Time
+	now        func() time.Time
+	maxClients int
+	mu         sync.Mutex
+	buckets    map[string]*bucket
+	lastSweep  time.Time
 }
+
+// MaxClients is how many clients the per-client limit remembers at once:
+// about 10 MB of buckets. Past it, idle clients are forgotten at once, and if
+// it's still full, new clients share one limit (overflowClient) until there's
+// room: a flood from more addresses than this is throttled together, and
+// can't grow memory.
+const MaxClients = 100_000
+
+// overflowClient is the limit new clients share while the limiter is full.
+const overflowClient = "overflow"
 
 // take spends one of client's tokens if it has one. If not, it returns how
 // long until it will.
@@ -131,8 +152,15 @@ func (l *limiter) take(client string, rate, burst float64) (ok bool, wait time.D
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.now()
-	l.sweep(now)
+	l.sweep(now, false)
 	b, found := l.buckets[client]
+	if !found && len(l.buckets) >= l.maxClients {
+		l.sweep(now, true)
+		if len(l.buckets) >= l.maxClients {
+			client = overflowClient
+			b, found = l.buckets[client]
+		}
+	}
 	if !found {
 		b = &bucket{tokens: burst, last: now}
 		l.buckets[client] = b
@@ -147,10 +175,10 @@ func (l *limiter) take(client string, rate, burst float64) (ok bool, wait time.D
 	return false, time.Duration((1 - b.tokens) / rate * float64(time.Second))
 }
 
-// sweep forgets, at most once a minute, the clients whose buckets have
-// refilled: they're as if new, so keeping them only costs memory.
-func (l *limiter) sweep(now time.Time) {
-	if now.Sub(l.lastSweep) < time.Minute {
+// sweep forgets, at most once a minute unless forced, the clients whose
+// buckets have refilled: they're as if new, so keeping them only costs memory.
+func (l *limiter) sweep(now time.Time, force bool) {
+	if !force && now.Sub(l.lastSweep) < time.Minute {
 		return
 	}
 	l.lastSweep = now
@@ -172,7 +200,7 @@ func PerClient(p Policy, identify Identify, next http.Handler) http.Handler {
 }
 
 func perClient(p Policy, identify Identify, now func() time.Time, next http.Handler) http.Handler {
-	l := &limiter{now: now, buckets: map[string]*bucket{}, lastSweep: now()}
+	l := &limiter{now: now, maxClients: MaxClients, buckets: map[string]*bucket{}, lastSweep: now()}
 	exempt := exemptSet(p.Exempt)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if exempt[r.URL.Path] {

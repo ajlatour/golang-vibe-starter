@@ -10,6 +10,13 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+### Security
+
+- The per-client rate limit can't be escaped, or used to fill memory, by changing address: an IPv6
+  client is its /64, and the limiter remembers at most 100,000 clients, forgetting idle ones at once
+  when full and otherwise putting newcomers under one shared limit
+  ([ADR-0038](docs/decisions.md#adr-0038-the-rate-limit-remembers-a-bounded-number-of-clients-and-an-ipv6-client-is-its-64)).
+
 ### Added
 
 - Upstream GETs are retried once (`UPSTREAM_RETRIES`, 0 to 3) when the upstream fails fast: a
