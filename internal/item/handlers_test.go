@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -242,3 +243,33 @@ func sameResponse(a, b item.Response) bool {
 	return a.ID == b.ID && a.Name == b.Name && a.Description == b.Description &&
 		a.CreatedAt.Equal(b.CreatedAt) && a.UpdatedAt.Equal(b.UpdatedAt)
 }
+
+// TestStoreFailureStatuses checks the handlers, not the store, decide what a
+// store's failure means to the client: a timeout is a 504, a failure to give a
+// usable answer a 502, and any other error a 500.
+func TestStoreFailureStatuses(t *testing.T) {
+	for _, tt := range []struct {
+		err  error
+		want int
+	}{
+		{fmt.Errorf("upstream GET /items: %w", item.ErrStoreTimeout), http.StatusGatewayTimeout},
+		{fmt.Errorf("upstream GET /items: %w", item.ErrStoreUnavailable), http.StatusBadGateway},
+		{errStoreDown, http.StatusInternalServerError},
+	} {
+		mux := http.NewServeMux()
+		item.RegisterRoutes(mux, slog.New(slog.DiscardHandler), erroringStore{err: tt.err})
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/items", nil))
+		if rec.Code != tt.want {
+			t.Errorf("store error %q: status %d, want %d", tt.err, rec.Code, tt.want)
+		}
+	}
+}
+
+// erroringStore lists items with err.
+type erroringStore struct {
+	failingStore
+	err error
+}
+
+func (s erroringStore) List(context.Context) ([]item.Item, error) { return nil, s.err }

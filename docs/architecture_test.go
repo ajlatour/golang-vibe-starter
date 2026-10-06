@@ -143,8 +143,9 @@ func codeImports(t *testing.T) map[string][]string {
 }
 
 // TestPackageDependencies holds DEP-3: every package imports only what the
-// table in docs/architecture.md allows, the table lists exactly the packages
-// there are, and only tests import test support.
+// table in docs/architecture.md allows, the table allows nothing a package no
+// longer imports (so it reads as the dependencies there are), the table lists
+// exactly the packages there are, and only tests import test support.
 func TestPackageDependencies(t *testing.T) {
 	rules, code := packageTable(t), codeImports(t)
 	for pkg := range rules {
@@ -166,6 +167,11 @@ func TestPackageDependencies(t *testing.T) {
 			case r.any && !testSupport:
 			case !slices.Contains(r.imports, dep):
 				t.Errorf("%s imports %s, which the package table doesn't allow: change the code, or the table and so the architecture", pkg, dep)
+			}
+		}
+		for _, allowed := range r.imports {
+			if !slices.Contains(deps, allowed) {
+				t.Errorf("the package table lets %s import %s, which it doesn't: remove it from the table", pkg, allowed)
 			}
 		}
 	}

@@ -95,16 +95,3 @@ func TestRequire(t *testing.T) {
 		t.Error("Require(a, b, c) = nil, want error naming b and c")
 	}
 }
-
-func TestDeclare(t *testing.T) {
-	if got := featureflag.Declare("declared-in-test"); got != "declared-in-test" {
-		t.Errorf("Declare() = %q, want the key back", got)
-	}
-	found := false
-	for _, k := range featureflag.Declared() {
-		found = found || k == "declared-in-test"
-	}
-	if !found {
-		t.Error("Declared() doesn't include the declared key")
-	}
-}

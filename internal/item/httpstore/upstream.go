@@ -5,10 +5,9 @@ import (
 	"errors"
 	"log/slog"
 	"net"
-	"net/http"
 	"time"
 
-	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
+	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 )
 
@@ -26,16 +25,24 @@ type UpstreamError struct {
 func (e *UpstreamError) Error() string { return e.Err.Error() }
 func (e *UpstreamError) Unwrap() error { return e.Err }
 
-// HTTPStatus implements httpx.StatusError. A timeout is the client's 504
-// Gateway Timeout; every other failure to get a usable answer from the
-// upstream (connection refused, reset, an error status, a body that won't
-// decode) is a 502 Bad Gateway. Neither says the API itself failed.
-func (e *UpstreamError) HTTPStatus() int {
-	var ne net.Error
-	if errors.Is(e.Err, context.DeadlineExceeded) || (errors.As(e.Err, &ne) && ne.Timeout()) {
-		return http.StatusGatewayTimeout
+// Is says what kind of store failure e is, for errors.Is: a timeout is
+// item.ErrStoreTimeout, and every other failure to get a usable answer from
+// the upstream (connection refused, reset, an error status, a body that won't
+// decode) item.ErrStoreUnavailable. What the client is told is the item
+// handlers' to decide, not this store's.
+func (e *UpstreamError) Is(target error) bool {
+	switch target {
+	case item.ErrStoreTimeout:
+		return e.timeout()
+	case item.ErrStoreUnavailable:
+		return !e.timeout()
 	}
-	return http.StatusBadGateway
+	return false
+}
+
+func (e *UpstreamError) timeout() bool {
+	var ne net.Error
+	return errors.Is(e.Err, context.DeadlineExceeded) || (errors.As(e.Err, &ne) && ne.Timeout())
 }
 
 // LogAttrs implements logx.AttrsError.
@@ -43,10 +50,7 @@ func (e *UpstreamError) LogAttrs() []slog.Attr {
 	return upstreamAttrs(e.Call, e.Status, e.Duration)
 }
 
-var (
-	_ logx.AttrsError   = (*UpstreamError)(nil)
-	_ httpx.StatusError = (*UpstreamError)(nil)
-)
+var _ logx.AttrsError = (*UpstreamError)(nil)
 
 // upstreamAttrs builds the fields describing one upstream call. The status is
 // left out when there was no response.
