@@ -31,6 +31,9 @@ const (
 	CodeValidationRefused Code = "validation_refused"
 	// 404: no item has that ID.
 	CodeNotFound Code = "not_found"
+	// 412: a write's If-Match no longer matches the item: it changed since
+	// the client read it.
+	CodePreconditionFailed Code = "precondition_failed"
 	// 415: a body that isn't sent as application/json.
 	CodeUnsupportedMediaType Code = "unsupported_media_type"
 	// 422: a well-formed body with a value that breaks a rule.

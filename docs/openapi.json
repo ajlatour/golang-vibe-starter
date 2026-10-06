@@ -110,6 +110,7 @@
             "description": "The created item, with its URL in `Location`.",
             "headers": {
               "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" },
+              "ETag": { "$ref": "#/components/headers/ETag" },
               "Location": {
                 "required": true,
                 "description": "Path of the new item, `/items/{id}`.",
@@ -142,10 +143,16 @@
       "get": {
         "operationId": "getItem",
         "summary": "Get one item",
+        "description": "The item, with its `ETag`. Send that as `If-None-Match` to get a 304, with no body, while the item is unchanged; or as `If-Match` on a write, so it can't overwrite a change you haven't seen.",
+        "parameters": [{ "$ref": "#/components/parameters/IfNoneMatch" }],
         "responses": {
+          "304": {
+            "description": "The item is unchanged since the ETag in If-None-Match. No body.",
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" }, "ETag": { "$ref": "#/components/headers/ETag" } }
+          },
           "200": {
             "description": "The item.",
-            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" }, "ETag": { "$ref": "#/components/headers/ETag" } },
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Item" } }
             }
@@ -165,6 +172,8 @@
       "put": {
         "operationId": "updateItem",
         "summary": "Replace an item's name and description",
+        "description": "With `If-Match`, only if the item is still the version you last saw: otherwise a 412, `precondition_failed`, and nothing changes.",
+        "parameters": [{ "$ref": "#/components/parameters/IfMatch" }],
         "requestBody": {
           "required": true,
           "content": {
@@ -174,7 +183,7 @@
         "responses": {
           "200": {
             "description": "The updated item.",
-            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
+            "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" }, "ETag": { "$ref": "#/components/headers/ETag" } },
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/Item" } }
             }
@@ -184,6 +193,7 @@
           "422": { "$ref": "#/components/responses/Unprocessable" },
           "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
           "431": { "$ref": "#/components/responses/HeadersTooLarge" },
+          "412": { "$ref": "#/components/responses/PreconditionFailed" },
           "429": { "$ref": "#/components/responses/TooManyRequests" },
           "503": { "$ref": "#/components/responses/ServiceUnavailable" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
@@ -196,6 +206,8 @@
       "delete": {
         "operationId": "deleteItem",
         "summary": "Delete an item",
+        "description": "With `If-Match`, only if the item is still the version you last saw: otherwise a 412, `precondition_failed`.",
+        "parameters": [{ "$ref": "#/components/parameters/IfMatch" }],
         "responses": {
           "204": {
             "description": "The item was deleted. No body.",
@@ -204,6 +216,7 @@
           "404": { "$ref": "#/components/responses/NotFound" },
           "400": { "$ref": "#/components/responses/DuplicateHeader" },
           "431": { "$ref": "#/components/responses/HeadersTooLarge" },
+          "412": { "$ref": "#/components/responses/PreconditionFailed" },
           "429": { "$ref": "#/components/responses/TooManyRequests" },
           "503": { "$ref": "#/components/responses/ServiceUnavailable" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
@@ -224,6 +237,20 @@
       }
     },
     "parameters": {
+      "IfMatch": {
+        "name": "If-Match",
+        "in": "header",
+        "required": false,
+        "description": "Write only if the item is still this version: an `ETag` from a read or a write, several separated by commas, or `*` for any version, as long as the item exists. A weak tag (`W/...`) never matches. Without it, the write goes ahead whatever the version.",
+        "schema": { "type": "string" }
+      },
+      "IfNoneMatch": {
+        "name": "If-None-Match",
+        "in": "header",
+        "required": false,
+        "description": "An `ETag` you hold (or `*`): if the item still has it, the answer is a 304 with no body.",
+        "schema": { "type": "string" }
+      },
       "APIVersion": {
         "name": "API-Version",
         "in": "header",
@@ -247,6 +274,11 @@
       }
     },
     "headers": {
+      "ETag": {
+        "required": true,
+        "description": "The item's version: it changes whenever the item does. Quoted, as HTTP's entity tags are.",
+        "schema": { "type": "string", "pattern": "^\"[0-9a-z]+\"$" }
+      },
       "APIVersion": {
         "required": true,
         "description": "The API version that answered: the one asked for in the API-Version request header, or the current one without it.",
@@ -337,12 +369,17 @@
           "code": {
             "type": "string",
             "description": "What the error means, for a client to act on: stable, unlike `error`. Two errors with one status can mean different things (a 403 for a read-only key, or one the validation service refused), and the code tells them apart.",
-            "enum": ["invalid_body", "duplicate_header", "unsupported_api_version", "invalid_parameter", "api_key_required", "api_key_invalid", "read_only_key", "validation_refused", "not_found", "unsupported_media_type", "invalid_field", "rate_limited", "headers_too_large", "client_closed", "internal", "upstream_failed", "busy", "validation_unavailable", "upstream_timeout"]
+            "enum": ["invalid_body", "duplicate_header", "unsupported_api_version", "invalid_parameter", "precondition_failed", "api_key_required", "api_key_invalid", "read_only_key", "validation_refused", "not_found", "unsupported_media_type", "invalid_field", "rate_limited", "headers_too_large", "client_closed", "internal", "upstream_failed", "busy", "validation_unavailable", "upstream_timeout"]
           }
         }
       }
     },
     "responses": {
+      "PreconditionFailed": {
+        "description": "The item isn't the version `If-Match` names: it changed since you read it (or, for `*`, it doesn't exist). Nothing was changed: get it again, and retry with its new `ETag`.",
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
       "BadRequest": {
         "description": "The body isn't usable (malformed JSON, the wrong shape or types, an unknown field, an empty body, or over 1 MiB), a header that may appear only once (Content-Type, Authorization, Client-Correlation-Id, API-Version) appears more than once, an API-Version the API doesn't serve (`unsupported_api_version`), or a query parameter that isn't valid: a list's `limit` out of range, or a `cursor` it didn't give out (`invalid_parameter`).",
         "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },

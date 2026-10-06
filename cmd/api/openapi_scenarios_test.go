@@ -86,14 +86,20 @@ func scenarios(t *testing.T, s *spec) []scenario {
 
 		{name: "get", env: "ok", method: "GET", path: "/items/" + seededPlaceholder, op: "GET /items/{id}", want: 200},
 		{name: "get unknown", env: "ok", method: "GET", path: "/items/nope", op: "GET /items/{id}", want: 404},
+		{name: "get, unchanged since a tag", env: "ok", method: "GET", path: "/items/" + seededPlaceholder, op: "GET /items/{id}",
+			header: http.Header{"If-None-Match": {"*"}}, want: 304},
 
 		{name: "update", env: "ok", method: "PUT", path: "/items/" + seededPlaceholder, op: "PUT /items/{id}", body: `{"name":"renamed"}`, want: 200},
 		{name: "update with malformed JSON", env: "ok", method: "PUT", path: "/items/" + seededPlaceholder, op: "PUT /items/{id}", body: `{`, want: 400},
 		{name: "update unknown", env: "ok", method: "PUT", path: "/items/nope", op: "PUT /items/{id}", body: okBody, want: 404},
+		{name: "update with a stale tag", env: "ok", method: "PUT", path: "/items/" + seededPlaceholder, op: "PUT /items/{id}", body: okBody,
+			header: http.Header{"If-Match": {`"stale"`}}, want: 412},
 		{name: "update with a blank name", env: "ok", method: "PUT", path: "/items/" + seededPlaceholder, op: "PUT /items/{id}", body: `{"name":""}`, want: 422},
 
 		{name: "delete", env: "ok", method: "DELETE", path: "/items/" + seededPlaceholder, op: "DELETE /items/{id}", want: 204},
 		{name: "delete unknown", env: "ok", method: "DELETE", path: "/items/nope", op: "DELETE /items/{id}", want: 404},
+		{name: "delete with a stale tag", env: "ok", method: "DELETE", path: "/items/" + seededPlaceholder, op: "DELETE /items/{id}",
+			header: http.Header{"If-Match": {`"stale"`}}, want: 412},
 
 		{name: "ready", env: "ok", method: "GET", path: "/readyz", op: "GET /readyz", want: 200},
 		{name: "not ready: the upstream can't be reached", env: "badgw", method: "GET", path: "/readyz", op: "GET /readyz", want: 503},
