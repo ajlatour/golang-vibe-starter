@@ -44,7 +44,7 @@ func siteDir(t *testing.T) string {
 // Performance history page.
 func expectedPages(t *testing.T) []string {
 	t.Helper()
-	pages := []string{"index.html", "changelog.html", "api.html", "history.html"}
+	pages := []string{"index.html", "changelog.html", "roadmap.html", "api.html", "history.html"}
 	guides, err := filepath.Glob("../*.md")
 	if err != nil {
 		t.Fatal(err)

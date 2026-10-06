@@ -236,6 +236,8 @@ documentation (the code's doc comments) at http://localhost:6060.
 **Start**
 
 - [`CHANGELOG.md`](CHANGELOG.md): what changed, release by release.
+- [`ROADMAP.md`](ROADMAP.md): what's done, queued and proposed to make the service more resilient
+  and its pipeline faster, with the libraries and tools worth considering.
 
 **Use the API**
 

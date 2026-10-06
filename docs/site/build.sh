@@ -32,6 +32,7 @@ cp .env.example "$out/env.example.txt"
 # new guide is placed in a theme on purpose.
 navigation='Start|README.md|index.html
 Start|CHANGELOG.md|changelog.html
+Start|ROADMAP.md|roadmap.html
 Use the API|docs/curl.md|curl.html
 Use the API|-|api.html
 Run it|docs/local-stack.md|local-stack.html
@@ -122,6 +123,7 @@ for page in $pages; do
 			-e 's#href="(\.\./)?\.env\.example"#href="env.example.txt"#g' \
 			-e 's#href="(\.\./)?README\.md#href="index.html#g' \
 			-e 's#href="(\.\./)?CHANGELOG\.md#href="changelog.html#g' \
+			-e 's#href="(\.\./)?ROADMAP\.md#href="roadmap.html#g' \
 			-e 's#href="docs/([^"/]+)\.md#href="\1.html#g' \
 			-e 's#href="([^":/]+)\.md#href="\1.html#g' \
 			-e 's#<img src="[^"]*/badge\.svg"[^>]*>#CI status#g' \
