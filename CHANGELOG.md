@@ -10,6 +10,8 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+## [0.4.0] - 2026-10-06
+
 ### Added
 
 - Request validation: with `VALIDATOR_URL`, every request but the probes is checked against an
