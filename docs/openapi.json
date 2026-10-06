@@ -372,7 +372,7 @@
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "TooManyRequests": {
-        "description": "Over the client's rate limit: by default 100 requests a second on average, in bursts of up to 200 (RATE_LIMIT, RATE_BURST). A client is its API key, or its IP address without one. Retry after the given number of seconds.",
+        "description": "Over the client's rate limit: by default 100 requests a second on average, in bursts of up to 200 (RATE_LIMIT, RATE_BURST). A client is its API key, or its IP address without one (an IPv6 client is its /64). Retry after the given number of seconds.",
         "headers": {
           "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" },
           "Retry-After": { "$ref": "#/components/headers/RetryAfter" }

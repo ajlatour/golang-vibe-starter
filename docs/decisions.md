@@ -75,6 +75,7 @@ Template:
 | [ADR-0035](#adr-0035-upstream-gets-are-retried-once-within-a-budget) | Upstream GETs are retried once, within a budget | Accepted |
 | [ADR-0036](#adr-0036-the-api-is-versioned-by-a-header-not-by-path) | The API is versioned by a header, not by path | Accepted |
 | [ADR-0037](#adr-0037-the-list-is-paged-by-cursor-50-a-page-by-default) | The list is paged by cursor, 50 a page by default | Accepted |
+| [ADR-0038](#adr-0038-the-rate-limit-remembers-a-bounded-number-of-clients-and-an-ipv6-client-is-its-64) | The rate limit remembers a bounded number of clients, and an IPv6 client is its /64 | Accepted |
 
 ## ADR-0001: Record architecture decisions
 
@@ -793,3 +794,23 @@ logged.
 **Consequences.** Every response is bounded, by default. A client that ignored paging now gets the
 first 50 items, not all of them: a behaviour change, made while there are no clients to break.
 Paging means more requests for a client that wants everything, and the upstream must page too.
+
+## ADR-0038: The rate limit remembers a bounded number of clients, and an IPv6 client is its /64
+
+- **Status:** Accepted
+- **Date:** 2026-10-06
+
+**Context.** The per-client rate limit (ADR-0018) keeps a token bucket per client, and forgets the
+idle ones once a minute. A client without a key is its IP address, and with IPv6, one subscriber
+typically has a /64 to move around in for free: by changing address on every request, it could
+take a fresh limit each time, escaping the limit, and fill memory with buckets between sweeps.
+
+**Decision.** An IPv6 client is its /64; an IPv4 client, its address, as before. The limiter
+remembers at most `MaxClients` (100,000, about 10 MB) at once: when it's full, it forgets the idle
+clients at once rather than waiting for the minute's sweep, and if none are idle, new clients share
+one limit, the overflow, until there's room.
+
+**Consequences.** Memory for the limit is bounded, whatever the traffic. Clients sharing a /64
+share a limit, which a network that gives many users one /64 would feel. In a flood from more
+than 100,000 active addresses, newcomers are limited together, which throttles the flood rather
+than each of its addresses; clients the limiter already knows keep their own limits.

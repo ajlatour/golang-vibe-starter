@@ -206,7 +206,7 @@ The API reads these environment variables:
 | `API_AUTH`            | `on`       | `off` lets every request through without a key: local development only, and logged as a warning. |
 | `API_AUTH_READS`      | `required` | `open` lets reads (`GET`) through without a key; a key that is sent must still be valid. |
 | `MAX_IN_FLIGHT`       | `512`      | The most requests served at once; more get 503 with `Retry-After`. `0` is no cap. |
-| `RATE_LIMIT`          | `100`      | Requests per second each client may make on average; more get 429 with `Retry-After`. A client is its API key, or its IP address without one. `0` is no limit. |
+| `RATE_LIMIT`          | `100`      | Requests per second each client may make on average; more get 429 with `Retry-After`. A client is its API key, or its IP address without one (an IPv6 client is its /64). `0` is no limit. |
 | `RATE_BURST`          | `200`      | Requests a client may make at once after a quiet spell. |
 | `VALIDATOR_URL`       |            | Base URL of the request-validation service every request but the probes is checked against (`POST /validate`; see [Request validation](docs/request-validation.md)), without a query string or fragment. Unset checks nothing, and logs a warning. |
 | `VALIDATOR_TIMEOUT`   | `300ms`    | Timeout for each validation call. It's on every request's path, so keep it short. |
