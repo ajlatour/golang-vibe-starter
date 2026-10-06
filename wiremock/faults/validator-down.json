@@ -1,0 +1,11 @@
+{
+  "id": "f0000000-0000-4000-8000-000000000006",
+  "name": "FAULT: the request-validation service fails every call with 503",
+  "priority": 1,
+  "request": { "method": "POST", "url": "/validate" },
+  "response": {
+    "status": 503,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "error": "validator unavailable" }
+  }
+}

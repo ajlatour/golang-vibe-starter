@@ -55,11 +55,12 @@ outside in:
 | 3 | Header screening | `internal/headerguard` | 400, 415, 431 | Before authentication, so a doubled `Authorization` header is refused before either copy is read (ADR-0012) |
 | 4 | Authentication | `internal/apikey` | 401, 403 | After screening; the probes are exempt (ADR-0016) |
 | 5 | Per-client rate limit | `internal/limit` | 429 | After authentication, so a client is its key (ADR-0018) |
-| 6 | Routing | `net/http.ServeMux`, wrapped by `httpx.RecordRoute` | 404, 405 | Innermost, so the matched route reaches the outer stages (ADR-0023) |
-| 7 | Handlers | `internal/item` | 400, 404, 422 | Decode, validate (IDs per ADR-0017), call the store |
-| 8 | The store | `internal/item/httpstore`, over `internal/jsoncall` | 502, 504 | Upstream failures become 502, or 504 on a timeout, never 500 (ADR-0007, ADR-0019) |
+| 6 | Request validation, with `VALIDATOR_URL` | `internal/validator`, over `internal/jsoncall` | 403, or 503 when the service can't answer and the API fails closed | After the rate limit, so a client's flood never reaches the validation service (ADR-0032) |
+| 7 | Routing | `net/http.ServeMux`, wrapped by `httpx.RecordRoute` | 404, 405 | Innermost, so the matched route reaches the outer stages (ADR-0023) |
+| 8 | Handlers | `internal/item` | 400, 404, 422 | Decode, validate (IDs per ADR-0017), call the store |
+| 9 | The store | `internal/item/httpstore`, over `internal/jsoncall` | 502, 504 | Upstream failures become 502, or 504 on a timeout, never 500 (ADR-0007, ADR-0019) |
 
-`/healthz` and `/readyz` sit at stage 6 but skip stages 2, 4 and 5: a busy or misconfigured
+`/healthz` and `/readyz` sit at stage 7 but skip stages 2, 4, 5 and 6: a busy or misconfigured
 service must still answer its probes.
 
 ### Packages and their dependencies
@@ -76,6 +77,7 @@ updates this table, and so the architecture, in the same pull request.
 | `internal/featureflag` | adapter | OFREP client for flagd, flag declarations, embedded defaults | `flagd`, `internal/jsoncall`, `internal/logx` |
 | `internal/headerguard` | protection | Screens request headers | `internal/httpx`, `internal/logx` |
 | `internal/apikey` | protection | Authenticates API keys | `internal/httpx`, `internal/logx` |
+| `internal/validator` | protection | Checks every request against the request-validation service, and fails closed or open when it can't answer (ADR-0032) | `internal/httpx`, `internal/jsoncall`, `internal/logx` |
 | `internal/limit` | protection | In-flight cap and per-client rate limit; told who a client is (ADR-0031) | `internal/httpx` |
 | `internal/httpx` | plumbing | Serving, middleware, JSON helpers, readiness | `internal/logx` |
 | `internal/jsoncall` | plumbing | One JSON-over-HTTP call, for every outbound client | `internal/logx` |
@@ -185,6 +187,7 @@ says so.
 | REL-4 | `/healthz` reports liveness; `/readyz` reports whether the upstream can be reached and the service isn't shutting down. | Orchestrators restart and route correctly (ADR-0021) | `internal/httpx/readiness_test.go`, `integration/features/health.feature` |
 | REL-5 | Shutdown drains in-flight requests, after an optional delay that reports not ready. | No dropped requests on a deploy | `internal/httpx/readiness_test.go`, `internal/httpx/serve_test.go` |
 | REL-6 | Every per-request resource is bounded: bodies (1 MiB), headers (the guard's limits, and twice its total in the server), upstream responses (4 MiB), metric label values. | No request can exhaust memory | `internal/httpx/json_test.go`, `cmd/api/security_test.go`, `internal/httpmetrics/httpmetrics_test.go` |
+| REL-7 | With `VALIDATOR_URL`, every request but the probes is checked against the request-validation service; when it can't answer, requests are refused (503) unless `VALIDATOR_FAILURE_MODE=open`, and it's asked again at most once a second. | A check the API can't serve without is never skipped quietly (ADR-0032) | `internal/validator/validator_test.go`, `integration/features/request-validation.feature` |
 
 ### Performance
 

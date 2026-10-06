@@ -3,7 +3,7 @@
   "info": {
     "title": "golang-vibe-starter API",
     "version": "0.3.2",
-    "description": "A small HTTP API over a placeholder `items` resource. Item data comes from an upstream service, so a failure to reach or understand the upstream is reported as 502 or 504, never as a 500. Every response carries a `Client-Correlation-Id` header; send one to tie the service's log lines to your own, or quote the one returned when reporting a problem. Every response also carries `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`. Every route but `/healthz` needs an API key (`Authorization: Bearer <key>`): 401 without a valid one, 403 for a write with a read-only key. Every request's headers are screened first: a request with a body must send `Content-Type: application/json` (415 otherwise), headers have size limits (431), some may appear only once (400), and proxy and method-override headers (`X-Forwarded-*`, `Forwarded`, `X-Real-IP`, `X-HTTP-Method-Override`) are ignored.\n\nThis file is checked against the running handlers by tests (`cmd/api/openapi_test.go`): routes, status codes, response bodies, headers and the limits stated here must match what the service actually does."
+    "description": "A small HTTP API over a placeholder `items` resource. Item data comes from an upstream service, so a failure to reach or understand the upstream is reported as 502 or 504, never as a 500. Every response carries a `Client-Correlation-Id` header; send one to tie the service's log lines to your own, or quote the one returned when reporting a problem. Every response also carries `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`. Every route but `/healthz` needs an API key (`Authorization: Bearer <key>`): 401 without a valid one, 403 for a write with a read-only key, or a request the request-validation service refuses (where there is one: VALIDATOR_URL). Every request's headers are screened first: a request with a body must send `Content-Type: application/json` (415 otherwise), headers have size limits (431), some may appear only once (400), and proxy and method-override headers (`X-Forwarded-*`, `Forwarded`, `X-Real-IP`, `X-HTTP-Method-Override`) are ignored.\n\nThis file is checked against the running handlers by tests (`cmd/api/openapi_test.go`): routes, status codes, response bodies, headers and the limits stated here must match what the service actually does."
   },
   "security": [{ "apiKey": [] }],
   "servers": [
@@ -72,6 +72,7 @@
           "429": { "$ref": "#/components/responses/TooManyRequests" },
           "503": { "$ref": "#/components/responses/ServiceUnavailable" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
           "504": { "$ref": "#/components/responses/GatewayTimeout" }
@@ -138,6 +139,7 @@
           "429": { "$ref": "#/components/responses/TooManyRequests" },
           "503": { "$ref": "#/components/responses/ServiceUnavailable" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
           "504": { "$ref": "#/components/responses/GatewayTimeout" }
@@ -326,7 +328,7 @@
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "Forbidden": {
-        "description": "The API key may only read.",
+        "description": "The API key may only read, and this is a write; or, where the service checks requests (VALIDATOR_URL), the request-validation service refused the request. The reason is logged, not sent.",
         "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
@@ -339,7 +341,7 @@
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "ServiceUnavailable": {
-        "description": "The service is serving as many requests as it takes at once (MAX_IN_FLIGHT, 512 by default). Retry after the given number of seconds.",
+        "description": "The service is serving as many requests as it takes at once (MAX_IN_FLIGHT, 512 by default), or, where the service checks requests (VALIDATOR_URL) and fails closed, the request-validation service can't answer. Retry after the given number of seconds.",
         "headers": {
           "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" },
           "Retry-After": { "$ref": "#/components/headers/RetryAfter" }

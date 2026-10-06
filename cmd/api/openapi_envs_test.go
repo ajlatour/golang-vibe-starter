@@ -16,6 +16,7 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/limit"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
+	"github.com/ajlatour/golang-vibe-starter/internal/validator"
 )
 
 // fixedFlags is an item.Flags with one answer for every flag.
@@ -47,6 +48,8 @@ func (errStore) Delete(context.Context, item.ID) error { return errBoom }
 //
 //	ok       an in-memory store holding one item; flags off
 //	flagOn   the same, with the items-list-total flag on
+//	refused     the request-validation service refuses every request (403)
+//	unvalidated the request-validation service can't answer, failing closed (503)
 //	internal a store that fails with a plain error (a bug here: 500)
 //	badgw    an upstream that refuses connections (502)
 //	timeout  an upstream that never answers (504)
@@ -83,6 +86,14 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 		<-store.entered
 		t.Cleanup(func() { close(store.release); <-done })
 		return h, ""
+	case "refused":
+		// The request-validation service refuses every request.
+		return newHandler(logger, handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: testAuth(t), Validator: fixedDecision{}}, itemtest.NewMemStore()), ""
+	case "unvalidated":
+		// The request-validation service can't answer, and the service fails
+		// closed.
+		v := validator.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})
+		return newHandler(logger, handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: testAuth(t), Validator: v}, itemtest.NewMemStore()), ""
 	case "internal":
 		return newHandler(logger, handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: testAuth(t)}, errStore{}), ""
 	case "badgw":
@@ -147,3 +158,11 @@ func (s blockingStore) Update(context.Context, item.ID, item.Draft) (item.Item, 
 }
 
 func (s blockingStore) Delete(context.Context, item.ID) error { s.wait(); return nil }
+
+// fixedDecision is a validator.Checker that answers every request with
+// itself: the zero value refuses.
+type fixedDecision validator.Decision
+
+func (d fixedDecision) Check(context.Context, validator.Request) (validator.Decision, error) {
+	return validator.Decision(d), nil
+}

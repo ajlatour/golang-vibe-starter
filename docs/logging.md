@@ -71,6 +71,8 @@ include `.git`; without it, container logs show `version=devel`.
 | `flag`        | flag lines             | Feature flag key.                                            |
 | `fallbacks`   | `flag service recovered` | Evaluations served from defaults during the outage.        |
 | `cache_ttl`   | `using feature flags` | How long a flag's value is kept (`FLAGS_CACHE_TTL`), e.g. `1s`. |
+| `fail_open`   | `using request validation`, `request validation unavailable` | Whether requests go through when the validation service can't answer (`VALIDATOR_FAILURE_MODE=open`), or are refused (`closed`, the default). |
+| `failures`    | `request validation recovered` | Requests answered with the failure mode (refused, or let through unchecked) during the outage. |
 | `go_version`  | `using runtime`        | The Go version the binary was built with, e.g. `go1.27.0`.  |
 | `gomaxprocs`  | `using runtime`        | How many CPUs the Go scheduler uses at once (`GOMAXPROCS`). |
 | `memory_limit_bytes` | `using runtime` | The Go runtime's soft memory limit (`GOMEMLIMIT`); `0` when there's none. |
@@ -121,6 +123,11 @@ upstream, comes back, and leaves the API.
 | `ready again` | INFO | none | A failing readiness check passes again. |
 | `server stopped` | INFO | none | Shutdown finished cleanly. |
 | `service failed` | ERROR | `error` | The service stopped on an error: a configuration error at startup, a port it couldn't listen on, or a shutdown that ran out of time. The last line it writes. |
+| `using request validation` | INFO | `url`, `timeout`, `fail_open` | Startup: every request but the probes is checked against the validation service. |
+| `request validation is off: no VALIDATOR_URL; every request goes unchecked` | WARN | none | Startup, without `VALIDATOR_URL`. Fine locally; in production, the check isn't happening. |
+| `request refused by validation` | INFO | `reason` | The validation service refused a request: a 403. `reason` is the service's, never sent to the client. |
+| `request validation unavailable` | WARN | `fail_open`, `error` | The validation service stopped answering: once per outage. Until it's back, requests are refused (503) or, failing open, let through unchecked, and the service is asked again once a second. |
+| `request validation recovered` | INFO | `failures`, `duration_ms` | The validation service answers again: how many requests the outage cost, and how long it lasted. |
 | `using runtime` | INFO | `go_version`, `gomaxprocs`, `memory_limit_bytes`, `stats_interval` | Startup: what the Go runtime runs with. |
 | `runtime stats` | INFO | `heap_bytes`, `runtime_memory_bytes`, `goroutines`, `gc_cycles` | Every `RUNTIME_STATS_INTERVAL` (5m): what the runtime holds. See [Memory over time](#memory-over-time). |
 | `profiling server started` | INFO | `addr` | Startup, with `PPROF_ADDR` set: the runtime profiles are served there. |

@@ -12,6 +12,14 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- Request validation: with `VALIDATOR_URL`, every request but the probes is checked against an
+  external request-validation service before the routes see it, after authentication and the
+  rate limit ([Request validation](docs/request-validation.md), ADR-0032). A refusal is a 403; when
+  the service can't answer, requests are refused with 503 (`VALIDATOR_FAILURE_MODE=closed`, the
+  default) or let through (`open`), and the service is asked again at most once a second.
+  `VALIDATOR_TIMEOUT` (300ms) bounds each call. The contract (`POST /validate`) is a placeholder
+  for the real service's. The local stack runs it against a WireMock stub.
+
 - Logs for debugging in production where the logs are all there is
   ([Logging](docs/logging.md#memory-over-time)):
   - `response sent` carries `response_error` for an error response: the message the client got,

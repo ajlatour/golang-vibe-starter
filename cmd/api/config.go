@@ -44,6 +44,14 @@ type config struct {
 	// LogClientIP adds client_ip to each request's log lines.
 	LogClientIP bool
 
+	// ValidatorURL is the request-validation service every request is
+	// checked against (internal/validator). Nil: no check.
+	ValidatorURL     *url.URL
+	ValidatorTimeout time.Duration
+	// ValidatorFailOpen lets requests through when the service can't
+	// answer; the default refuses them (VALIDATOR_FAILURE_MODE).
+	ValidatorFailOpen bool
+
 	// HeaderGuard is the header guard's policy: headerguard.DefaultPolicy,
 	// with the mode and limits overridden by the environment.
 	HeaderGuard headerguard.Policy
@@ -100,6 +108,15 @@ func loadConfig(getenv func(string) string) (config, error) {
 		// when debugging. An IP address is personal data in many
 		// jurisdictions, so a deployment can turn it off.
 		LogClientIP: envconfig.Optional(env, "LOG_CLIENT_IP", true, parseOnOff),
+
+		// Optional, so local development and tests can run without one, but
+		// loud when unset (see run). The timeout is short because the check
+		// is on every request's path, and failing closed is the default
+		// because a check the API can't serve without shouldn't be skipped
+		// quietly.
+		ValidatorURL:      envconfig.Optional(env, "VALIDATOR_URL", nil, parseHTTPURL),
+		ValidatorTimeout:  envconfig.Optional(env, "VALIDATOR_TIMEOUT", 300*time.Millisecond, envconfig.ParsePositiveDuration),
+		ValidatorFailOpen: envconfig.Optional(env, "VALIDATOR_FAILURE_MODE", false, parseFailureMode),
 	}
 
 	// The header guard: the defaults live in headerguard.DefaultPolicy, and
@@ -210,4 +227,17 @@ func parseOnOff(v string) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("want on or off, got %q", v)
+}
+
+// parseFailureMode reads VALIDATOR_FAILURE_MODE: closed (the default)
+// refuses requests when the validation service can't answer, open lets them
+// through.
+func parseFailureMode(v string) (bool, error) {
+	switch v {
+	case "closed":
+		return false, nil
+	case "open":
+		return true, nil
+	}
+	return false, fmt.Errorf("want closed or open, got %q", v)
 }

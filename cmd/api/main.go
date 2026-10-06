@@ -25,6 +25,7 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/limit"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 	"github.com/ajlatour/golang-vibe-starter/internal/profiling"
+	"github.com/ajlatour/golang-vibe-starter/internal/validator"
 )
 
 func main() {
@@ -129,9 +130,25 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		go profiling.Serve(ctx, logger, ln, metrics.WritePrometheus)
 	}
 
-	// Ready while this instance can reach the upstream, until shutdown.
-	readiness := httpx.NewReadiness(logger, time.Second, time.Second, httpx.Check{Name: "upstream", Fn: store.Reachable})
-	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness, Metrics: metrics, ClientIP: cfg.LogClientIP},
+	// Ready while this instance can reach the upstream, and the validation
+	// service if it can't serve without it, until shutdown.
+	checks := []httpx.Check{{Name: "upstream", Fn: store.Reachable}}
+	var checker validator.Checker
+	if cfg.ValidatorURL == nil {
+		logger.Warn("request validation is off: no VALIDATOR_URL; every request goes unchecked")
+	} else {
+		logger.Info("using request validation", logx.KeyURL, cfg.ValidatorURL.Redacted(),
+			logx.KeyTimeout, cfg.ValidatorTimeout.String(), logx.KeyFailOpen, cfg.ValidatorFailOpen)
+		c := validator.New(cfg.ValidatorURL.String(),
+			&http.Client{Timeout: cfg.ValidatorTimeout, Transport: newTransport(cfg.Limits.MaxInFlight)})
+		if !cfg.ValidatorFailOpen {
+			checks = append(checks, httpx.Check{Name: "validator", Fn: c.Reachable})
+		}
+		checker = c
+	}
+	readiness := httpx.NewReadiness(logger, time.Second, time.Second, checks...)
+	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness, Metrics: metrics, ClientIP: cfg.LogClientIP,
+		Validator: checker, ValidatorFailOpen: cfg.ValidatorFailOpen},
 		store, item.WithFlags(evaluator))
 	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, handler,
 		httpx.MaxHeaderBytes(serverHeaderLimit(cfg.HeaderGuard)),
@@ -195,6 +212,11 @@ type handlerConfig struct {
 	Metrics *httpmetrics.Recorder
 	// ClientIP logs each request's client IP (LOG_CLIENT_IP).
 	ClientIP bool
+	// Validator checks every request but the probes (internal/validator).
+	// Nil checks nothing.
+	Validator validator.Checker
+	// ValidatorFailOpen lets requests through when it can't answer.
+	ValidatorFailOpen bool
 }
 
 // newHandler builds the API's root handler. From the outside in: the standard
@@ -228,8 +250,24 @@ func newHandler(logger *slog.Logger, cfg handlerConfig, items item.Store, opts .
 		mwOpts = append(mwOpts, httpx.WithClientIP())
 	}
 	return httpx.Middleware(logger, limit.InFlight(limits,
-		headerguard.Middleware(logger, cfg.Guard, apikey.Middleware(logger, auth, limit.PerClient(limits, identifyByKey, httpx.RecordRoute(mux))))),
+		headerguard.Middleware(logger, cfg.Guard, apikey.Middleware(logger, auth, limit.PerClient(limits, identifyByKey, validate(logger, cfg, probes, httpx.RecordRoute(mux)))))),
 		mwOpts...)
+}
+
+// validate puts the request-validation check in front of next, if there's a
+// validator: after authentication, so it knows who's calling (the key's
+// name), and after the rate limit, so a client's flood never reaches it. The
+// probes are exempt, like from the limits.
+func validate(logger *slog.Logger, cfg handlerConfig, probes []string, next http.Handler) http.Handler {
+	if cfg.Validator == nil {
+		return next
+	}
+	return validator.Middleware(logger, cfg.Validator, validator.Policy{
+		FailOpen: cfg.ValidatorFailOpen,
+		Retry:    time.Second,
+		Exempt:   probes,
+		Client:   func(r *http.Request) string { return apikey.Name(r.Context()) },
+	}, next)
 }
 
 // identifyByKey tells the per-client rate limit who a request comes from:
