@@ -1,0 +1,166 @@
+{
+  "sha": "cdccad7c80fd1555c93cd565d0d8f53b3080f9e0",
+  "time": "2026-10-05T10:26:21Z",
+  "subject": "Merge pull request #4 from ajlatour/dependabot/docker_compose/compose-a4d466a7c7",
+  "run_id": 37296578484,
+  "attempt": 1,
+  "wall_seconds": 84,
+  "jobs": [
+    {
+      "name": "docs",
+      "queued_seconds": 2,
+      "seconds": 42,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 3
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 2
+        },
+        {
+          "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 11
+        },
+        {
+          "name": "Build and check the docs site",
+          "seconds": 21
+        },
+        {
+          "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 1
+        }
+      ]
+    },
+    {
+      "name": "integration",
+      "queued_seconds": 1,
+      "seconds": 82,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 13
+        },
+        {
+          "name": "Start the stack",
+          "seconds": 48
+        },
+        {
+          "name": "Integration tests",
+          "seconds": 13
+        },
+        {
+          "name": "Stop the stack",
+          "seconds": 1
+        },
+        {
+          "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 1
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "test",
+      "queued_seconds": 1,
+      "seconds": 50,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 19
+        },
+        {
+          "name": "gofmt",
+          "seconds": 0
+        },
+        {
+          "name": "go vet",
+          "seconds": 2
+        },
+        {
+          "name": "Unit tests",
+          "seconds": 23
+        },
+        {
+          "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "vuln",
+      "queued_seconds": 2,
+      "seconds": 36,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 3
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 0
+        },
+        {
+          "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 17
+        },
+        {
+          "name": "govulncheck",
+          "seconds": 11
+        },
+        {
+          "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    }
+  ]
+}

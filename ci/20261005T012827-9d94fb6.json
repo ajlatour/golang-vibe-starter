@@ -1,0 +1,131 @@
+{
+  "sha": "9d94fb6c89980068beda879987be0f5ce2d00bea",
+  "time": "2026-10-05T01:28:27Z",
+  "subject": "Screen every request's headers with a header guard",
+  "run_id": 37251561461,
+  "attempt": 1,
+  "wall_seconds": 88,
+  "jobs": [
+    {
+      "name": "docs",
+      "queued_seconds": 3,
+      "seconds": 46,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 2
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@v7",
+          "seconds": 13
+        },
+        {
+          "name": "Build and check the docs site",
+          "seconds": 26
+        },
+        {
+          "name": "Post Run actions/setup-go@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "integration",
+      "queued_seconds": 2,
+      "seconds": 86,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@v7",
+          "seconds": 18
+        },
+        {
+          "name": "Start the stack",
+          "seconds": 48
+        },
+        {
+          "name": "Integration tests",
+          "seconds": 14
+        },
+        {
+          "name": "Stop the stack",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/setup-go@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "test",
+      "queued_seconds": 2,
+      "seconds": 35,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 2
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "seconds": 2
+        },
+        {
+          "name": "Run actions/setup-go@v7",
+          "seconds": 18
+        },
+        {
+          "name": "gofmt",
+          "seconds": 0
+        },
+        {
+          "name": "go vet",
+          "seconds": 1
+        },
+        {
+          "name": "Unit tests",
+          "seconds": 9
+        },
+        {
+          "name": "Post Run actions/setup-go@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    }
+  ]
+}

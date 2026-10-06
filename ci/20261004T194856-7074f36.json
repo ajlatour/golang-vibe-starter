@@ -1,0 +1,96 @@
+{
+  "sha": "7074f362b59bf036dd03c1c89b73dadb3b81be37",
+  "time": "2026-10-04T19:48:56Z",
+  "subject": "Move the upstream client into item/httpstore",
+  "run_id": 37229704302,
+  "attempt": 1,
+  "wall_seconds": 82,
+  "jobs": [
+    {
+      "name": "integration",
+      "queued_seconds": 2,
+      "seconds": 80,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@v7",
+          "seconds": 12
+        },
+        {
+          "name": "Start the stack",
+          "seconds": 46
+        },
+        {
+          "name": "Integration tests",
+          "seconds": 13
+        },
+        {
+          "name": "Stop the stack",
+          "seconds": 1
+        },
+        {
+          "name": "Post Run actions/setup-go@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "test",
+      "queued_seconds": 2,
+      "seconds": 34,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 2
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@v7",
+          "seconds": 19
+        },
+        {
+          "name": "gofmt",
+          "seconds": 0
+        },
+        {
+          "name": "go vet",
+          "seconds": 1
+        },
+        {
+          "name": "Unit tests",
+          "seconds": 7
+        },
+        {
+          "name": "Post Run actions/setup-go@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "sha": "a3eba67a8133db0d8a6d7bf8bc14dde0d3972ec8",
+  "time": "2026-10-05T00:22:04Z",
+  "subject": "Render the documentation as a local website",
+  "run_id": 37247245211,
+  "attempt": 1,
+  "wall_seconds": 90,
+  "jobs": [
+    {
+      "name": "integration",
+      "queued_seconds": 2,
+      "seconds": 87,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@v7",
+          "seconds": 13
+        },
+        {
+          "name": "Start the stack",
+          "seconds": 53
+        },
+        {
+          "name": "Integration tests",
+          "seconds": 13
+        },
+        {
+          "name": "Stop the stack",
+          "seconds": 2
+        },
+        {
+          "name": "Post Run actions/setup-go@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "test",
+      "queued_seconds": 1,
+      "seconds": 27,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@v7",
+          "seconds": 10
+        },
+        {
+          "name": "gofmt",
+          "seconds": 0
+        },
+        {
+          "name": "go vet",
+          "seconds": 1
+        },
+        {
+          "name": "Unit tests",
+          "seconds": 8
+        },
+        {
+          "name": "Post Run actions/setup-go@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    }
+  ]
+}

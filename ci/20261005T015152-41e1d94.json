@@ -1,0 +1,131 @@
+{
+  "sha": "41e1d94c93e3c4f73509b045ee649ca9d17e7b29",
+  "time": "2026-10-05T01:51:52Z",
+  "subject": "Make settings visible in .env.example and the header limits configurable",
+  "run_id": 37253093567,
+  "attempt": 1,
+  "wall_seconds": 83,
+  "jobs": [
+    {
+      "name": "docs",
+      "queued_seconds": 3,
+      "seconds": 37,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@v7",
+          "seconds": 14
+        },
+        {
+          "name": "Build and check the docs site",
+          "seconds": 16
+        },
+        {
+          "name": "Post Run actions/setup-go@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "integration",
+      "queued_seconds": 2,
+      "seconds": 80,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Run actions/setup-go@v7",
+          "seconds": 12
+        },
+        {
+          "name": "Start the stack",
+          "seconds": 47
+        },
+        {
+          "name": "Integration tests",
+          "seconds": 16
+        },
+        {
+          "name": "Stop the stack",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/setup-go@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "test",
+      "queued_seconds": 2,
+      "seconds": 39,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 2
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@v7",
+          "seconds": 19
+        },
+        {
+          "name": "gofmt",
+          "seconds": 0
+        },
+        {
+          "name": "go vet",
+          "seconds": 2
+        },
+        {
+          "name": "Unit tests",
+          "seconds": 10
+        },
+        {
+          "name": "Post Run actions/setup-go@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    }
+  ]
+}

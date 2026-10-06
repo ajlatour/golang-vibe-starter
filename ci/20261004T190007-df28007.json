@@ -1,0 +1,96 @@
+{
+  "sha": "df28007fac43067134d980926c3718b2d6ff146e",
+  "time": "2026-10-04T19:00:07Z",
+  "subject": "Reorganise the documentation into a short README and docs/",
+  "run_id": 37226574405,
+  "attempt": 1,
+  "wall_seconds": 79,
+  "jobs": [
+    {
+      "name": "integration",
+      "queued_seconds": 2,
+      "seconds": 76,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@v7",
+          "seconds": 12
+        },
+        {
+          "name": "Start the stack",
+          "seconds": 43
+        },
+        {
+          "name": "Integration tests",
+          "seconds": 15
+        },
+        {
+          "name": "Stop the stack",
+          "seconds": 1
+        },
+        {
+          "name": "Post Run actions/setup-go@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "test",
+      "queued_seconds": 2,
+      "seconds": 20,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@v7",
+          "seconds": 12
+        },
+        {
+          "name": "gofmt",
+          "seconds": 0
+        },
+        {
+          "name": "go vet",
+          "seconds": 1
+        },
+        {
+          "name": "Unit tests",
+          "seconds": 2
+        },
+        {
+          "name": "Post Run actions/setup-go@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    }
+  ]
+}

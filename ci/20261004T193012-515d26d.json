@@ -1,0 +1,96 @@
+{
+  "sha": "515d26d60f49b7ad193e90c6352c65fb01054e09",
+  "time": "2026-10-04T19:30:12Z",
+  "subject": "Add a Makefile for common commands; run CI through it",
+  "run_id": 37228510585,
+  "attempt": 1,
+  "wall_seconds": 80,
+  "jobs": [
+    {
+      "name": "integration",
+      "queued_seconds": 2,
+      "seconds": 77,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@v7",
+          "seconds": 11
+        },
+        {
+          "name": "Start the stack",
+          "seconds": 44
+        },
+        {
+          "name": "Integration tests",
+          "seconds": 14
+        },
+        {
+          "name": "Stop the stack",
+          "seconds": 1
+        },
+        {
+          "name": "Post Run actions/setup-go@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "test",
+      "queued_seconds": 2,
+      "seconds": 26,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 2
+        },
+        {
+          "name": "Run actions/checkout@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Run actions/setup-go@v7",
+          "seconds": 17
+        },
+        {
+          "name": "gofmt",
+          "seconds": 1
+        },
+        {
+          "name": "go vet",
+          "seconds": 0
+        },
+        {
+          "name": "Unit tests",
+          "seconds": 2
+        },
+        {
+          "name": "Post Run actions/setup-go@v7",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@v7",
+          "seconds": 1
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    }
+  ]
+}
