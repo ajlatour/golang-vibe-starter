@@ -10,6 +10,8 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+## [0.3.2] - 2026-10-06
+
 ### Changed
 
 - Packages are told what they need instead of reaching into each other
