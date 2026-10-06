@@ -40,7 +40,9 @@ include `.git`; without it, container logs show `version=devel`.
 | `route`       | `response sent`, error lines | Matched route pattern, e.g. `GET /items/{id}`. Group by this, not `path`. Empty if no route matched. Not on `request received`: routing hasn't happened yet. |
 | `path`        | `request received`, `response sent`, error lines | Raw URL path. The query string is never logged. |
 | `content_length` | `request received`  | Size of the request body the client declared, in bytes; -1 if unknown. The body itself is never logged. |
+| `client_ip`   | `request received`, `response sent` | The IP address the request's connection came from: behind a load balancer, the balancer's, since proxy headers are never trusted. Off with `LOG_CLIENT_IP=off`. |
 | `status`      | `response sent`        | Response status code.                                        |
+| `response_error` | `response sent`, when the response was an error | The error message the client was sent (`{"error": "..."}`): why the request was refused, or what failed. Capped at 200 characters, since it can quote the client's own input. |
 | `bytes`       | `response sent`        | Response body size.                                          |
 | `duration_ms` | `response sent`, `flag service recovered` | Time to serve the request, or the length of a flagd outage, in milliseconds (a decimal number). |
 | `upstream`    | upstream call lines, `internal error` | The upstream call, `METHOD /path`, e.g. `GET /items`. |
@@ -69,6 +71,14 @@ include `.git`; without it, container logs show `version=devel`.
 | `flag`        | flag lines             | Feature flag key.                                            |
 | `fallbacks`   | `flag service recovered` | Evaluations served from defaults during the outage.        |
 | `cache_ttl`   | `using feature flags` | How long a flag's value is kept (`FLAGS_CACHE_TTL`), e.g. `1s`. |
+| `go_version`  | `using runtime`        | The Go version the binary was built with, e.g. `go1.27.0`.  |
+| `gomaxprocs`  | `using runtime`        | How many CPUs the Go scheduler uses at once (`GOMAXPROCS`). |
+| `memory_limit_bytes` | `using runtime` | The Go runtime's soft memory limit (`GOMEMLIMIT`); `0` when there's none. |
+| `stats_interval` | `using runtime`     | How often `runtime stats` is logged (`RUNTIME_STATS_INTERVAL`); `0s` when it isn't. |
+| `heap_bytes`  | `runtime stats`        | Bytes held by heap objects: live ones, and dead ones not yet swept. |
+| `runtime_memory_bytes` | `runtime stats` | All the memory the Go runtime holds from the OS: the heap, stacks, and what it's kept but not returned. Close to the process's resident memory. |
+| `goroutines`  | `runtime stats`        | Goroutines running or waiting.                               |
+| `gc_cycles`   | `runtime stats`        | Garbage collections since the process started.               |
 
 ## Messages
 
@@ -79,10 +89,10 @@ upstream, comes back, and leaves the API.
 
 | Message | Level | Fields | When |
 | ------- | ----- | ------ | ---- |
-| `request received` | INFO; DEBUG for `/healthz` | `method`, `path`, `content_length` | A request arrives. |
+| `request received` | INFO; DEBUG for `/healthz` | `method`, `path`, `content_length` | A request arrives. With `LOG_CLIENT_IP` on (the default), this and `response sent` add `client_ip`. |
 | `upstream request sent` | INFO | `upstream` | Before each call to the upstream. |
 | `upstream response received` | INFO | `upstream`, `upstream_status`, `upstream_duration_ms` | The upstream answered, with any status. |
-| `response sent` | INFO; DEBUG for `/healthz`; ERROR for 5xx | `method`, `route`, `path`, `status`, `bytes`, `duration_ms` | The reply goes to the client. |
+| `response sent` | INFO; DEBUG for `/healthz`; ERROR for 5xx | `method`, `route`, `path`, `status`, `bytes`, `duration_ms` | The reply goes to the client. An error response adds `response_error`, what the client was told. |
 | `internal error` | ERROR | `method`, `route`, `path`, `error` | A request failed with a 5xx. When an upstream call caused it, the `upstream*` fields are on this line too. |
 | `client disconnected` | INFO | `method`, `route`, `path`, `error` | The client left mid-request; it is answered with 499, not an error. |
 | `panic serving request` | ERROR | `method`, `route`, `path`, `panic`, `stack` | A handler panicked; the client gets a 500. |
@@ -110,6 +120,9 @@ upstream, comes back, and leaves the API.
 | `not ready` | WARN | `reason` | `/readyz` started answering 503: `shutting down`, or a check failed (`upstream unavailable`, with `error`). Logged once per change, not per probe. |
 | `ready again` | INFO | none | A failing readiness check passes again. |
 | `server stopped` | INFO | none | Shutdown finished cleanly. |
+| `service failed` | ERROR | `error` | The service stopped on an error: a configuration error at startup, a port it couldn't listen on, or a shutdown that ran out of time. The last line it writes. |
+| `using runtime` | INFO | `go_version`, `gomaxprocs`, `memory_limit_bytes`, `stats_interval` | Startup: what the Go runtime runs with. |
+| `runtime stats` | INFO | `heap_bytes`, `runtime_memory_bytes`, `goroutines`, `gc_cycles` | Every `RUNTIME_STATS_INTERVAL` (5m): what the runtime holds. See [Memory over time](#memory-over-time). |
 | `profiling server started` | INFO | `addr` | Startup, with `PPROF_ADDR` set: the runtime profiles are served there. |
 | `profiling server is reachable beyond this machine; keep its port private` | WARN | `addr` | Startup, with `PPROF_ADDR` on an address other machines can reach. Expected inside a container whose port is published privately, as in the compose stack; anywhere else, a mistake. |
 | `profiling server failed` | ERROR | `error` | The profiling server stopped unexpectedly. The API keeps running, without profiles. |
@@ -156,6 +169,24 @@ as an upstream failure.
 defaults, and `duration_ms`, how long the outage lasted) when it's back. A problem with a single
 flag logs one `WARN` until it evaluates again. Per-evaluation detail is `DEBUG`.
 
+## Memory over time
+
+Where the logs are all there is, `runtime stats` is the view of memory: one line every
+`RUNTIME_STATS_INTERVAL` (5m), with what the Go runtime holds. Read it as a trend over hours,
+never as one line:
+
+- **A leak** is `heap_bytes` or `goroutines` whose low points keep rising while traffic doesn't.
+  Growing goroutines are the more common leak in Go: something blocked forever, holding its stack
+  and what it references.
+- **Memory the runtime keeps** is `runtime_memory_bytes` growing while `heap_bytes` doesn't: the
+  runtime hasn't returned freed memory to the OS yet. That's not a leak; `GOMEMLIMIT` bounds it.
+- **Pressure** is `gc_cycles` rising quickly between lines: the collector is working hard to stay
+  inside the memory limit.
+
+`using runtime` at startup says what limits applied (`memory_limit_bytes` is `GOMEMLIMIT`), and
+`service failed` is the last line if the service stops on an error. To find which code holds the
+memory, profiles are the next step: [Performance](performance.md#profiling).
+
 ## Rules for log lines
 
 What is never logged:
@@ -169,6 +200,10 @@ What is never logged:
 - URL credentials. A URL goes into a log only through `(*url.URL).Redacted()`, and any error that
   can come from `http.Client.Do` goes through `logx.RedactURLError` first, because net/http puts
   the URL in the error text.
+
+What is logged that may be personal data: `client_ip`, the address each request came from, and
+`api_key`, a key's configured name. An IP address is personal data in many jurisdictions;
+`LOG_CLIENT_IP=off` leaves it out, where a deployment's rules say to.
 
 Bounds: `path` and `upstream` paths are cut at 512 characters, and the upstream and flagd error
 messages at 200, with a trailing `…`. Use `logx.Truncate` for any other logged value that comes

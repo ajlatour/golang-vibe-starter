@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"log/slog"
+	"net"
 	"net/http"
 	"runtime/debug"
 	"time"
@@ -18,13 +19,16 @@ func Middleware(logger *slog.Logger, h http.Handler, opts ...MiddlewareOption) h
 	for _, opt := range opts {
 		opt(&o)
 	}
-	return defensiveHeaders(assignRequestID(logRequests(logger, o.metrics, recoverPanics(logger, h))))
+	return defensiveHeaders(assignRequestID(logRequests(logger, o, recoverPanics(logger, h))))
 }
 
 // MiddlewareOption adds to what Middleware does.
 type MiddlewareOption func(*middlewareOptions)
 
-type middlewareOptions struct{ metrics Metrics }
+type middlewareOptions struct {
+	metrics  Metrics
+	clientIP bool
+}
 
 // Metrics records each request: Start as it arrives, Observe as its response
 // is sent, with the route pattern it matched ("" if none), its method, status
@@ -37,6 +41,25 @@ type Metrics interface {
 // WithMetrics records every request in m.
 func WithMetrics(m Metrics) MiddlewareOption {
 	return func(o *middlewareOptions) { o.metrics = m }
+}
+
+// WithClientIP adds client_ip, the address the request's connection came
+// from, to "request received" and "response sent". It's the connection's
+// address: proxy headers such as X-Forwarded-For are never trusted (the
+// header guard removes them), so behind a load balancer it's the balancer's.
+// An IP address is personal data in many jurisdictions, which is why this is
+// an option.
+func WithClientIP() MiddlewareOption {
+	return func(o *middlewareOptions) { o.clientIP = true }
+}
+
+// clientIP is the IP address r's connection came from.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 // defensiveHeaders sets headers every response gets, errors included:
@@ -91,7 +114,8 @@ func receivedLevel(r *http.Request) slog.Level {
 // arrives, and "response sent" when the handler is done, with the status,
 // size and duration. The first is what shows a request that never finishes;
 // metadata only, never headers or bodies.
-func logRequests(logger *slog.Logger, metrics Metrics, next http.Handler) http.Handler {
+func logRequests(logger *slog.Logger, o middlewareOptions, next http.Handler) http.Handler {
+	metrics := o.metrics
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		if metrics != nil {
@@ -99,11 +123,16 @@ func logRequests(logger *slog.Logger, metrics Metrics, next http.Handler) http.H
 		}
 		// No route yet: ServeMux matches it inside next, so only the raw
 		// path identifies the request at this point.
-		logger.LogAttrs(r.Context(), receivedLevel(r), "request received",
+		received := [4]slog.Attr{
 			slog.String(logx.KeyMethod, r.Method),
 			slog.String(logx.KeyPath, logx.Truncate(r.URL.Path, logx.MaxLoggedPath)),
 			slog.Int64(logx.KeyContentLength, r.ContentLength),
-		)
+		}
+		n := 3
+		if o.clientIP {
+			received[3], n = slog.String(logx.KeyClientIP, clientIP(r)), 4
+		}
+		logger.LogAttrs(r.Context(), receivedLevel(r), "request received", received[:n]...)
 
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		if metrics != nil {
@@ -115,24 +144,39 @@ func logRequests(logger *slog.Logger, metrics Metrics, next http.Handler) http.H
 		next.ServeHTTP(rec, r)
 		// The route is known once the handler has returned: RecordRoute
 		// noted it (see route).
-		logger.LogAttrs(r.Context(), responseLevel(r, rec.status), "response sent",
-			append(requestAttrs(r),
-				slog.Int(logx.KeyStatus, rec.status),
-				slog.Int(logx.KeyBytes, rec.bytes),
-				logx.DurationMS(time.Since(start)),
-			)...,
+		// Room for every field "response sent" can have, so appending them
+		// never has to grow the slice.
+		attrs := appendRequestAttrs(make([]slog.Attr, 0, 8), r)
+		attrs = append(attrs,
+			slog.Int(logx.KeyStatus, rec.status),
+			slog.Int(logx.KeyBytes, rec.bytes),
+			logx.DurationMS(time.Since(start)),
 		)
+		if o.clientIP {
+			attrs = append(attrs, slog.String(logx.KeyClientIP, clientIP(r)))
+		}
+		if rec.errMsg != "" {
+			// What the client was told, which may quote its own input (a
+			// JSON field name, say): bounded like any outside value.
+			attrs = append(attrs, slog.String(logx.KeyResponseError, logx.Truncate(rec.errMsg, maxLoggedResponseError)))
+		}
+		logger.LogAttrs(r.Context(), responseLevel(r, rec.status), "response sent", attrs...)
 	})
 }
 
 // requestAttrs identifies a request in a log line: method, route pattern (for
 // grouping, e.g. "GET /items/{id}"; empty if no route matched) and raw path.
 func requestAttrs(r *http.Request) []slog.Attr {
-	return []slog.Attr{
+	return appendRequestAttrs(make([]slog.Attr, 0, 3), r)
+}
+
+// appendRequestAttrs appends requestAttrs(r) to attrs.
+func appendRequestAttrs(attrs []slog.Attr, r *http.Request) []slog.Attr {
+	return append(attrs,
 		slog.String(logx.KeyMethod, r.Method),
 		slog.String(logx.KeyRoute, route(r)),
 		slog.String(logx.KeyPath, logx.Truncate(r.URL.Path, logx.MaxLoggedPath)),
-	}
+	)
 }
 
 // recoverPanics turns a handler panic into a 500 instead of a dropped
@@ -159,12 +203,34 @@ func recoverPanics(logger *slog.Logger, next http.Handler) http.Handler {
 	})
 }
 
-// statusRecorder captures the status code and body size written by a handler.
+// maxLoggedResponseError caps the response_error logged.
+const maxLoggedResponseError = 200
+
+// statusRecorder captures the status code and body size written by a
+// handler, and the error message WriteError sent, if any.
 type statusRecorder struct {
 	http.ResponseWriter
 	status      int
 	bytes       int
 	wroteHeader bool
+	errMsg      string
+}
+
+// noteError tells the statusRecorder under w, if there is one, the error
+// message the response sends. Handlers in between may wrap w, so it looks
+// through each Unwrap.
+func noteError(w http.ResponseWriter, msg string) {
+	for {
+		switch rw := w.(type) {
+		case *statusRecorder:
+			rw.errMsg = msg
+			return
+		case interface{ Unwrap() http.ResponseWriter }:
+			w = rw.Unwrap()
+		default:
+			return
+		}
+	}
 }
 
 func (r *statusRecorder) WriteHeader(code int) {

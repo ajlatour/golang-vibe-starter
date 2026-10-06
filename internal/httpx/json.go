@@ -35,8 +35,11 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// WriteError sends {"error": msg} with the given status.
+// WriteError sends {"error": msg} with the given status. Through Middleware,
+// the "response sent" line then carries msg as response_error, so the logs
+// say why a request was refused, not only that it was.
 func WriteError(w http.ResponseWriter, status int, msg string) {
+	noteError(w, msg)
 	WriteJSON(w, status, map[string]string{"error": msg})
 }
 
