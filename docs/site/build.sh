@@ -4,7 +4,12 @@
 # from the repository root; the API spec page (api.html) is rendered
 # separately, with Redocly.
 #
-#   sh docs/site/build.sh <output directory>
+#   sh docs/site/build.sh <output directory> [performance history]
+#
+# The Performance history page holds the charts of main's performance and CI
+# times when given them, as an HTML fragment (`report trends -fragment`; make
+# docs-release, for the docs a release attaches); without, it says where to
+# find them.
 #
 # Pages work straight from disk: links between documents are rewritten from
 # .md to .html, the link to docs/openapi.json points at api.html, the one to
@@ -13,14 +18,16 @@
 # signed-in browser, so it would show as a broken image).
 set -eu
 
-out=${1:?usage: build.sh <output directory>}
+out=${1:?usage: build.sh <output directory> [performance history]}
+history=${2:-}
 mkdir -p "$out"
 cp docs/site/site.css "$out/site.css"
 # Linked from the README; .txt so a browser shows it rather than downloading it.
 cp .env.example "$out/env.example.txt"
 
 # The navigation, by theme: one "theme|source|output" line per page, in
-# order. "-" as the source is a page built elsewhere (Redocly's API spec).
+# order. "-" as the source is a page built elsewhere (Redocly's API spec), and
+# "+history" the Performance history page, which this script writes.
 # Every guide in docs/ must be listed: the build stops on one that isn't, so a
 # new guide is placed in a theme on purpose.
 navigation='Start|README.md|index.html
@@ -32,6 +39,7 @@ Run it|docs/feature-flags.md|feature-flags.html
 Run it|docs/logging.md|logging.html
 Build and ship|docs/development.md|development.html
 Build and ship|docs/performance.md|performance.html
+Build and ship|+history|history.html
 Build and ship|docs/releasing.md|releasing.html
 Architecture|docs/architecture.md|architecture.html
 Architecture|docs/decisions.md|decisions.html'
@@ -45,6 +53,25 @@ done
 
 # The pages this script renders, as source:output.
 pages=$(echo "$navigation" | awk -F'|' '$2 != "-" { printf "%s:%s ", $2, $3 }')
+
+# The Performance history page's source: the charts, a raw HTML block with no
+# blank line (one would end it), or where to find them.
+history_md="$out/.history.md"
+{
+	echo "# Performance history"
+	echo
+	if [ -n "$history" ]; then
+		echo "How \`main\`'s performance, and CI's time, changed up to this release: the records on the"
+		echo "\`perf-data\` branch, charted ([Performance](docs/performance.md#trends) explains them)."
+		echo
+		cat "$history"
+	else
+		echo "This build has no performance history. The documentation attached to each"
+		echo "[release](docs/releasing.md#what-the-tag-publishes) includes it, charting \`main\`'s performance and"
+		echo "CI's time up to that release; \`make docs-release\` builds it here, and \`make perf-trends\` charts"
+		echo "the latest ([Performance](docs/performance.md#trends))."
+	fi
+} > "$history_md"
 
 # A page's title is its first top-level heading.
 title() { sed -n 's/^# //p' "$1" | head -n 1; }
@@ -64,6 +91,7 @@ nav() {
 			fi
 			case $nav_src in
 			-) nav_label="API spec" ;;
+			+history) nav_label=$(title "$history_md") ;;
 			README.md) nav_label=Overview ;;
 			*) nav_label=$(title "$nav_src") ;;
 			esac
@@ -80,6 +108,7 @@ nav() {
 
 for page in $pages; do
 	src=${page%%:*} dest=${page#*:}
+	[ "$src" = +history ] && src=$history_md
 	nav "$dest" > "$out/.nav.html"
 	# --wrap=none keeps each element on one line, so the sed rewrites below
 	# can rely on matching it.
@@ -98,4 +127,4 @@ for page in $pages; do
 		> "$out/$dest"
 	echo "  $src -> $out/$dest"
 done
-rm -f "$out/.nav.html"
+rm -f "$out/.nav.html" "$history_md"

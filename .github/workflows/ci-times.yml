@@ -1,0 +1,66 @@
+name: CI times
+
+# Records how long CI took on main after every successful run: the whole
+# pipeline, each job (and its wait for a runner), and each step, read from the
+# GitHub API and saved as one small JSON file per run on the perf-data branch,
+# beside the performance records. `make perf-trends` charts them. See
+# docs/performance.md#pipeline-time.
+#
+# It runs after CI rather than inside it, so it can see every job's finished
+# timings, and a failure here never fails CI.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Queued, never cancelled: every run gets its record.
+concurrency:
+  group: ci-times
+  cancel-in-progress: false
+
+jobs:
+  record:
+    # Only main's own pushes: a pull request from a branch named main runs
+    # CI with event pull_request. A failed or cancelled run stopped early, so
+    # its times would read as a faster pipeline.
+    if: github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # To push to perf-data. Only main's own code runs here, never a pull
+      # request's: workflow_run runs the workflow as it is on main.
+      contents: write
+      # To read the run's jobs.
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+      RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+      RECORD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: perf/report/go.sum
+
+      - name: Write the record
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$RUNNER_TEMP/run.json"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/jobs" \
+            --jq '.jobs[]' > "$RUNNER_TEMP/jobs.json"
+          go build -C perf/report -o "$RUNNER_TEMP/report" .
+          "$RUNNER_TEMP/report" ci-record -run "$RUNNER_TEMP/run.json" -jobs "$RUNNER_TEMP/jobs.json" > "$RUNNER_TEMP/record.json"
+          cat "$RUNNER_TEMP/record.json"
+
+      - name: Save it to the perf-data branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          sh perf/save-record.sh ci "$RUNNER_TEMP/record.json" "Record CI's times for ${RECORD_SHA::7}"

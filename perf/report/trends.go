@@ -101,27 +101,39 @@ func ptr(v float64) *float64 { return &v }
 // readRecords reads every record in dir, oldest first by file name, which the
 // workflow starts with the time.
 func readRecords(dir string) ([]record, error) {
-	files, err := filepath.Glob(filepath.Join(dir, "*.json"))
-	if err != nil {
-		return nil, err
-	}
-	slices.Sort(files)
 	var out []record
-	for _, f := range files {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			return nil, err
-		}
+	err := readDir(dir, func(path string, b []byte) error {
 		var r record
 		if err := json.Unmarshal(b, &r); err != nil {
-			return nil, fmt.Errorf("%s: %w", f, err)
+			return fmt.Errorf("%s: %w", path, err)
 		}
 		out = append(out, r)
+		return nil
+	})
+	return out, err
+}
+
+// readDir calls f with each JSON file in dir, in name order, and fails if
+// there are none.
+func readDir(dir string, f func(path string, b []byte) error) error {
+	files, err := filepath.Glob(filepath.Join(dir, "*.json"))
+	if err != nil {
+		return err
 	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf("%s: no records", dir)
+	if len(files) == 0 {
+		return fmt.Errorf("%s: no records", dir)
 	}
-	return out, nil
+	slices.Sort(files)
+	for _, path := range files {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if err := f(path, b); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // series is one line on a chart: a value per record, NaN where it has none.
@@ -133,18 +145,31 @@ type series struct {
 type chart struct {
 	title, unit, note string
 	series            []series
+	// points are the commits along the x axis, one per value of each
+	// series; nil for the performance records'.
+	points []record
 }
 
-// runTrends is `report trends`: an HTML page charting the records.
+// runTrends is `report trends`: an HTML page charting the records, or with
+// -fragment, the charts alone, for the docs site's Performance history page
+// (docs/site/build.sh), which styles them (docs/site/site.css).
 func runTrends(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("trends", flag.ContinueOnError)
 	dir := fs.String("records", "", "the directory of records")
+	ciDir := fs.String("ci-records", "", "a directory of CI records (report ci-record), to chart too")
+	fragment := fs.Bool("fragment", false, "write the charts alone, as an HTML fragment for a docs page")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	recs, err := readRecords(*dir)
 	if err != nil {
 		return err
+	}
+	var ciRecs []ciRecord
+	if *ciDir != "" {
+		if ciRecs, err = readCIRecords(*ciDir); err != nil {
+			return err
+		}
 	}
 
 	load := func(name string, f func(*loadRecord) *float64) series {
@@ -204,6 +229,12 @@ func runTrends(args []string, out io.Writer) error {
 		{title: "Time per request, by route", unit: "µs", note: "BenchmarkAPI, in-process: the median of 6 runs on a shared runner.",
 			series: bench("sec/op", 1e6)},
 	}
+	if len(ciRecs) > 0 {
+		charts = append(charts, ciCharts(ciRecs)...)
+	}
+	if *fragment {
+		return writeTrendsBody(out, recs, charts, true)
+	}
 	return writeTrendsPage(out, recs, charts)
 }
 
@@ -211,7 +242,6 @@ var palette = []string{"#2563eb", "#dc2626", "#16a34a", "#d97706", "#9333ea", "#
 
 func writeTrendsPage(w io.Writer, recs []record, charts []chart) error {
 	p := func(format string, args ...any) { fmt.Fprintf(w, format, args...) }
-	first, last := recs[0], recs[len(recs)-1]
 	p(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Performance trends</title>
@@ -228,21 +258,44 @@ svg text { fill: var(--muted); font-size: 11px; } svg .grid { stroke: var(--grid
 .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; background: var(--c); }
 </style></head><body>
 <h1>Performance trends</h1>
-<p class="meta">main, %d commits measured, from %s (%s) to %s (%s). Hover a point for its commit.</p>
-`, len(recs), html.EscapeString(short(first.SHA)), html.EscapeString(day(first.Time)), html.EscapeString(short(last.SHA)), html.EscapeString(day(last.Time)))
+`)
+	if err := writeTrendsBody(w, recs, charts, false); err != nil {
+		return err
+	}
+	p("</body></html>\n")
+	return nil
+}
+
+// writeTrendsBody writes what the records cover, then the charts. As a
+// fragment, it's wrapped in <div class="perf-history"> for the docs site's
+// styles, and has no blank line: Markdown ends a raw HTML block at one.
+func writeTrendsBody(w io.Writer, recs []record, charts []chart, fragment bool) error {
+	p := func(format string, args ...any) { fmt.Fprintf(w, format, args...) }
+	first, last := recs[0], recs[len(recs)-1]
+	if fragment {
+		p("<div class=\"perf-history\">\n")
+	}
+	p("<p class=\"meta\">main, %d commits measured, from %s (%s) to %s (%s). Hover a point for its commit.</p>\n",
+		len(recs), html.EscapeString(short(first.SHA)), html.EscapeString(day(first.Time)), html.EscapeString(short(last.SHA)), html.EscapeString(day(last.Time)))
 	for _, c := range charts {
 		if !hasData(c) {
 			continue
 		}
 		p("<section><h2>%s <span style=\"color:var(--muted);font-weight:normal\">(%s)</span></h2><p class=\"note\">%s</p>\n", html.EscapeString(c.title), html.EscapeString(c.unit), html.EscapeString(c.note))
-		writeChart(w, recs, c)
+		points := c.points
+		if points == nil {
+			points = recs
+		}
+		writeChart(w, points, c)
 		p(`<div class="legend">`)
 		for i, s := range c.series {
 			p(`<span style="--c:%s">%s</span>`, palette[i%len(palette)], html.EscapeString(s.name))
 		}
 		p("</div></section>\n")
 	}
-	p("</body></html>\n")
+	if fragment {
+		p("</div>\n")
+	}
 	return nil
 }
 
@@ -308,8 +361,10 @@ func writeChart(w io.Writer, recs []record, c chart) {
 			if math.IsNaN(v) {
 				continue
 			}
-			fmt.Fprintf(w, `<circle cx="%.1f" cy="%.1f" r="3.5" fill="%s"><title>%s %s: %s %s
-%s</title></circle>`, x(i), y(v), color, html.EscapeString(short(recs[i].SHA)), html.EscapeString(s.name),
+			// The hover text's second line, the subject, follows "&#10;", not a
+			// line break: every line of the output then starts with a tag, so
+			// Markdown keeps it all as raw HTML (see writeTrendsBody).
+			fmt.Fprintf(w, `<circle cx="%.1f" cy="%.1f" r="3.5" fill="%s"><title>%s %s: %s %s&#10;%s</title></circle>`, x(i), y(v), color, html.EscapeString(short(recs[i].SHA)), html.EscapeString(s.name),
 				html.EscapeString(formatTick(v)), html.EscapeString(c.unit), html.EscapeString(recs[i].Subject))
 		}
 	}
