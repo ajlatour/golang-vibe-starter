@@ -42,6 +42,7 @@ include `.git`; without it, container logs show `version=devel`.
 | `content_length` | `request received`  | Size of the request body the client declared, in bytes; -1 if unknown. The body itself is never logged. |
 | `client_ip`   | `request received`, `response sent` | The IP address the request's connection came from: behind a load balancer, the balancer's, since proxy headers are never trusted. Off with `LOG_CLIENT_IP=off`. |
 | `status`      | `response sent`        | Response status code.                                        |
+| `response_code` | `response sent`, when the response was an error | The error's code (`httpx.Code`), e.g. `rate_limited`: what it means, stable, so group and alert on this rather than on `response_error`. |
 | `response_error` | `response sent`, when the response was an error | The error message the client was sent (`{"error": "..."}`): why the request was refused, or what failed. Capped at 200 characters, since it can quote the client's own input. |
 | `bytes`       | `response sent`        | Response body size.                                          |
 | `duration_ms` | `response sent`, `flag service recovered` | Time to serve the request, or the length of a flagd outage, in milliseconds (a decimal number). |

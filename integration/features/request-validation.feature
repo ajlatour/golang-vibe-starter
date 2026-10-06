@@ -21,6 +21,7 @@ Feature: Request validation
     When I GET "/items/refused-by-validator"
     Then the response status is 403
     And the JSON field "error" is "the request was refused"
+    And the JSON field "code" is "validation_refused"
 
   Scenario: In shadow mode, a request the validation service refuses goes through
     Given the feature flag "request-validation-enforce" is off
@@ -41,6 +42,7 @@ Feature: Request validation
     Then the response status is 503
     And the response header "Retry-After" is "1"
     And the JSON field "error" contains "request validation is unavailable"
+    And the JSON field "code" is "validation_unavailable"
     And requests are checked again within 2 seconds of the fault ending
 
   Scenario: The probes are never checked

@@ -23,8 +23,11 @@ const (
 	// KeyResponseError is the error message a response sent the client
 	// ({"error": "..."}): why a request was refused, or what failed.
 	KeyResponseError = "response_error"
-	KeyBytes         = "bytes"
-	KeyDurationMS    = "duration_ms"
+	// KeyResponseCode is the error response's code (httpx.Code): what it
+	// means, stable, to group and alert on.
+	KeyResponseCode = "response_code"
+	KeyBytes        = "bytes"
+	KeyDurationMS   = "duration_ms"
 
 	// Failures.
 	KeyError = "error"

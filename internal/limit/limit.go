@@ -76,7 +76,7 @@ func InFlight(p Policy, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		default:
 			w.Header().Set("Retry-After", "1")
-			httpx.WriteError(w, http.StatusServiceUnavailable, "the service is busy; try again shortly")
+			httpx.WriteError(w, http.StatusServiceUnavailable, httpx.CodeBusy, "the service is busy; try again shortly")
 		}
 	})
 }
@@ -196,7 +196,7 @@ func perClient(p Policy, identify Identify, now func() time.Time, next http.Hand
 		}
 		if ok, wait := l.take(clientName(r, id, identified), rate, burst); !ok {
 			w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
-			httpx.WriteError(w, http.StatusTooManyRequests, "too many requests; slow down")
+			httpx.WriteError(w, http.StatusTooManyRequests, httpx.CodeRateLimited, "too many requests; slow down")
 			return
 		}
 		next.ServeHTTP(w, r)

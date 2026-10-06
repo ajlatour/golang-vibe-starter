@@ -162,7 +162,7 @@ func handleDelete(logger *slog.Logger, store Store) http.HandlerFunc {
 func pathID(w http.ResponseWriter, r *http.Request) (ID, bool) {
 	id, err := ParseID(r.PathValue("id"))
 	if err != nil {
-		httpx.WriteError(w, http.StatusNotFound, ErrNotFound.Error())
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, ErrNotFound.Error())
 		return ID{}, false
 	}
 	return id, true
@@ -174,12 +174,12 @@ func pathID(w http.ResponseWriter, r *http.Request) (ID, bool) {
 func decodeDraft(w http.ResponseWriter, r *http.Request) (Draft, bool) {
 	var req Request
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
-		httpx.WriteError(w, http.StatusBadRequest, err.Error())
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeInvalidBody, err.Error())
 		return Draft{}, false
 	}
 	d, err := NewDraft(req.Name, req.Description)
 	if err != nil {
-		httpx.WriteError(w, http.StatusUnprocessableEntity, err.Error())
+		httpx.WriteError(w, http.StatusUnprocessableEntity, httpx.CodeInvalidField, err.Error())
 		return Draft{}, false
 	}
 	return d, true
@@ -191,7 +191,7 @@ func decodeDraft(w http.ResponseWriter, r *http.Request) (Draft, bool) {
 func storeError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
-		httpx.WriteError(w, http.StatusNotFound, ErrNotFound.Error())
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, ErrNotFound.Error())
 	case errors.Is(err, ErrStoreTimeout):
 		httpx.ServerError(logger, w, r, withStatus{err, http.StatusGatewayTimeout})
 	case errors.Is(err, ErrStoreUnavailable):

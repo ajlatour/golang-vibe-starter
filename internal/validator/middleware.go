@@ -141,7 +141,7 @@ func middleware(logger *slog.Logger, c Checker, p Policy, now func() time.Time, 
 				return
 			}
 			w.Header().Set("Retry-After", "1")
-			httpx.WriteError(w, http.StatusServiceUnavailable, unavailableMessage)
+			httpx.WriteError(w, http.StatusServiceUnavailable, httpx.CodeValidationUnavailable, unavailableMessage)
 			return
 		}
 		if ended, failures, took := o.answered(); ended {
@@ -159,7 +159,7 @@ func middleware(logger *slog.Logger, c Checker, p Policy, now func() time.Time, 
 			observe(Refused, call)
 			logger.LogAttrs(r.Context(), slog.LevelInfo, "request refused by validation",
 				slog.String(logx.KeyReason, logx.Truncate(d.Reason, 200)))
-			httpx.WriteError(w, http.StatusForbidden, refusedMessage)
+			httpx.WriteError(w, http.StatusForbidden, httpx.CodeValidationRefused, refusedMessage)
 			return
 		}
 		next.ServeHTTP(w, r)

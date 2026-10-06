@@ -35,12 +35,20 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// WriteError sends {"error": msg} with the given status. Through Middleware,
-// the "response sent" line then carries msg as response_error, so the logs
-// say why a request was refused, not only that it was.
-func WriteError(w http.ResponseWriter, status int, msg string) {
-	noteError(w, msg)
-	WriteJSON(w, status, map[string]string{"error": msg})
+// WriteError sends {"error": msg, "code": code} with the given status: msg
+// for people, code for a client to act on (see Code). Through Middleware,
+// the "response sent" line then carries both, as response_error and
+// response_code, so the logs say why a request was refused, not only that
+// it was.
+func WriteError(w http.ResponseWriter, status int, code Code, msg string) {
+	noteError(w, code, msg)
+	WriteJSON(w, status, errorBody{Error: msg, Code: code})
+}
+
+// errorBody is every error response's body.
+type errorBody struct {
+	Error string `json:"error"`
+	Code  Code   `json:"code"`
 }
 
 // StatusError is implemented by errors that map to a specific 5xx status for
@@ -63,7 +71,7 @@ func ServerError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, er
 		logger.LogAttrs(r.Context(), slog.LevelInfo, "client disconnected",
 			append(requestAttrs(r), logx.ErrorAttrs(err)...)...,
 		)
-		WriteError(w, StatusClientClosedRequest, "client closed request")
+		WriteError(w, StatusClientClosedRequest, CodeClientClosed, "client closed request")
 		return
 	}
 	logger.LogAttrs(r.Context(), slog.LevelError, "internal error",
@@ -75,7 +83,7 @@ func ServerError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, er
 		status = se.HTTPStatus()
 		msg = strings.ToLower(http.StatusText(status))
 	}
-	WriteError(w, status, msg)
+	WriteError(w, status, serverErrorCode(status), msg)
 }
 
 // jsonKind describes the JSON value a Go kind is decoded from.
@@ -130,4 +138,16 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
 		return errors.New("request body must contain a single JSON object")
 	}
 	return nil
+}
+
+// serverErrorCode is the code of a 5xx ServerError sends: what the status
+// says, that the upstream failed or timed out, or that this service did.
+func serverErrorCode(status int) Code {
+	switch status {
+	case http.StatusBadGateway:
+		return CodeUpstreamFailed
+	case http.StatusGatewayTimeout:
+		return CodeUpstreamTimeout
+	}
+	return CodeInternal
 }

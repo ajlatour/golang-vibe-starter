@@ -133,9 +133,10 @@ func DefaultPolicy() Policy {
 // violation is one broken rule: what to answer, and how to log it.
 type violation struct {
 	status  int
-	reason  string // fixed, for log queries: "header too large", ...
-	header  string // the header concerned, if one is
-	message string // safe to show the client
+	code    httpx.Code // what it means, for the client
+	reason  string     // fixed, for log queries: "header too large", ...
+	header  string     // the header concerned, if one is
+	message string     // safe to show the client
 }
 
 // Middleware wraps next with the guard. Put it inside httpx.Middleware, so a
@@ -159,7 +160,7 @@ func Middleware(logger *slog.Logger, p Policy, next http.Handler) http.Handler {
 				logger.LogAttrs(r.Context(), slog.LevelInfo, "request headers would be rejected", attrs...)
 			} else {
 				logger.LogAttrs(r.Context(), slog.LevelInfo, "request headers rejected", attrs...)
-				httpx.WriteError(w, v.status, v.message)
+				httpx.WriteError(w, v.status, v.code, v.message)
 				return
 			}
 		}
@@ -189,7 +190,7 @@ func (p Policy) check(r *http.Request) *violation {
 			total += size
 			if p.MaxHeaderBytes > 0 && size > p.MaxHeaderBytes {
 				return &violation{
-					status: http.StatusRequestHeaderFieldsTooLarge, reason: "header too large", header: name,
+					status: http.StatusRequestHeaderFieldsTooLarge, code: httpx.CodeHeadersTooLarge, reason: "header too large", header: name,
 					message: fmt.Sprintf("request header %s is larger than %d bytes", logx.Truncate(name, 64), p.MaxHeaderBytes),
 				}
 			}
@@ -197,13 +198,13 @@ func (p Policy) check(r *http.Request) *violation {
 	}
 	if p.MaxHeaders > 0 && count > p.MaxHeaders {
 		return &violation{
-			status: http.StatusRequestHeaderFieldsTooLarge, reason: "too many headers",
+			status: http.StatusRequestHeaderFieldsTooLarge, code: httpx.CodeHeadersTooLarge, reason: "too many headers",
 			message: fmt.Sprintf("a request may have at most %d headers", p.MaxHeaders),
 		}
 	}
 	if p.MaxTotalBytes > 0 && total > p.MaxTotalBytes {
 		return &violation{
-			status: http.StatusRequestHeaderFieldsTooLarge, reason: "headers too large",
+			status: http.StatusRequestHeaderFieldsTooLarge, code: httpx.CodeHeadersTooLarge, reason: "headers too large",
 			message: fmt.Sprintf("request headers are larger than %d bytes in total", p.MaxTotalBytes),
 		}
 	}
@@ -212,7 +213,7 @@ func (p Policy) check(r *http.Request) *violation {
 		if len(r.Header.Values(h)) > 1 {
 			name := http.CanonicalHeaderKey(h)
 			return &violation{
-				status: http.StatusBadRequest, reason: "duplicate header", header: name,
+				status: http.StatusBadRequest, code: httpx.CodeDuplicateHeader, reason: "duplicate header", header: name,
 				message: fmt.Sprintf("request has more than one %s header", name),
 			}
 		}
@@ -222,13 +223,13 @@ func (p Policy) check(r *http.Request) *violation {
 		ct := r.Header.Get("Content-Type")
 		if ct == "" {
 			return &violation{
-				status: http.StatusUnsupportedMediaType, reason: "missing content type", header: "Content-Type",
+				status: http.StatusUnsupportedMediaType, code: httpx.CodeUnsupportedMediaType, reason: "missing content type", header: "Content-Type",
 				message: "a request body must be sent with Content-Type: application/json",
 			}
 		}
 		if mt, _, err := mime.ParseMediaType(ct); err != nil || mt != "application/json" {
 			return &violation{
-				status: http.StatusUnsupportedMediaType, reason: "unsupported content type", header: "Content-Type",
+				status: http.StatusUnsupportedMediaType, code: httpx.CodeUnsupportedMediaType, reason: "unsupported content type", header: "Content-Type",
 				message: fmt.Sprintf("Content-Type must be application/json, not %q", logx.Truncate(ct, 100)),
 			}
 		}

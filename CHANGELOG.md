@@ -10,6 +10,17 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+### Added
+
+- Every error response carries a stable `code` beside its message: `{"error": "...", "code":
+  "rate_limited"}`. The message is for people and may be reworded; the code is for clients to act
+  on, and tells apart errors that share a status (a 403 for a read-only key or a validation
+  refusal; a 503 for a busy service or unavailable validation). The codes are one list
+  (`internal/httpx/codes.go`), documented in the README and the OpenAPI spec, which tests hold to
+  it; "response sent" logs the code as `response_code`
+  ([ADR-0033](docs/decisions.md#adr-0033-errors-carry-a-stable-code-from-one-list)). Additive: the
+  `error` field is unchanged.
+
 ## [0.4.0] - 2026-10-06
 
 ### Added
