@@ -10,6 +10,8 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+## [0.3.1] - 2026-10-06
+
 ### Changed
 
 - The item model enforces its own rules: an item's ID, name and description are value objects that
