@@ -36,6 +36,7 @@ include `.git`; without it, container logs show `version=devel`.
 | `service`     | every line             | Always `api` for this binary.                                |
 | `version`     | every line             | Commit that built the binary (see above), or `devel`.        |
 | `request_id`  | lines within a request | Correlation ID (see above).                                  |
+| `trace_id`    | lines within a request | The request's W3C trace ID: the caller's, from a valid `traceparent` header, else a new one. Outbound calls carry the trace on, so it ties these lines to the trace across services. |
 | `method`      | `request received`, `response sent`, error lines | HTTP method.                                |
 | `route`       | `response sent`, error lines | Matched route pattern, e.g. `GET /items/{id}`. Group by this, not `path`. Empty if no route matched. Not on `request received`: routing hasn't happened yet. |
 | `path`        | `request received`, `response sent`, error lines | Raw URL path. The query string is never logged. |

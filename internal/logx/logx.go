@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"sync"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/tracectx"
 )
 
 // New returns a logger writing to w at level in the given format ("text" for
@@ -34,6 +36,12 @@ type requestIDKey struct{}
 // One allocation per request, as storing the ID alone would cost.
 type requestState struct {
 	id string
+
+	// The request's W3C trace context (SetTrace), and its trace ID as
+	// logged, made once rather than on every line.
+	trace    tracectx.Parent
+	traceID  string
+	hasTrace bool
 
 	mu    sync.Mutex
 	route string
@@ -86,6 +94,28 @@ func AddAttrs(ctx context.Context, attrs ...slog.Attr) {
 	}
 }
 
+// SetTrace records the request's trace context: every later log line of the
+// request carries its trace ID, and outbound calls (internal/jsoncall) carry
+// it on. Call it once, as the request arrives; a context without
+// WithRequestID ignores it.
+func SetTrace(ctx context.Context, p tracectx.Parent) {
+	if s := state(ctx); s != nil {
+		s.mu.Lock()
+		s.trace, s.traceID, s.hasTrace = p, p.TraceIDString(), true
+		s.mu.Unlock()
+	}
+}
+
+// Trace returns the request's trace context, if SetTrace recorded one.
+func Trace(ctx context.Context) (tracectx.Parent, bool) {
+	if s := state(ctx); s != nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.trace, s.hasTrace
+	}
+	return tracectx.Parent{}, false
+}
+
 // WithRequestID returns a copy of ctx carrying id as the correlation ID.
 func WithRequestID(ctx context.Context, id string) context.Context {
 	s := &requestState{id: id}
@@ -106,6 +136,9 @@ func (h contextHandler) Handle(ctx context.Context, r slog.Record) error {
 	if s := state(ctx); s != nil {
 		r.AddAttrs(slog.String(KeyRequestID, s.id))
 		s.mu.Lock()
+		if s.hasTrace {
+			r.AddAttrs(slog.String(KeyTraceID, s.traceID))
+		}
 		r.AddAttrs(s.attrs...)
 		s.mu.Unlock()
 	}

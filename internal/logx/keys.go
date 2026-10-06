@@ -8,6 +8,7 @@ const (
 	KeyService   = "service"
 	KeyVersion   = "version"
 	KeyRequestID = "request_id" // within a request, added from its context
+	KeyTraceID   = "trace_id"   // within a request: its W3C trace's ID (internal/tracectx)
 
 	// The request and response (see logRequests).
 	KeyMethod = "method"

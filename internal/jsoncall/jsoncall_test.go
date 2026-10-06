@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/jsoncall"
+	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
+	"github.com/ajlatour/golang-vibe-starter/internal/tracectx"
 )
 
 func newCall(url string) jsoncall.Call {
@@ -301,5 +303,37 @@ func TestDoRefusesRedirects(t *testing.T) {
 				t.Error("Do changed the caller's client")
 			}
 		}
+	}
+}
+
+// TestCallJoinsTheTrace checks a call made within a request carries its
+// trace on: the same trace and flags, with a span of the call's own; and
+// that a call outside any request sends no traceparent.
+func TestCallJoinsTheTrace(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("traceparent")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	call := jsoncall.Call{Client: srv.Client(), Method: http.MethodGet, URL: srv.URL, Label: "test", Want: http.StatusNoContent}
+
+	parent, _ := tracectx.Parse("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+	ctx := logx.WithRequestID(t.Context(), "req-1")
+	logx.SetTrace(ctx, parent)
+	if _, err := call.Do(ctx); err != nil {
+		t.Fatal(err)
+	}
+	sent, ok := tracectx.Parse(got)
+	if !ok || sent.TraceID != parent.TraceID || sent.Flags != parent.Flags || sent.SpanID == parent.SpanID {
+		t.Errorf("traceparent %q: want the request's trace and flags, with a new span", got)
+	}
+
+	got = "unset"
+	if _, err := call.Do(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got != "" {
+		t.Errorf("a call outside any request sent traceparent %q", got)
 	}
 }
