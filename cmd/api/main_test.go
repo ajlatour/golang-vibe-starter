@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -281,5 +282,19 @@ func TestNewTransport(t *testing.T) {
 		if tr.Proxy != nil {
 			t.Errorf("newTransport(%d) uses a proxy from the environment; want none", tt.maxInFlight)
 		}
+	}
+}
+
+// TestReportFailure checks why the service stopped is logged as a line like
+// any other, so a search of the logs finds it.
+func TestReportFailure(t *testing.T) {
+	var out strings.Builder
+	reportFailure(&out, func(string) string { return "" }, errors.New("config: UPSTREAM_URL: required"))
+	var line map[string]any
+	if err := json.Unmarshal([]byte(out.String()), &line); err != nil {
+		t.Fatalf("not a JSON log line: %v\n%s", err, out.String())
+	}
+	if line["level"] != "ERROR" || line["msg"] != "service failed" || line["error"] != "config: UPSTREAM_URL: required" || line["service"] != "api" {
+		t.Errorf("line = %v, want an ERROR service failed line with the error", line)
 	}
 }

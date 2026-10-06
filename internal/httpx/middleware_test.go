@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -105,3 +106,51 @@ func TestMiddlewareMetricsSurviveAbort(t *testing.T) {
 		t.Errorf("started %d, observed %d; want 1 and 1", m.started, m.observed)
 	}
 }
+
+// TestResponseSentSaysWhy checks "response sent" carries the error message
+// WriteError sent as response_error, bounded, through a wrapped writer too,
+// and nothing when the response wasn't an error.
+func TestResponseSentSaysWhy(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		handler http.HandlerFunc
+		want    any // response_error, or nil for none
+	}{
+		{"an error", func(w http.ResponseWriter, r *http.Request) {
+			WriteError(w, http.StatusUnprocessableEntity, "name is required")
+		}, "name is required"},
+		{"through a wrapped writer", func(w http.ResponseWriter, r *http.Request) {
+			WriteError(wrapped{w}, http.StatusTooManyRequests, "too many requests; slow down")
+		}, "too many requests; slow down"},
+		{"a long one, quoting the client", func(w http.ResponseWriter, r *http.Request) {
+			WriteError(w, http.StatusBadRequest, `invalid JSON: unknown field "`+strings.Repeat("x", 500)+`"`)
+		}, `invalid JSON: unknown field "` + strings.Repeat("x", maxLoggedResponseError-len(`invalid JSON: unknown field "`)) + "…"},
+		{"no error", func(w http.ResponseWriter, r *http.Request) {
+			WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		}, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var logs logtest.Buffer
+			h := Middleware(logs.Logger(slog.LevelInfo), tt.handler)
+			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/items", nil))
+			var sent map[string]any
+			for _, r := range logs.Records(t) {
+				if r["msg"] == "response sent" {
+					sent = r
+				}
+			}
+			if sent == nil {
+				t.Fatalf("no response sent line:\n%s", logs.String())
+			}
+			if got := sent[logx.KeyResponseError]; got != tt.want {
+				t.Errorf("response_error = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// wrapped is a ResponseWriter wrapper that can be unwrapped, as
+// http.ResponseController expects of one.
+type wrapped struct{ http.ResponseWriter }
+
+func (w wrapped) Unwrap() http.ResponseWriter { return w.ResponseWriter }

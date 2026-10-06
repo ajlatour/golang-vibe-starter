@@ -204,3 +204,32 @@ func TestLoadConfigHeaderLimits(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadConfigRuntimeStatsInterval(t *testing.T) {
+	env := func(interval string) func(string) string {
+		return func(k string) string {
+			switch k {
+			case "UPSTREAM_URL":
+				return "http://mock:8080"
+			case "RUNTIME_STATS_INTERVAL":
+				return interval
+			}
+			return ""
+		}
+	}
+	got, err := loadConfig(env(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RuntimeStatsInterval != 5*time.Minute {
+		t.Errorf("default = %v, want 5m", got.RuntimeStatsInterval)
+	}
+	if got, err := loadConfig(env("0s")); err != nil || got.RuntimeStatsInterval != 0 {
+		t.Errorf("0s = %v, %v; want off, no error", got.RuntimeStatsInterval, err)
+	}
+	for _, bad := range []string{"-1m", "often"} {
+		if _, err := loadConfig(env(bad)); err == nil {
+			t.Errorf("RUNTIME_STATS_INTERVAL=%s: no error, want one", bad)
+		}
+	}
+}

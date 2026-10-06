@@ -17,6 +17,9 @@ const (
 	// if unknown (e.g. chunked). Only the number is logged, never the body.
 	KeyContentLength = "content_length"
 	KeyStatus        = "status"
+	// KeyResponseError is the error message a response sent the client
+	// ({"error": "..."}): why a request was refused, or what failed.
+	KeyResponseError = "response_error"
 	KeyBytes         = "bytes"
 	KeyDurationMS    = "duration_ms"
 
@@ -59,6 +62,16 @@ const (
 	KeyURL     = "url"
 	KeyTimeout = "timeout"
 	KeyAddr    = "addr"
+
+	// The Go runtime: what it runs with, and what it's using.
+	KeyGoVersion          = "go_version"
+	KeyGOMAXPROCS         = "gomaxprocs"
+	KeyMemoryLimitBytes   = "memory_limit_bytes"
+	KeyStatsInterval      = "stats_interval"
+	KeyHeapBytes          = "heap_bytes"
+	KeyRuntimeMemoryBytes = "runtime_memory_bytes"
+	KeyGoroutines         = "goroutines"
+	KeyGCCycles           = "gc_cycles"
 )
 
 // MaxLoggedPath caps the request and upstream paths written to logs, which

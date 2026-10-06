@@ -38,9 +38,20 @@ func main() {
 	}()
 
 	if err := run(ctx, os.Args[1:], os.Getenv, os.Stdout); err != nil {
+		if len(os.Args) == 1 { // the service, not the healthcheck probe
+			reportFailure(os.Stdout, os.Getenv, err)
+		}
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// reportFailure logs why the service stopped, as a log line like every
+// other, so a search of the logs finds it: plain text on stderr, alone, would
+// be missed by anything reading the JSON lines. It makes its own logger,
+// since run's may not exist yet (a configuration error, say).
+func reportFailure(w io.Writer, getenv func(string) string, err error) {
+	logx.New(w, slog.LevelError, getenv("LOG_FORMAT"), "api", buildVersion()).Error("service failed", logx.KeyError, err)
 }
 
 // version is the build's version, set at link time in container builds
@@ -85,6 +96,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	}
 
 	logger := cfg.NewLogger(stdout, "api", buildVersion())
+	profiling.LogRuntime(logger, cfg.RuntimeStatsInterval)
+	go profiling.LogRuntimeStats(ctx, logger, cfg.RuntimeStatsInterval)
 	logger.Info("using upstream", logx.KeyURL, cfg.UpstreamURL.Redacted(), logx.KeyTimeout, cfg.UpstreamTimeout.String())
 	logger.Info("using header guard",
 		logx.KeyMode, cfg.HeaderGuard.Mode.String(),

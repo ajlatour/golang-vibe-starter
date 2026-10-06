@@ -37,6 +37,10 @@ type config struct {
 	// Empty, the default, serves none.
 	PprofAddr string
 
+	// RuntimeStatsInterval is how often to log the heap, memory and
+	// goroutines ("runtime stats"); zero logs none.
+	RuntimeStatsInterval time.Duration
+
 	// HeaderGuard is the header guard's policy: headerguard.DefaultPolicy,
 	// with the mode and limits overridden by the environment.
 	HeaderGuard headerguard.Policy
@@ -83,6 +87,11 @@ func loadConfig(getenv func(string) string) (config, error) {
 
 		// Off unless asked for: profiles expose the program's internals.
 		PprofAddr: env.String("PPROF_ADDR"),
+
+		// On by default: where the logs are all there is, these lines are
+		// the only view of memory over time, and one every 5 minutes costs
+		// nothing worth counting.
+		RuntimeStatsInterval: envconfig.Optional(env, "RUNTIME_STATS_INTERVAL", 5*time.Minute, parseNonNegativeDuration),
 	}
 
 	// The header guard: the defaults live in headerguard.DefaultPolicy, and

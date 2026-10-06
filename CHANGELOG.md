@@ -10,6 +10,18 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+### Added
+
+- Logs for debugging in production where the logs are all there is
+  ([Logging](docs/logging.md#memory-over-time)):
+  - `response sent` carries `response_error` for an error response: the message the client got,
+    so a 400, 404, 422, 429 or 503 says why, not only that it happened.
+  - `runtime stats`, every `RUNTIME_STATS_INTERVAL` (5m; `0s` turns it off): the heap, all the
+    memory the runtime holds, goroutines and GC cycles, the trend that shows a leak.
+  - `using runtime` at startup: the Go version, `GOMAXPROCS` and `GOMEMLIMIT`.
+  - `service failed`, when the service stops on an error: logged as a JSON line like the rest,
+    where it was only plain text on stderr.
+
 ## [0.3.2] - 2026-10-06
 
 ### Changed
