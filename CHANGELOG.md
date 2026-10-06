@@ -27,6 +27,8 @@ Ideas considered but not planned are listed under
   (the client's mistake) as its status, code and message, anything else through
   `httpx.ServerError`, logged and kept from the client. The item handlers no longer each write
   their errors. Responses are as before, and no allocations are added.
+- The outage tracking the flag client and request validation each had, the same code twice, is
+  one package, `internal/outage`, for any dependency on the request path. Behaviour is unchanged.
 
 ## [0.4.0] - 2026-10-06
 

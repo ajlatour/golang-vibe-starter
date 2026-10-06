@@ -19,6 +19,7 @@ import (
 
 	"github.com/ajlatour/golang-vibe-starter/internal/jsoncall"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
+	"github.com/ajlatour/golang-vibe-starter/internal/outage"
 )
 
 // maxResponseBytes caps how much of a flagd response is read.
@@ -31,9 +32,9 @@ type OFREP struct {
 	logger   *slog.Logger
 	defaults Defaults
 
-	outage    *outageTracker // is flagd answering?
-	problems  onceSet        // flags that failed, reported once until they recover
-	noDefault onceSet        // flags with no configured default, reported once
+	outage    *outage.Tracker // is flagd answering?
+	problems  onceSet         // flags that failed, reported once until they recover
+	noDefault onceSet         // flags with no configured default, reported once
 
 	ttl   time.Duration // see WithCache; zero caches nothing
 	now   func() time.Time
@@ -64,7 +65,7 @@ func NewOFREP(baseURL string, client *http.Client, logger *slog.Logger, defaults
 		client:   client,
 		logger:   logger,
 		defaults: defaults,
-		outage:   newOutageTracker(),
+		outage:   outage.New(nil),
 		now:      time.Now,
 	}
 	for _, opt := range opts {
@@ -93,7 +94,7 @@ func (c *OFREP) Bool(ctx context.Context, key string) bool {
 		return v
 	}
 	err := errNotRetried
-	if !c.outage.waiting(c.ttl) {
+	if !c.outage.Waiting(c.ttl) {
 		var v bool
 		if v, err = c.evalBool(ctx, key); err == nil {
 			if c.ttl > 0 {
@@ -107,7 +108,7 @@ func (c *OFREP) Bool(ctx context.Context, key string) bool {
 
 	def, hasDefault := c.defaults[key]
 	if serviceDown(err) {
-		if c.outage.failed() {
+		if c.outage.Failed() {
 			c.logger.WarnContext(ctx, "flag service unavailable, using default flag values",
 				logx.KeyFlag, key, logx.KeyError, err)
 		} else {
@@ -137,7 +138,7 @@ func (c *OFREP) logFallback(ctx context.Context, level slog.Level, key string, d
 // answered notes that flagd replied, and logs the end of an outage if one was
 // in progress.
 func (c *OFREP) answered(ctx context.Context) {
-	if ended, fallbacks, took := c.outage.answered(); ended {
+	if ended, fallbacks, took := c.outage.Answered(); ended {
 		c.logger.InfoContext(ctx, "flag service recovered",
 			logx.KeyFallbacks, fallbacks,
 			logx.DurationMS(took),

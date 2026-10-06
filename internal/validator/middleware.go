@@ -4,11 +4,11 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
+	"github.com/ajlatour/golang-vibe-starter/internal/outage"
 )
 
 // Policy is how the middleware behaves.
@@ -95,7 +95,7 @@ func middleware(logger *slog.Logger, c Checker, p Policy, now func() time.Time, 
 	for _, path := range p.Exempt {
 		exempt[path] = true
 	}
-	o := &outage{now: now}
+	o := outage.New(now)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if exempt[r.URL.Path] {
 			next.ServeHTTP(w, r)
@@ -116,7 +116,7 @@ func middleware(logger *slog.Logger, c Checker, p Policy, now func() time.Time, 
 		var d Decision
 		var err error
 		var call time.Duration
-		if o.waiting(p.Retry) {
+		if o.Waiting(p.Retry) {
 			err = errNotRetried
 		} else {
 			start := now()
@@ -132,7 +132,7 @@ func middleware(logger *slog.Logger, c Checker, p Policy, now func() time.Time, 
 			} else {
 				observe(Unavailable, call)
 			}
-			if o.failed() {
+			if o.Failed() {
 				logger.LogAttrs(r.Context(), slog.LevelWarn, "request validation unavailable",
 					slog.Bool(logx.KeyEnforcing, enforce), slog.Bool(logx.KeyFailOpen, p.FailOpen), slog.Any(logx.KeyError, err))
 			}
@@ -144,7 +144,7 @@ func middleware(logger *slog.Logger, c Checker, p Policy, now func() time.Time, 
 			httpx.WriteError(w, http.StatusServiceUnavailable, httpx.CodeValidationUnavailable, unavailableMessage)
 			return
 		}
-		if ended, failures, took := o.answered(); ended {
+		if ended, failures, took := o.Answered(); ended {
 			logger.LogAttrs(r.Context(), slog.LevelInfo, "request validation recovered",
 				slog.Int(logx.KeyFailures, failures), logx.DurationMS(took))
 		}
@@ -173,61 +173,3 @@ var errNotRetried = errorString("request validation unavailable; not asked again
 type errorString string
 
 func (e errorString) Error() string { return string(e) }
-
-// outage follows whether the service is answering: one warning when an
-// outage starts, one line when it ends, and at most one try per retry
-// interval in between. Safe for concurrent use.
-type outage struct {
-	now func() time.Time
-
-	mu       sync.Mutex
-	active   bool
-	since    time.Time // when the outage was first seen
-	tried    time.Time // when the service was last asked during it
-	failures int       // requests it answered with the failure mode
-}
-
-// failed records a request the service didn't answer about, and reports
-// whether it started an outage.
-func (o *outage) failed() (started bool) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if !o.active {
-		o.active, o.since, o.tried, o.failures = true, o.now(), o.now(), 0
-		started = true
-	}
-	o.failures++
-	return started
-}
-
-// waiting reports whether a request should take the failure mode without
-// asking: an outage is on, and the service was asked less than retry ago.
-// When it reports false during an outage, the caller is the one to ask.
-func (o *outage) waiting(retry time.Duration) bool {
-	if retry <= 0 {
-		return false
-	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if !o.active {
-		return false
-	}
-	now := o.now()
-	if now.Sub(o.tried) < retry {
-		return true
-	}
-	o.tried = now
-	return false
-}
-
-// answered records that the service answered, and if that ended an outage,
-// what it cost.
-func (o *outage) answered() (ended bool, failures int, took time.Duration) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if !o.active {
-		return false, 0, 0
-	}
-	o.active = false
-	return true, o.failures, o.now().Sub(o.since)
-}

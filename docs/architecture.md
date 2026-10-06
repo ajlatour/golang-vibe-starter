@@ -74,15 +74,16 @@ updates this table, and so the architecture, in the same pull request.
 | `cmd/apikey` | tool | Generates an API key and its `API_KEYS` entry | `internal/apikey` |
 | `internal/item` | feature | The item model (value objects that enforce its rules), the `Store` interface, the `/items` handlers and the API's JSON shapes (ADR-0030) | `internal/httpx` |
 | `internal/item/httpstore` | adapter | The `Store` on the upstream, over HTTP, translating the upstream's JSON and classifying its failures (ADR-0031) | `internal/item`, `internal/jsoncall`, `internal/logx` |
-| `internal/featureflag` | adapter | OFREP client for flagd, flag declarations, embedded defaults | `flagd`, `internal/jsoncall`, `internal/logx` |
+| `internal/featureflag` | adapter | OFREP client for flagd, flag declarations, embedded defaults | `flagd`, `internal/jsoncall`, `internal/logx`, `internal/outage` |
 | `internal/headerguard` | protection | Screens request headers | `internal/httpx`, `internal/logx` |
 | `internal/apikey` | protection | Authenticates API keys | `internal/httpx`, `internal/logx` |
-| `internal/validator` | protection | Checks every request against the request-validation service, and fails closed or open when it can't answer (ADR-0032) | `internal/httpx`, `internal/jsoncall`, `internal/logx` |
+| `internal/validator` | protection | Checks every request against the request-validation service, and fails closed or open when it can't answer (ADR-0032) | `internal/httpx`, `internal/jsoncall`, `internal/logx`, `internal/outage` |
 | `internal/limit` | protection | In-flight cap and per-client rate limit; told who a client is (ADR-0031) | `internal/httpx` |
 | `internal/httpx` | plumbing | Serving, middleware, JSON helpers, readiness | `internal/logx` |
 | `internal/jsoncall` | plumbing | One JSON-over-HTTP call, for every outbound client | `internal/logx` |
 | `internal/envconfig` | plumbing | Environment variables and the settings every service shares | `internal/logx` |
 | `internal/profiling` | plumbing | pprof and runtime metrics on a private listener | `internal/logx` |
+| `internal/outage` | foundation | Whether a dependency on the request path is answering: one log line each way, the cost, and at most one try per retry interval during an outage | nothing |
 | `internal/httpmetrics` | foundation | Request metrics in Prometheus's text format | nothing |
 | `internal/logx` | foundation | The logger, field names, per-request log state, redaction | nothing |
 | `flagd` | foundation | The flag definitions, embedded as the fallback defaults | nothing |
