@@ -91,22 +91,28 @@ development keys ([Calling the API](docs/curl.md#api-keys)). With `API_KEYS_FILE
 from a file and reloaded while the service runs, so they can be rotated without a restart: add the
 new key, move clients to it, then remove the old one.
 
-Errors are JSON, `{"error":"..."}`:
+Errors are JSON, `{"error": "...", "code": "..."}`: `error` is a message for people, which may be
+reworded, and `code` says what the error means, for a client to act on. It's stable, and tells
+apart errors that share a status:
 
-- 400: malformed body, or a header sent twice that may appear only once
-- 401: no API key, or not a valid one (with `WWW-Authenticate: Bearer`)
-- 403: a write with a read-only API key
-- 404: unknown ID
-- 429: over the client's rate limit (with `Retry-After`)
-- 415: a request body not sent as `Content-Type: application/json`
-- 422: validation failure
-- 431: request headers over a size limit
-- 500: unexpected failure in the API itself; details are logged, not returned
-- 502: the upstream couldn't give a usable answer: connection refused or reset, an error status,
-  or a body that won't decode. The body is just `{"error":"bad gateway"}`; the upstream's message
-  is logged, not returned
-- 503: the service is serving as many requests as it takes at once (with `Retry-After`)
-- 504: the upstream didn't answer within `UPSTREAM_TIMEOUT` (`{"error":"gateway timeout"}`)
+| Status | `code` | When |
+| ------ | ------ | ---- |
+| 400 | `invalid_body` | The body is malformed JSON, the wrong shape or types, has an unknown field, is empty, or is over 1 MiB |
+| 400 | `duplicate_header` | A header that may appear only once is sent twice |
+| 401 | `api_key_required` | No API key, or not sent as `Authorization: Bearer <key>` (with `WWW-Authenticate: Bearer`) |
+| 401 | `api_key_invalid` | An API key that isn't valid |
+| 403 | `read_only_key` | A write with a read-only API key |
+| 403 | `validation_refused` | The request-validation service refused the request ([Request validation](docs/request-validation.md)) |
+| 404 | `not_found` | No item has that ID |
+| 415 | `unsupported_media_type` | A request body not sent as `Content-Type: application/json` |
+| 422 | `invalid_field` | A value breaks a rule: `name` missing, blank or too long, or `description` too long |
+| 429 | `rate_limited` | Over the client's rate limit (with `Retry-After`) |
+| 431 | `headers_too_large` | Request headers over a size limit |
+| 500 | `internal` | An unexpected failure in the API itself; details are logged, not returned |
+| 502 | `upstream_failed` | The upstream couldn't give a usable answer: connection refused or reset, an error status, or a body that won't decode. Its message is logged, not returned |
+| 503 | `busy` | The service is serving as many requests as it takes at once (with `Retry-After`) |
+| 503 | `validation_unavailable` | The request-validation service can't answer, and the API fails closed (with `Retry-After`) |
+| 504 | `upstream_timeout` | The upstream didn't answer within `UPSTREAM_TIMEOUT` |
 
 Every response carries a `Client-Correlation-Id` header. Send your own to tie the service's log
 lines to yours, or quote the one returned when reporting a problem.

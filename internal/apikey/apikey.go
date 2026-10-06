@@ -376,30 +376,30 @@ func Middleware(logger *slog.Logger, p Policy, next http.Handler) http.Handler {
 			return
 		}
 
-		refuse := func(status int, reason, msg string, attrs ...slog.Attr) {
+		refuse := func(status int, code httpx.Code, reason, msg string, attrs ...slog.Attr) {
 			logger.LogAttrs(r.Context(), slog.LevelInfo, "request refused by authentication",
 				append([]slog.Attr{slog.String(logx.KeyReason, reason), slog.Int(logx.KeyStatus, status)}, attrs...)...)
 			if status == http.StatusUnauthorized {
 				w.Header().Set("WWW-Authenticate", `Bearer realm="api"`)
 			}
-			httpx.WriteError(w, status, msg)
+			httpx.WriteError(w, status, code, msg)
 		}
 		scheme, presented, _ := strings.Cut(header, " ")
 		switch {
 		case header == "":
-			refuse(http.StatusUnauthorized, "missing key", "an API key is required: send Authorization: Bearer <key>")
+			refuse(http.StatusUnauthorized, httpx.CodeAPIKeyRequired, "missing key", "an API key is required: send Authorization: Bearer <key>")
 			return
 		case !strings.EqualFold(scheme, "Bearer") || presented == "":
-			refuse(http.StatusUnauthorized, "not a bearer token", "send the API key as Authorization: Bearer <key>")
+			refuse(http.StatusUnauthorized, httpx.CodeAPIKeyRequired, "not a bearer token", "send the API key as Authorization: Bearer <key>")
 			return
 		}
 		k, ok := p.lookup(presented)
 		if !ok {
-			refuse(http.StatusUnauthorized, "unknown key", "the API key is not valid")
+			refuse(http.StatusUnauthorized, httpx.CodeAPIKeyInvalid, "unknown key", "the API key is not valid")
 			return
 		}
 		if k.Scope != Write && !safe(r.Method) {
-			refuse(http.StatusForbidden, "read-only key", "this API key may only read", slog.String(logx.KeyAPIKey, k.Name))
+			refuse(http.StatusForbidden, httpx.CodeReadOnlyKey, "read-only key", "this API key may only read", slog.String(logx.KeyAPIKey, k.Name))
 			return
 		}
 		// Every later log line of the request names the key, those written

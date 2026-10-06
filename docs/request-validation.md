@@ -34,7 +34,7 @@ service answers `200` with a decision:
 | The service | The client gets | Logged |
 | ----------- | --------------- | ------ |
 | allows | the response, as without the check | nothing extra |
-| refuses | enforcing: 403 `{"error": "the request was refused"}`; in shadow mode (below), the response, as if allowed | `request refused by validation`, with the service's `reason`, which never reaches the client |
+| refuses | enforcing: 403 `{"error": "the request was refused", "code": "validation_refused"}`; in shadow mode (below), the response, as if allowed | `request refused by validation`, with the service's `reason`, which never reaches the client |
 | can't answer: unreachable, timed out (`VALIDATOR_TIMEOUT`, 300ms), an error status, a body that won't decode | enforcing and failing closed (the default): 503, `Retry-After: 1`; failing open (`VALIDATOR_FAILURE_MODE=open`) or in shadow mode: the response, unchecked | `request validation unavailable` once when it starts, `request validation recovered` with the count when it ends |
 
 To adapt it to a real service, change `validator.Request` to carry what that service needs, and

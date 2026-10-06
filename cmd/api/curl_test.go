@@ -299,7 +299,7 @@ func TestAPIScript(t *testing.T) {
 		{name: "inline body", script: `scripts/api POST /items '{"name":"Inline"}'`, want: []string{"HTTP/1.1 201 Created", "Location: /items/", `"name":"Inline"`}},
 		{name: "body from a file", script: `scripts/api POST /items @` + bodyFile, want: []string{"HTTP/1.1 201 Created", `"name":"From a file"`}},
 		{name: "body from stdin", script: `echo '{"name":"Piped"}' | scripts/api POST /items -`, want: []string{"HTTP/1.1 201 Created", `"name":"Piped"`}},
-		{name: "a 4xx exits 1 and prints the body", script: `scripts/api GET /items/nope`, wantExit: 1, want: []string{"HTTP/1.1 404 Not Found", `{"error":"item not found"}`}},
+		{name: "a 4xx exits 1 and prints the body", script: `scripts/api GET /items/nope`, wantExit: 1, want: []string{"HTTP/1.1 404 Not Found", `{"error":"item not found","code":"not_found"}`}},
 		{name: "correlation ID", script: `scripts/api GET /items`, env: []string{"CORRELATION_ID=from-the-script"}, want: []string{"Client-Correlation-Id: from-the-script"}},
 		{name: "curl options pass through", script: `scripts/api GET /items -H 'X-Extra: t0ken'`, want: []string{"HTTP/1.1 200 OK"}},
 		{name: "a full URL", script: `scripts/api GET ` + spy.URL + `/healthz`, want: []string{`{"status":"ok"}`}},

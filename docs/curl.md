@@ -116,8 +116,9 @@ scripts/api POST /items '{"name": '
 # 400 Bad Request
 ```
 
-Every error body is `{"error": "..."}`, saying what was wrong. The README lists
-[every status](../README.md#api). To see the 502 and 504 the API gives when its upstream fails,
+Every error body is `{"error": "...", "code": "..."}`: what was wrong, for people, and a stable
+code saying what it means, for a script to act on. The README lists
+[every status and code](../README.md#api). To see the 502 and 504 the API gives when its upstream fails,
 switch on a WireMock fault: `make fault FAULT=unavailable` for a 502, or `FAULT=timeout-list` for a
 504 from `GET /items`, and `make fault-reset` to switch it off again. See
 [Fault injection](local-stack.md#fault-injection).

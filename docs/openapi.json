@@ -297,9 +297,14 @@
       "Error": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["error"],
+        "required": ["error", "code"],
         "properties": {
-          "error": { "type": "string", "description": "A short message safe to show a client. Details are logged, not returned." }
+          "error": { "type": "string", "description": "A short message safe to show a client. Details are logged, not returned. Written for people, and may be reworded: act on `code`." },
+          "code": {
+            "type": "string",
+            "description": "What the error means, for a client to act on: stable, unlike `error`. Two errors with one status can mean different things (a 403 for a read-only key, or one the validation service refused), and the code tells them apart.",
+            "enum": ["invalid_body", "duplicate_header", "api_key_required", "api_key_invalid", "read_only_key", "validation_refused", "not_found", "unsupported_media_type", "invalid_field", "rate_limited", "headers_too_large", "client_closed", "internal", "upstream_failed", "busy", "validation_unavailable", "upstream_timeout"]
+          }
         }
       }
     },

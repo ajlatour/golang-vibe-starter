@@ -146,7 +146,7 @@ func logRequests(logger *slog.Logger, o middlewareOptions, next http.Handler) ht
 		// noted it (see route).
 		// Room for every field "response sent" can have, so appending them
 		// never has to grow the slice.
-		attrs := appendRequestAttrs(make([]slog.Attr, 0, 8), r)
+		attrs := appendRequestAttrs(make([]slog.Attr, 0, 9), r)
 		attrs = append(attrs,
 			slog.Int(logx.KeyStatus, rec.status),
 			slog.Int(logx.KeyBytes, rec.bytes),
@@ -158,7 +158,9 @@ func logRequests(logger *slog.Logger, o middlewareOptions, next http.Handler) ht
 		if rec.errMsg != "" {
 			// What the client was told, which may quote its own input (a
 			// JSON field name, say): bounded like any outside value.
-			attrs = append(attrs, slog.String(logx.KeyResponseError, logx.Truncate(rec.errMsg, maxLoggedResponseError)))
+			attrs = append(attrs,
+				slog.String(logx.KeyResponseCode, string(rec.errCode)),
+				slog.String(logx.KeyResponseError, logx.Truncate(rec.errMsg, maxLoggedResponseError)))
 		}
 		logger.LogAttrs(r.Context(), responseLevel(r, rec.status), "response sent", attrs...)
 	})
@@ -197,7 +199,7 @@ func recoverPanics(logger *slog.Logger, next http.Handler) http.Handler {
 					slog.String(logx.KeyStack, string(debug.Stack())),
 				)...,
 			)
-			WriteError(w, http.StatusInternalServerError, "internal server error")
+			WriteError(w, http.StatusInternalServerError, CodeInternal, "internal server error")
 		}()
 		next.ServeHTTP(w, r)
 	})
@@ -214,16 +216,17 @@ type statusRecorder struct {
 	bytes       int
 	wroteHeader bool
 	errMsg      string
+	errCode     Code
 }
 
 // noteError tells the statusRecorder under w, if there is one, the error
 // message the response sends. Handlers in between may wrap w, so it looks
 // through each Unwrap.
-func noteError(w http.ResponseWriter, msg string) {
+func noteError(w http.ResponseWriter, code Code, msg string) {
 	for {
 		switch rw := w.(type) {
 		case *statusRecorder:
-			rw.errMsg = msg
+			rw.errMsg, rw.errCode = msg, code
 			return
 		case interface{ Unwrap() http.ResponseWriter }:
 			w = rw.Unwrap()

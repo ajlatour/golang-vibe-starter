@@ -10,12 +10,14 @@ Feature: API keys
     Then the response status is 401
     And the response header "WWW-Authenticate" starts with "Bearer "
     And the JSON field "error" contains "API key is required"
+    And the JSON field "code" is "api_key_required"
 
   Scenario: A key the service doesn't know is refused
     Given I use the API key "gvs_not-a-key"
     When I GET "/items"
     Then the response status is 401
     And the JSON field "error" is "the API key is not valid"
+    And the JSON field "code" is "api_key_invalid"
 
   Scenario: A read-only key can read
     Given I use the API key "gvs_local-read-only"
@@ -30,6 +32,7 @@ Feature: API keys
       """
     Then the response status is 403
     And the JSON field "error" is "this API key may only read"
+    And the JSON field "code" is "read_only_key"
 
     Examples:
       | method | path          |

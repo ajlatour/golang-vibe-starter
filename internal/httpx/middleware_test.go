@@ -117,13 +117,13 @@ func TestResponseSentSaysWhy(t *testing.T) {
 		want    any // response_error, or nil for none
 	}{
 		{"an error", func(w http.ResponseWriter, r *http.Request) {
-			WriteError(w, http.StatusUnprocessableEntity, "name is required")
+			WriteError(w, http.StatusUnprocessableEntity, CodeInvalidField, "name is required")
 		}, "name is required"},
 		{"through a wrapped writer", func(w http.ResponseWriter, r *http.Request) {
-			WriteError(wrapped{w}, http.StatusTooManyRequests, "too many requests; slow down")
+			WriteError(wrapped{w}, http.StatusTooManyRequests, CodeRateLimited, "too many requests; slow down")
 		}, "too many requests; slow down"},
 		{"a long one, quoting the client", func(w http.ResponseWriter, r *http.Request) {
-			WriteError(w, http.StatusBadRequest, `invalid JSON: unknown field "`+strings.Repeat("x", 500)+`"`)
+			WriteError(w, http.StatusBadRequest, CodeInvalidBody, `invalid JSON: unknown field "`+strings.Repeat("x", 500)+`"`)
 		}, `invalid JSON: unknown field "` + strings.Repeat("x", maxLoggedResponseError-len(`invalid JSON: unknown field "`)) + "…"},
 		{"no error", func(w http.ResponseWriter, r *http.Request) {
 			WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -144,6 +144,9 @@ func TestResponseSentSaysWhy(t *testing.T) {
 			}
 			if got := sent[logx.KeyResponseError]; got != tt.want {
 				t.Errorf("response_error = %q, want %q", got, tt.want)
+			}
+			if hasCode := sent[logx.KeyResponseCode] != nil; hasCode != (tt.want != nil) {
+				t.Errorf("response_code = %v, want one exactly when there's an error", sent[logx.KeyResponseCode])
 			}
 		})
 	}
