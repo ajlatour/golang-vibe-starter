@@ -408,7 +408,7 @@
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "BadGateway": {
-        "description": "The upstream couldn't give a usable answer: connection refused or reset, an error status, or a body that wouldn't decode.",
+        "description": "The upstream couldn't give a usable answer: connection refused or reset, an error status, a body that wouldn't decode, or an item that breaks the API's own rules (an ID, name or description it couldn't have made).",
         "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },

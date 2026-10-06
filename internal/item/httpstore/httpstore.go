@@ -76,12 +76,20 @@ func (s *Store) List(ctx context.Context, p item.Page) (item.Listing, error) {
 	if !p.Cursor.IsZero() {
 		path += "&cursor=" + p.Cursor.String()
 	}
-	if err := s.do(ctx, http.MethodGet, path, nil, http.StatusOK, &out); err != nil {
-		return item.Listing{}, err
+	var l item.Listing
+	accept := func() error {
+		l.Items = make([]item.Item, len(out.Items))
+		for i, u := range out.Items {
+			it, err := u.item()
+			if err != nil {
+				return fmt.Errorf("item %d of %d: %w", i+1, len(out.Items), err)
+			}
+			l.Items[i] = it
+		}
+		return nil
 	}
-	l := item.Listing{Items: make([]item.Item, len(out.Items))}
-	for i, u := range out.Items {
-		l.Items[i] = u.item()
+	if err := s.do(ctx, http.MethodGet, path, nil, http.StatusOK, &out, accept); err != nil {
+		return item.Listing{}, err
 	}
 	// The upstream's cursor goes back to it as it came; only a malformed
 	// one is dropped, which ends the list here rather than send it on.
@@ -96,18 +104,20 @@ func (s *Store) Get(ctx context.Context, id item.ID) (item.Item, error) {
 		return item.Item{}, item.ErrNotFound
 	}
 	var out upstreamItem
-	if err := s.do(ctx, http.MethodGet, itemPath(id), nil, http.StatusOK, &out); err != nil {
+	var it item.Item
+	if err := s.do(ctx, http.MethodGet, itemPath(id), nil, http.StatusOK, &out, out.into(&it)); err != nil {
 		return item.Item{}, err
 	}
-	return out.item(), nil
+	return it, nil
 }
 
 func (s *Store) Create(ctx context.Context, d item.Draft) (item.Item, error) {
 	var out upstreamItem
-	if err := s.do(ctx, http.MethodPost, "/items", newUpstreamInput(d), http.StatusCreated, &out); err != nil {
+	var it item.Item
+	if err := s.do(ctx, http.MethodPost, "/items", newUpstreamInput(d), http.StatusCreated, &out, out.into(&it)); err != nil {
 		return item.Item{}, err
 	}
-	return out.item(), nil
+	return it, nil
 }
 
 func (s *Store) Update(ctx context.Context, id item.ID, d item.Draft) (item.Item, error) {
@@ -115,17 +125,18 @@ func (s *Store) Update(ctx context.Context, id item.ID, d item.Draft) (item.Item
 		return item.Item{}, item.ErrNotFound
 	}
 	var out upstreamItem
-	if err := s.do(ctx, http.MethodPut, itemPath(id), newUpstreamInput(d), http.StatusOK, &out); err != nil {
+	var it item.Item
+	if err := s.do(ctx, http.MethodPut, itemPath(id), newUpstreamInput(d), http.StatusOK, &out, out.into(&it)); err != nil {
 		return item.Item{}, err
 	}
-	return out.item(), nil
+	return it, nil
 }
 
 func (s *Store) Delete(ctx context.Context, id item.ID) error {
 	if id.IsZero() {
 		return item.ErrNotFound
 	}
-	return s.do(ctx, http.MethodDelete, itemPath(id), nil, http.StatusNoContent, nil)
+	return s.do(ctx, http.MethodDelete, itemPath(id), nil, http.StatusNoContent, nil, nil)
 }
 
 // upstreamItem is an item as the upstream sends it. It's the upstream's own
@@ -139,10 +150,21 @@ type upstreamItem struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// item is u in the model's terms. The upstream is where items are kept, so
-// they're restored as it has them (see item.Restore).
-func (u upstreamItem) item() item.Item {
-	return item.Restore(u.ID, u.Name, u.Description, u.CreatedAt, u.UpdatedAt)
+// item is u in the model's terms, held to the model's rules (item.Parse):
+// the API passes on nothing it couldn't have made itself.
+func (u upstreamItem) item() (item.Item, error) {
+	return item.Parse(u.ID, u.Name, u.Description, u.CreatedAt, u.UpdatedAt)
+}
+
+// into is an accept step (see do) that parses the decoded item into it. u
+// must be the variable the response decodes into: the step reads it once
+// the body is in.
+func (u *upstreamItem) into(it *item.Item) func() error {
+	return func() error {
+		var err error
+		*it, err = u.item()
+		return err
+	}
 }
 
 // upstreamInput is the request body sent upstream to create or replace an
@@ -170,7 +192,7 @@ func itemPath(id item.ID) string {
 // out; "upstream response received" once a response has arrived, whatever its
 // status; and, if the call failed, one more line saying so (see
 // WithLogger). Never headers or bodies.
-func (s *Store) do(ctx context.Context, method, path string, body any, want int, out any) error {
+func (s *Store) do(ctx context.Context, method, path string, body any, want int, out any, accept func() error) error {
 	// The query string (a list's limit and cursor, which is the client's)
 	// is never logged, like any request's.
 	call := method + " " + logx.Truncate(pathOnly(path), logx.MaxLoggedPath)
@@ -183,6 +205,14 @@ func (s *Store) do(ctx context.Context, method, path string, body any, want int,
 		s.logger.LogAttrs(ctx, slog.LevelInfo, "upstream request sent", slog.String(logx.KeyUpstream, call))
 		start := time.Now()
 		status, err = s.roundTrip(ctx, method, path, body, want, out)
+		if err == nil && accept != nil {
+			// The answer decoded, but may still not be one the API can
+			// pass on: then it fails like a body that won't decode,
+			// and isn't retried, since it would come back the same.
+			if aerr := accept(); aerr != nil {
+				err = fmt.Errorf("upstream %s %s: unusable answer: %w", method, pathOnly(path), aerr)
+			}
+		}
 		elapsed = time.Since(start)
 		attrs = upstreamAttrs(call, status, elapsed)
 		if status != 0 {

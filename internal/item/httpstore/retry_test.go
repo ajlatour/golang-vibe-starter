@@ -123,3 +123,42 @@ func TestRetryBudget(t *testing.T) {
 		t.Errorf("%d retries for %d failing requests, want the budget's 10 to 20", retries, requests)
 	}
 }
+
+// TestInvalidUpstreamItems checks an item the upstream sends that breaks the
+// model's rules makes the call fail as an unusable answer (a 502 to the
+// client), logged, and never retried: the same request gets the same item.
+func TestInvalidUpstreamItems(t *testing.T) {
+	for name, body := range map[string]string{
+		"a bad ID":          `{"id":"../admin","name":"x","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`,
+		"no name":           `{"id":"a","name":"","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`,
+		"no timestamps":     `{"id":"a","name":"x"}`,
+		"one bad item of 2": `{"items":[{"id":"a","name":"x","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"},{"id":"b c","name":"y","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var calls atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(body))
+			}))
+			defer srv.Close()
+			var logs logtest.Buffer
+			store := httpstore.New(srv.URL, srv.Client(), httpstore.WithRetries(3), httpstore.WithLogger(logs.Logger(slog.LevelInfo)))
+			var err error
+			if strings.HasPrefix(body, `{"items"`) {
+				_, err = store.List(t.Context(), firstPage)
+			} else {
+				_, err = store.Get(t.Context(), itemtest.MustID("a"))
+			}
+			if !errors.Is(err, item.ErrStoreUnavailable) || !errors.Is(err, item.ErrInvalidItem) {
+				t.Errorf("error = %v; want ErrStoreUnavailable (a 502) and ErrInvalidItem", err)
+			}
+			if n := calls.Load(); n != 1 {
+				t.Errorf("asked the upstream %d times, want once: an unusable answer isn't retried", n)
+			}
+			if !strings.Contains(logs.String(), `"msg":"upstream request failed"`) {
+				t.Errorf("the failure wasn't logged:\n%s", logs.String())
+			}
+		})
+	}
+}

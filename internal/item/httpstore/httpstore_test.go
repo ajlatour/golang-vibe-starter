@@ -28,7 +28,7 @@ func TestStoreUpstreamResponses(t *testing.T) {
 		wantNotFound bool
 		wantErr      string // substring; "" means success
 	}{
-		{name: "ok", status: http.StatusOK, contentType: "application/json", body: `{"id":"a","name":"x"}`},
+		{name: "ok", status: http.StatusOK, contentType: "application/json", body: `{"id":"a","name":"x","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`},
 		{name: "json 404 is not found", status: http.StatusNotFound, contentType: "application/json; charset=utf-8", body: `{"error":"item not found"}`, wantNotFound: true},
 		{name: "plain 404 is a misconfigured route", status: http.StatusNotFound, contentType: "text/plain", body: "404 page not found", wantErr: "unexpected status 404"},
 		{name: "500 includes upstream message", status: http.StatusInternalServerError, contentType: "application/json", body: `{"error":"db down"}`, wantErr: `"db down"`},
@@ -86,7 +86,7 @@ func TestStoreRequests(t *testing.T) {
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				gotPath = r.URL.EscapedPath()
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`{"id":"x"}`))
+				w.Write([]byte(`{"id":"a","name":"x","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`))
 			}))
 			defer upstream.Close()
 

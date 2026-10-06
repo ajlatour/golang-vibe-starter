@@ -52,7 +52,7 @@ func TestStoreCallLogging(t *testing.T) {
 			name: "success",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`{"id":"a","name":"x"}`))
+				w.Write([]byte(`{"id":"a","name":"x","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`))
 			},
 			want:       []logLine{{"INFO", sent}, {"INFO", received}},
 			wantStatus: 200,

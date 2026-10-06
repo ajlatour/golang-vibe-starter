@@ -127,7 +127,7 @@ apart errors that share a status:
 | 429 | `rate_limited` | Over the client's rate limit (with `Retry-After`) |
 | 431 | `headers_too_large` | Request headers over a size limit |
 | 500 | `internal` | An unexpected failure in the API itself; details are logged, not returned |
-| 502 | `upstream_failed` | The upstream couldn't give a usable answer: connection refused or reset, an error status, or a body that won't decode. Its message is logged, not returned |
+| 502 | `upstream_failed` | The upstream couldn't give a usable answer: connection refused or reset, an error status, a body that won't decode, or an item that breaks the API's own rules. Its message is logged, not returned |
 | 503 | `busy` | The service is serving as many requests as it takes at once (with `Retry-After`) |
 | 503 | `validation_unavailable` | The request-validation service can't answer, and the API fails closed (with `Retry-After`) |
 | 504 | `upstream_timeout` | The upstream didn't answer within `UPSTREAM_TIMEOUT` |

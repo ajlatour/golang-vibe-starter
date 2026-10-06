@@ -48,7 +48,7 @@ For context: what the items below build on.
 | ✅ | API versioning by header (ADR-0036) | |
 | ✅ | Cursor paging, 50 by default (ADR-0037) | |
 | 🔄 | Bound the rate limiter's memory; key IPv6 by /64 (ADR-0038) | built, awaiting its pull request |
-| 🔄 | Check what the upstream sends back | items that break the model's rules become a 502 |
+| ✅ | Check what the upstream sends back (ADR-0039) | items that break the model's rules become a 502 |
 | ⏭️ | `ETag` / `If-Match` for safe concurrent updates | stdlib |
 | ⏭️ | Nightly soak test, failing on heap or goroutine growth | container (k6), CI schedule |
 | ⏭️ | Check the WireMock stubs against the `/items` contract | stdlib test; see contract testing below |
