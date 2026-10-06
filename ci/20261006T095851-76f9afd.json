@@ -1,0 +1,248 @@
+{
+  "sha": "76f9afd1e0e4e7d0f1ddc05b423c84bd20125863",
+  "time": "2026-10-06T09:56:08Z",
+  "subject": "Merge pull request #27 from ajlatour/handler-errors",
+  "run_id": 37446368323,
+  "attempt": 1,
+  "wall_seconds": 136,
+  "jobs": [
+    {
+      "name": "docs",
+      "queued_seconds": 2,
+      "seconds": 34,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 3
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 10
+        },
+        {
+          "name": "Build and check the docs site",
+          "seconds": 15
+        },
+        {
+          "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 1
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "fuzz",
+      "queued_seconds": 2,
+      "seconds": 106,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 2
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 18
+        },
+        {
+          "name": "Fuzz",
+          "seconds": 81
+        },
+        {
+          "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "integration",
+      "queued_seconds": 2,
+      "seconds": 77,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 11
+        },
+        {
+          "name": "Run actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
+          "seconds": 5
+        },
+        {
+          "name": "Build the API image",
+          "seconds": 17
+        },
+        {
+          "name": "Start the stack",
+          "seconds": 12
+        },
+        {
+          "name": "Integration tests",
+          "seconds": 21
+        },
+        {
+          "name": "Stop the stack",
+          "seconds": 1
+        },
+        {
+          "name": "Post Run actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
+          "seconds": 2
+        },
+        {
+          "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 1
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "lint",
+      "queued_seconds": 2,
+      "seconds": 133,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 2
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 0
+        },
+        {
+          "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 14
+        },
+        {
+          "name": "staticcheck and gosec",
+          "seconds": 113
+        },
+        {
+          "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 1
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    },
+    {
+      "name": "test",
+      "queued_seconds": 2,
+      "seconds": 49,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 17
+        },
+        {
+          "name": "gofmt",
+          "seconds": 0
+        },
+        {
+          "name": "go vet",
+          "seconds": 2
+        },
+        {
+          "name": "Unit tests",
+          "seconds": 25
+        },
+        {
+          "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 0
+        },
+        {
+          "name": "Complete job",
+          "seconds": 1
+        }
+      ]
+    },
+    {
+      "name": "vuln",
+      "queued_seconds": 2,
+      "seconds": 34,
+      "steps": [
+        {
+          "name": "Set up job",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 1
+        },
+        {
+          "name": "Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 17
+        },
+        {
+          "name": "govulncheck",
+          "seconds": 11
+        },
+        {
+          "name": "Post Run actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e",
+          "seconds": 0
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "seconds": 1
+        },
+        {
+          "name": "Complete job",
+          "seconds": 0
+        }
+      ]
+    }
+  ]
+}
