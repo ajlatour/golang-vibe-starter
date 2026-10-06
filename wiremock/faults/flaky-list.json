@@ -1,0 +1,14 @@
+{
+  "id": "f0000000-0000-4000-8000-000000000007",
+  "name": "FAULT: the first GET /items fails with 503, then the stubs answer as usual",
+  "priority": 1,
+  "scenarioName": "flaky-list",
+  "requiredScenarioState": "Started",
+  "newScenarioState": "failed once",
+  "request": { "method": "GET", "url": "/items" },
+  "response": {
+    "status": 503,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "error": "service unavailable" }
+  }
+}

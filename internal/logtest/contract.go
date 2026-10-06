@@ -26,7 +26,7 @@ type Message struct {
 // DEBUG for the healthcheck, and "response sent" is ERROR for a 5xx.
 var Contract = map[string]Message{
 	// Lifecycle: logged outside any request, so no request_id.
-	"using upstream":      {[]string{"INFO"}, []string{"url", "timeout"}},
+	"using upstream":      {[]string{"INFO"}, []string{"url", "timeout", "retries"}},
 	"using feature flags": {[]string{"INFO"}, []string{"url", "timeout", "cache_ttl"}},
 	"using header guard":  {[]string{"INFO"}, []string{"mode", "max_headers", "max_header_bytes", "max_total_bytes"}},
 	"using API keys":      {[]string{"INFO"}, []string{"api_keys", "reads"}},
@@ -57,6 +57,7 @@ var Contract = map[string]Message{
 	"panic serving request":      {[]string{"ERROR"}, []string{"method", "route", "path", "panic", "stack"}},
 	"upstream request failed":    {[]string{"WARN"}, []string{"upstream", "upstream_duration_ms", "error"}},
 	"upstream request cancelled": {[]string{"DEBUG"}, []string{"upstream", "upstream_duration_ms", "error"}},
+	"upstream request retried":   {[]string{"INFO"}, []string{"upstream", "upstream_duration_ms", "attempt", "error"}},
 
 	// Header screening (internal/headerguard).
 	"request headers rejected":          {[]string{"INFO"}, []string{"reason", "status"}},

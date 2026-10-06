@@ -99,7 +99,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	logger := cfg.NewLogger(stdout, "api", buildVersion())
 	profiling.LogRuntime(logger, cfg.RuntimeStatsInterval)
 	go profiling.LogRuntimeStats(ctx, logger, cfg.RuntimeStatsInterval)
-	logger.Info("using upstream", logx.KeyURL, cfg.UpstreamURL.Redacted(), logx.KeyTimeout, cfg.UpstreamTimeout.String())
+	logger.Info("using upstream", logx.KeyURL, cfg.UpstreamURL.Redacted(), logx.KeyTimeout, cfg.UpstreamTimeout.String(),
+		logx.KeyRetries, cfg.UpstreamRetries)
 	logger.Info("using header guard",
 		logx.KeyMode, cfg.HeaderGuard.Mode.String(),
 		logx.KeyMaxHeaders, cfg.HeaderGuard.MaxHeaders,
@@ -112,7 +113,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	logger.Info("using limits", logx.KeyMaxInFlight, cfg.Limits.MaxInFlight,
 		logx.KeyRateLimit, cfg.Limits.Rate, logx.KeyRateBurst, cfg.Limits.Burst)
 	store := httpstore.New(cfg.UpstreamURL.String(),
-		&http.Client{Timeout: cfg.UpstreamTimeout, Transport: newTransport(cfg.Limits.MaxInFlight)}, httpstore.WithLogger(logger))
+		&http.Client{Timeout: cfg.UpstreamTimeout, Transport: newTransport(cfg.Limits.MaxInFlight)}, httpstore.WithLogger(logger), httpstore.WithRetries(cfg.UpstreamRetries))
 
 	evaluator, err := newFlags(logger, cfg)
 	if err != nil {

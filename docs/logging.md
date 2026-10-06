@@ -49,6 +49,8 @@ include `.git`; without it, container logs show `version=devel`.
 | `duration_ms` | `response sent`, `flag service recovered` | Time to serve the request, or the length of a flagd outage, in milliseconds (a decimal number). |
 | `upstream`    | upstream call lines, `internal error` | The upstream call, `METHOD /path`, e.g. `GET /items`. |
 | `upstream_status` | `upstream response received`, failure lines, `internal error` | Upstream response status. Absent if no response arrived (timeout, connection error). |
+| `attempt`     | `upstream request retried` | Which try the retried GET is about to make: `2` for the first retry. |
+| `retries`     | `using upstream`       | How often a GET to the upstream may be retried after a fast failure (`UPSTREAM_RETRIES`). |
 | `upstream_duration_ms` | same, not `upstream request sent` | Time spent on the upstream call, in milliseconds. |
 | `error`       | error and warning lines | Error message. Always `error`, never `err`.                 |
 | `panic`       | `panic serving request` | The recovered panic value.                                  |
@@ -108,12 +110,13 @@ upstream, comes back, and leaves the API.
 | `request refused by authentication` | INFO | `reason`, `status` | A request had no valid API key (401: `missing key`, `not a bearer token`, `unknown key`) or a read-only key tried to write (403: `read-only key`, with `api_key` naming it). The key itself is never logged. |
 | `request headers stripped` | DEBUG | `headers` | Proxy or method-override headers were removed before the handlers ran. |
 | `upstream request failed` | WARN | `upstream`, `upstream_duration_ms`, `error` | An upstream call failed: no response, an unexpected status, or a body that won't decode. `upstream_status` is also present if a response arrived. |
+| `upstream request retried` | INFO | `upstream`, `upstream_duration_ms`, `attempt`, `error` | A GET the upstream gave no usable answer to, fast (refused, reset, or a 5xx), is tried again, within the retry budget. The attempt before it logged its response, if it had one. |
 | `upstream request cancelled` | DEBUG | `upstream`, `upstream_duration_ms`, `error` | The client left during an upstream call, so it isn't the upstream's failure. |
 | `flag service unavailable, using default flag values` | WARN | `flag`, `error` | flagd stopped answering. Logged once per outage. |
 | `flag service recovered` | INFO | `fallbacks`, `duration_ms` | flagd answers again; `fallbacks` evaluations were served from defaults. |
 | `flag evaluation failed, using default` | WARN the first time a flag has a problem, then DEBUG | `flag`, `default`, `error` | A flag couldn't be evaluated and its default was used. Also DEBUG for each failed evaluation during an outage. |
 | `flag has no configured default, using false` | ERROR | `flag` | A flag the code reads has no default in the definitions. Logged once per flag. |
-| `using upstream` | INFO | `url`, `timeout` | Startup. |
+| `using upstream` | INFO | `url`, `timeout`, `retries` | Startup. |
 | `using feature flags` | INFO | `url`, `timeout`, `cache_ttl` | Startup, with `FLAGS_URL` set. |
 | `using API keys` | INFO | `api_keys`, `reads` | Startup: the names and scopes of the configured keys (never the keys), and whether reads need one. |
 | `authentication is off: every request is allowed` | WARN | none | Startup, with `API_AUTH=off`. For local development only. |

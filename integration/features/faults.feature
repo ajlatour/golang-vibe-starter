@@ -55,3 +55,9 @@ Feature: Upstream faults
     When I GET "/items/widget"
     Then the response status is 200
     And the JSON field "id" is "widget"
+
+  Scenario: A GET the upstream fails once is retried, and succeeds
+    Given the upstream fault "flaky-list" is active
+    When I GET "/items"
+    Then the response status is 200
+    And the JSON array "items" has 3 elements

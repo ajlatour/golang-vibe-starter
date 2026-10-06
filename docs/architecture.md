@@ -104,7 +104,9 @@ log line of the request carries them (ADR-0023). Each request writes `request re
 `response sent`, plus `upstream request sent` and `upstream response received` for each call to
 the upstream.
 
-**When the upstream fails.** A call that times out (`UPSTREAM_TIMEOUT`, 5s) is a 504, and any other
+**When the upstream fails.** A GET that fails fast (refused, reset, or a 5xx) is tried once more
+(`UPSTREAM_RETRIES`), within a budget of about one retry per ten requests (ADR-0035). A call that
+times out (`UPSTREAM_TIMEOUT`, 5s) is a 504, and any other
 failure (refused, reset, an error status, a body that won't decode, a redirect) a 502. The
 upstream's message is logged, never returned. `/readyz` stays ready while the upstream answers at
 all, an error included (ADR-0021).
