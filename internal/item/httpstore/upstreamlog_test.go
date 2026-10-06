@@ -10,12 +10,14 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/logtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
@@ -85,7 +87,7 @@ func TestStoreCallLogging(t *testing.T) {
 
 			var logs logtest.Buffer
 			store := httpstore.New(upstream.URL, upstream.Client(), httpstore.WithLogger(debugLogger(&logs)))
-			_, _ = store.Get(t.Context(), "a")
+			_, _ = store.Get(t.Context(), itemtest.MustID("a"))
 
 			lines := logs.Records(t)
 			var got []logLine
@@ -163,7 +165,7 @@ func TestUpstreamErrorFields(t *testing.T) {
 		}))
 		defer upstream.Close()
 
-		_, err := httpstore.New(upstream.URL, upstream.Client()).Get(t.Context(), "a")
+		_, err := httpstore.New(upstream.URL, upstream.Client()).Get(t.Context(), itemtest.MustID("a"))
 		if err != item.ErrNotFound {
 			t.Errorf("error = %#v, want exactly ErrNotFound", err)
 		}
@@ -295,18 +297,29 @@ func TestUpstreamErrorsAreRedactedAndBounded(t *testing.T) {
 		}
 	})
 
-	t.Run("long path is capped in the error and the log", func(t *testing.T) {
-		upstream := httptest.NewServer(nettest.Status(http.StatusInternalServerError, ""))
+	// The longest ID reaches the upstream, and its call stays bounded in the
+	// error and the log. An item.ID is at most item.MaxIDLen, well under
+	// logx.MaxLoggedPath, so httpstore's truncation of the path is a second
+	// line of defence that no ID can reach.
+	t.Run("the longest ID's call is bounded in the error and the log", func(t *testing.T) {
+		var called atomic.Bool
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called.Store(true)
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
 		defer upstream.Close()
 
 		var logs logtest.Buffer
 		store := httpstore.New(upstream.URL, upstream.Client(), httpstore.WithLogger(debugLogger(&logs)))
-		_, err := store.Get(t.Context(), strings.Repeat("a", 5000))
+		_, err := store.Get(t.Context(), itemtest.MustID(strings.Repeat("a", item.MaxIDLen)))
+		if !called.Load() {
+			t.Fatal("the upstream wasn't called: the test would pass without measuring a real call")
+		}
 		if err == nil || len(err.Error()) > 1000 {
-			t.Errorf("error is %d bytes, want it capped", len(err.Error()))
+			t.Errorf("error is %d bytes, want it bounded", len(err.Error()))
 		}
 		if logs.Len() > 4000 {
-			t.Errorf("log output is %d bytes, want it capped", logs.Len())
+			t.Errorf("log output is %d bytes, want it bounded", logs.Len())
 		}
 	})
 }

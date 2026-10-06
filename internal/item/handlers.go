@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/featureflag"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
@@ -45,6 +46,28 @@ func RegisterRoutes(mux *http.ServeMux, logger *slog.Logger, store Store, opts .
 	mux.Handle("DELETE /items/{id}", handleDelete(logger, store))
 }
 
+// Request is the body of a create or replace, as the API accepts it: what
+// NewDraft makes a Draft of.
+type Request struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// Response is an item as the API sends it. The model has no JSON shape of its
+// own, so the API's can change without it, and it without the API's.
+type Response struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// NewResponse is it as the API sends it.
+func NewResponse(it Item) Response {
+	return Response{ID: it.ID.String(), Name: it.Name.String(), Description: it.Description.String(), CreatedAt: it.CreatedAt, UpdatedAt: it.UpdatedAt}
+}
+
 func handleList(logger *slog.Logger, store Store, flags Flags) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		items, err := store.List(r.Context())
@@ -52,7 +75,11 @@ func handleList(logger *slog.Logger, store Store, flags Flags) http.HandlerFunc 
 			storeError(logger, w, r, err)
 			return
 		}
-		resp := map[string]any{"items": items}
+		out := make([]Response, len(items))
+		for i, it := range items {
+			out[i] = NewResponse(it)
+		}
+		resp := map[string]any{"items": out}
 		if flags != nil && flags.Bool(r.Context(), FlagListTotal) {
 			resp["total"] = len(items)
 		}
@@ -71,23 +98,23 @@ func handleGet(logger *slog.Logger, store Store) http.HandlerFunc {
 			storeError(logger, w, r, err)
 			return
 		}
-		httpx.WriteJSON(w, http.StatusOK, it)
+		httpx.WriteJSON(w, http.StatusOK, NewResponse(it))
 	}
 }
 
 func handleCreate(logger *slog.Logger, store Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		in, ok := decodeInput(w, r)
+		d, ok := decodeDraft(w, r)
 		if !ok {
 			return
 		}
-		it, err := store.Create(r.Context(), Item{Name: in.Name, Description: in.Description})
+		it, err := store.Create(r.Context(), d)
 		if err != nil {
 			storeError(logger, w, r, err)
 			return
 		}
-		w.Header().Set("Location", "/items/"+it.ID)
-		httpx.WriteJSON(w, http.StatusCreated, it)
+		w.Header().Set("Location", "/items/"+it.ID.String())
+		httpx.WriteJSON(w, http.StatusCreated, NewResponse(it))
 	}
 }
 
@@ -97,16 +124,16 @@ func handleUpdate(logger *slog.Logger, store Store) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		in, ok := decodeInput(w, r)
+		d, ok := decodeDraft(w, r)
 		if !ok {
 			return
 		}
-		it, err := store.Update(r.Context(), Item{ID: id, Name: in.Name, Description: in.Description})
+		it, err := store.Update(r.Context(), id, d)
 		if err != nil {
 			storeError(logger, w, r, err)
 			return
 		}
-		httpx.WriteJSON(w, http.StatusOK, it)
+		httpx.WriteJSON(w, http.StatusOK, NewResponse(it))
 	}
 }
 
@@ -124,32 +151,33 @@ func handleDelete(logger *slog.Logger, store Store) http.HandlerFunc {
 	}
 }
 
-// pathID returns the request's {id}. If it isn't a valid ID (see ValidID),
-// no item can have it: pathID answers 404, as for any unknown item, without
-// asking the store, and returns false.
-func pathID(w http.ResponseWriter, r *http.Request) (string, bool) {
-	id := r.PathValue("id")
-	if !ValidID(id) {
+// pathID returns the request's {id}. If it isn't an ID (see ID), no item can
+// have it: pathID answers 404, as for any unknown item, without asking the
+// store, and returns false.
+func pathID(w http.ResponseWriter, r *http.Request) (ID, bool) {
+	id, err := ParseID(r.PathValue("id"))
+	if err != nil {
 		httpx.WriteError(w, http.StatusNotFound, ErrNotFound.Error())
-		return "", false
+		return ID{}, false
 	}
 	return id, true
 }
 
-// decodeInput reads and validates the JSON request body shared by create and
-// update. If it can't, it has already written the 400 (unreadable body) or 422
-// (invalid fields) response and returns false.
-func decodeInput(w http.ResponseWriter, r *http.Request) (input, bool) {
-	var in input
-	if err := httpx.DecodeJSON(w, r, &in); err != nil {
+// decodeDraft reads the JSON request body shared by create and update, and
+// makes a Draft of it. If it can't, it has already written the 400 (unreadable
+// body) or 422 (a field breaks a rule) response and returns false.
+func decodeDraft(w http.ResponseWriter, r *http.Request) (Draft, bool) {
+	var req Request
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error())
-		return input{}, false
+		return Draft{}, false
 	}
-	if msg := in.validate(); msg != "" {
-		httpx.WriteError(w, http.StatusUnprocessableEntity, msg)
-		return input{}, false
+	d, err := NewDraft(req.Name, req.Description)
+	if err != nil {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, err.Error())
+		return Draft{}, false
 	}
-	return in, true
+	return d, true
 }
 
 // storeError maps ErrNotFound to 404 and anything else to the status

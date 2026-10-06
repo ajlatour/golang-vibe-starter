@@ -71,8 +71,8 @@ updates this table, and so the architecture, in the same pull request.
 | ------- | ---- | ---- | ---------- |
 | `cmd/api` | composition root | Reads config, wires everything, runs the server | any runtime package |
 | `cmd/apikey` | tool | Generates an API key and its `API_KEYS` entry | `internal/apikey` |
-| `internal/item` | feature | The `Item` model, the `Store` interface, the `/items` handlers | `internal/featureflag`, `internal/httpx` |
-| `internal/item/httpstore` | adapter | The `Store` on the upstream, over HTTP | `internal/item`, `internal/httpx`, `internal/jsoncall`, `internal/logx` |
+| `internal/item` | feature | The item model (value objects that enforce its rules), the `Store` interface, the `/items` handlers and the API's JSON shapes (ADR-0030) | `internal/featureflag`, `internal/httpx` |
+| `internal/item/httpstore` | adapter | The `Store` on the upstream, over HTTP, translating the upstream's JSON | `internal/item`, `internal/httpx`, `internal/jsoncall`, `internal/logx` |
 | `internal/featureflag` | adapter | OFREP client for flagd, flag declarations, embedded defaults | `flagd`, `internal/jsoncall`, `internal/logx` |
 | `internal/headerguard` | protection | Screens request headers | `internal/httpx`, `internal/logx` |
 | `internal/apikey` | protection | Authenticates API keys | `internal/httpx`, `internal/logx` |

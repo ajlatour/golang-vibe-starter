@@ -93,9 +93,9 @@ func guideServer(t *testing.T) (*httptest.Server, *recorder) {
 	store := itemtest.NewMemStore()
 	at := func(sec int) time.Time { return time.Date(2026, 1, 1, 0, 0, sec, 0, time.UTC) }
 	store.Seed(
-		item.Item{ID: "widget", Name: "Widget", Description: "A standard widget.", CreatedAt: at(0), UpdatedAt: at(0)},
-		item.Item{ID: "gadget", Name: "Gadget", Description: "A gadget with extra features.", CreatedAt: at(1), UpdatedAt: at(1)},
-		item.Item{ID: "gizmo", Name: "Gizmo", CreatedAt: at(2), UpdatedAt: at(2)},
+		item.Restore("widget", "Widget", "A standard widget.", at(0), at(0)),
+		item.Restore("gadget", "Gadget", "A gadget with extra features.", at(1), at(1)),
+		item.Restore("gizmo", "Gizmo", "", at(2), at(2)),
 	)
 	routes := http.NewServeMux()
 	for pattern := range codeRoutes(t) {

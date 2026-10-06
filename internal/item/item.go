@@ -1,26 +1,26 @@
-// Package item is the placeholder resource the API serves: the Item model,
-// the Store interface its handlers depend on, and the /items handlers. The
+// Package item is the placeholder resource the API serves: the domain model
+// (Item, and the value objects it's made of), the Store interface its handlers
+// depend on, and the /items handlers with the JSON shapes they speak. The
 // production store is in the httpstore subpackage, which reads and writes
 // items on an upstream speaking the same /items contract (WireMock in local
 // development); itemtest has an in-memory one for tests.
+//
+// The model enforces its own rules: an ID, a Name or a Description can only be
+// made valid, by ParseID, NewName and NewDescription, and a Draft, what a
+// client asks to create or replace, only from a valid name and description.
+// The JSON shapes stay at the edges (the handlers' Request and Response, and
+// httpstore's own types for the upstream), so neither the API's wire format
+// nor the upstream's reaches the model. See ADR-0030.
 package item
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
 )
-
-// Item is a placeholder for the real domain model.
-type Item struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-}
 
 // ErrNotFound is returned by a Store when no item has the given ID.
 var ErrNotFound = errors.New("item not found")
@@ -28,25 +28,138 @@ var ErrNotFound = errors.New("item not found")
 // MaxIDLen is the longest an item ID can be.
 const MaxIDLen = 128
 
-// ValidID reports whether id could name an item: 1 to MaxIDLen ASCII
-// letters, digits, '-' and '_'. No item has any other ID, so the handlers
-// answer 404 for one without asking the store, and httpstore never puts one
-// in an upstream URL. That matters because an upstream, or a proxy in front
-// of it, may normalize "." and ".." path segments or decode %2F, so an ID
-// such as ".." or "..%2F..%2Fadmin" could otherwise reach a route other than
-// /items/{id}.
-func ValidID(id string) bool {
-	if id == "" || len(id) > MaxIDLen {
-		return false
+// ID names an item: 1 to MaxIDLen ASCII letters, digits, '-' and '_'. No item
+// has any other ID, so the handlers answer 404 for one without asking the
+// store, and httpstore never puts one in an upstream URL. That matters because
+// an upstream, or a proxy in front of it, may normalize "." and ".." path
+// segments or decode %2F, so an ID such as ".." or "..%2F..%2Fadmin" could
+// otherwise reach a route other than /items/{id}.
+//
+// The zero ID is no item's; ParseID makes the others.
+type ID struct{ v string }
+
+// ErrInvalidID is ParseID's error: no item can have such an ID.
+var ErrInvalidID = errors.New("not an item ID")
+
+// ParseID returns s as an ID, or ErrInvalidID.
+func ParseID(s string) (ID, error) {
+	if s == "" || len(s) > MaxIDLen {
+		return ID{}, ErrInvalidID
 	}
-	for _, c := range []byte(id) {
+	for _, c := range []byte(s) {
 		switch {
 		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', c == '-', c == '_':
 		default:
-			return false
+			return ID{}, ErrInvalidID
 		}
 	}
-	return true
+	return ID{s}, nil
+}
+
+func (id ID) String() string { return id.v }
+
+// IsZero reports whether id is the zero ID, which names no item.
+func (id ID) IsZero() bool { return id.v == "" }
+
+// MaxNameLen is the longest allowed item name, in characters.
+const MaxNameLen = 200
+
+// MaxDescriptionLen is the longest allowed item description, in characters.
+const MaxDescriptionLen = 2000
+
+// ValidationError is a value that breaks one of the model's rules. Its message
+// is written for the client: the handlers send it as a 422's error.
+type ValidationError struct {
+	field, msg string
+}
+
+func (e *ValidationError) Error() string { return e.msg }
+
+// Field is the field that breaks the rule: "name" or "description".
+func (e *ValidationError) Field() string { return e.field }
+
+// The rules' errors, made once, so refusing a client's input allocates
+// nothing; ValidationError has no exported fields, so no caller can change
+// them for everyone.
+var (
+	errNameRequired    = &ValidationError{field: "name", msg: "name is required"}
+	errNameTooLong     = &ValidationError{field: "name", msg: fmt.Sprintf("name must be at most %d characters", MaxNameLen)}
+	errDescriptionLong = &ValidationError{field: "description", msg: fmt.Sprintf("description must be at most %d characters", MaxDescriptionLen)}
+)
+
+// Name is an item's name: 1 to MaxNameLen characters, without surrounding
+// whitespace.
+type Name struct{ v string }
+
+// NewName returns s, trimmed of surrounding whitespace, as a Name, or a
+// *ValidationError.
+func NewName(s string) (Name, error) {
+	s = strings.TrimSpace(s)
+	switch {
+	case s == "":
+		return Name{}, errNameRequired
+	case utf8.RuneCountInString(s) > MaxNameLen:
+		return Name{}, errNameTooLong
+	}
+	return Name{s}, nil
+}
+
+func (n Name) String() string { return n.v }
+
+// Description is an item's description: at most MaxDescriptionLen characters,
+// and may be empty.
+type Description struct{ v string }
+
+// NewDescription returns s as a Description, or a *ValidationError.
+func NewDescription(s string) (Description, error) {
+	if utf8.RuneCountInString(s) > MaxDescriptionLen {
+		return Description{}, errDescriptionLong
+	}
+	return Description{s}, nil
+}
+
+func (d Description) String() string { return d.v }
+
+// Draft is what a client asks to create, or to replace an item with: a valid
+// name and description. NewDraft makes one; the zero Draft has no name, and a
+// Store needn't accept it.
+type Draft struct {
+	name        Name
+	description Description
+}
+
+// NewDraft returns a draft of name and description, or the *ValidationError
+// of the first that breaks a rule, the name's first.
+func NewDraft(name, description string) (Draft, error) {
+	n, err := NewName(name)
+	if err != nil {
+		return Draft{}, err
+	}
+	d, err := NewDescription(description)
+	if err != nil {
+		return Draft{}, err
+	}
+	return Draft{name: n, description: d}, nil
+}
+
+func (d Draft) Name() Name               { return d.name }
+func (d Draft) Description() Description { return d.description }
+
+// Item is a placeholder for the real domain model.
+type Item struct {
+	ID          ID
+	Name        Name
+	Description Description
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// Restore rebuilds an item a Store holds, as the store has it. It doesn't
+// check the rules: they apply to what clients send (NewDraft), and the store
+// is where items are kept, not a client. (Refusing an item the upstream sends
+// that breaks them would be a decision of its own.)
+func Restore(id, name, description string, createdAt, updatedAt time.Time) Item {
+	return Item{ID: ID{id}, Name: Name{name}, Description: Description{description}, CreatedAt: createdAt, UpdatedAt: updatedAt}
 }
 
 // Store is the persistence boundary for items. Handlers depend only on this
@@ -55,40 +168,12 @@ func ValidID(id string) bool {
 type Store interface {
 	// List returns all items, oldest first, as a non-nil slice.
 	List(ctx context.Context) ([]Item, error)
-	Get(ctx context.Context, id string) (Item, error)
-	// Create stores a new item using its Name and Description and returns
-	// it with ID, CreatedAt and UpdatedAt set.
-	Create(ctx context.Context, it Item) (Item, error)
-	// Update replaces Name and Description of the item with it.ID, bumps
-	// UpdatedAt, and returns the stored item.
-	Update(ctx context.Context, it Item) (Item, error)
-	Delete(ctx context.Context, id string) error
-}
-
-// MaxNameLen is the longest allowed item name, in characters.
-const MaxNameLen = 200
-
-// MaxDescriptionLen is the longest allowed item description, in characters.
-const MaxDescriptionLen = 2000
-
-// input is the request body for creating or replacing an item. httpstore
-// sends the same shape upstream.
-type input struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-}
-
-// validate normalises the input and returns a client-facing message if it
-// is invalid, or "" if it is fine.
-func (in *input) validate() string {
-	in.Name = strings.TrimSpace(in.Name)
-	switch {
-	case in.Name == "":
-		return "name is required"
-	case utf8.RuneCountInString(in.Name) > MaxNameLen:
-		return "name must be at most 200 characters"
-	case utf8.RuneCountInString(in.Description) > MaxDescriptionLen:
-		return "description must be at most 2000 characters"
-	}
-	return ""
+	Get(ctx context.Context, id ID) (Item, error)
+	// Create stores a new item made from d and returns it with ID,
+	// CreatedAt and UpdatedAt set.
+	Create(ctx context.Context, d Draft) (Item, error)
+	// Update replaces the name and description of the item with id by d's,
+	// bumps UpdatedAt, and returns the stored item.
+	Update(ctx context.Context, id ID, d Draft) (Item, error)
+	Delete(ctx context.Context, id ID) error
 }
