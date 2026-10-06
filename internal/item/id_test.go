@@ -64,3 +64,33 @@ func TestRestore(t *testing.T) {
 		t.Errorf("Restore = %+v, want the values as given", it)
 	}
 }
+
+// TestParse checks an item from outside the service is held to the model's
+// rules, and that the error says which without quoting the value, which
+// came from outside.
+func TestParse(t *testing.T) {
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if it, err := item.Parse("widget", "Widget", "a widget", at, at); err != nil || it.ID.String() != "widget" {
+		t.Fatalf("a valid item: %+v, %v", it, err)
+	}
+	for name, tt := range map[string]struct {
+		id, name, desc string
+		created        time.Time
+	}{
+		"an ID no item can have":   {"../admin", "Widget", "", at},
+		"no name":                  {"widget", "", "", at},
+		"an untrimmed name":        {"widget", " Widget ", "", at},
+		"a name over the limit":    {"widget", strings.Repeat("n", item.MaxNameLen+1), "", at},
+		"a description over limit": {"widget", "Widget", strings.Repeat("d", item.MaxDescriptionLen+1), at},
+		"no timestamps":            {"widget", "Widget", "", time.Time{}},
+	} {
+		_, err := item.Parse(tt.id, tt.name, tt.desc, tt.created, tt.created)
+		if !errors.Is(err, item.ErrInvalidItem) {
+			t.Errorf("%s: %v, want ErrInvalidItem", name, err)
+			continue
+		}
+		if strings.Contains(err.Error(), "../admin") || strings.Contains(err.Error(), "nnnn") {
+			t.Errorf("%s: the error quotes the value: %v", name, err)
+		}
+	}
+}

@@ -16,6 +16,10 @@ Ideas considered but not planned are listed under
   client is its /64, and the limiter remembers at most 100,000 clients, forgetting idle ones at once
   when full and otherwise putting newcomers under one shared limit
   ([ADR-0038](docs/decisions.md#adr-0038-the-rate-limit-remembers-a-bounded-number-of-clients-and-an-ipv6-client-is-its-64)).
+- Every item the upstream sends is held to the rules a client's input meets: an ID no item can have,
+  a name or description out of bounds, or missing timestamps make the call a 502, logged with which
+  rule, and not retried. The API no longer passes on an item it couldn't have made
+  ([ADR-0039](docs/decisions.md#adr-0039-items-from-the-upstream-are-held-to-the-models-rules)).
 
 ### Added
 

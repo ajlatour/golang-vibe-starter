@@ -165,10 +165,40 @@ type Item struct {
 	UpdatedAt   time.Time
 }
 
-// Restore rebuilds an item a Store holds, as the store has it. It doesn't
-// check the rules: they apply to what clients send (NewDraft), and the store
-// is where items are kept, not a client. (Refusing an item the upstream sends
-// that breaks them would be a decision of its own.)
+// ErrInvalidItem is an item a Store sent that breaks the model's rules: an
+// ID no item can have, a name or description out of bounds, or no
+// timestamps. Parse says which.
+var ErrInvalidItem = errors.New("the item breaks the model's rules")
+
+// Parse rebuilds an item a Store sent from outside the service, holding it to
+// the model's rules, as NewDraft holds a client's: a valid ID, a name and a
+// description within their limits, and both timestamps. An item that breaks
+// one is ErrInvalidItem, saying which; the values aren't quoted, since they
+// came from outside. httpstore uses it, so the API never passes on an item
+// it couldn't have made itself.
+func Parse(id, name, description string, createdAt, updatedAt time.Time) (Item, error) {
+	pid, err := ParseID(id)
+	if err != nil {
+		return Item{}, fmt.Errorf("%w: its ID isn't an item ID", ErrInvalidItem)
+	}
+	n, err := NewName(name)
+	if err != nil || n.String() != name {
+		return Item{}, fmt.Errorf("%w: its name is missing, too long, or untrimmed", ErrInvalidItem)
+	}
+	d, err := NewDescription(description)
+	if err != nil {
+		return Item{}, fmt.Errorf("%w: its description is too long", ErrInvalidItem)
+	}
+	if createdAt.IsZero() || updatedAt.IsZero() {
+		return Item{}, fmt.Errorf("%w: it has no created_at or updated_at", ErrInvalidItem)
+	}
+	return Item{ID: pid, Name: n, Description: d, CreatedAt: createdAt, UpdatedAt: updatedAt}, nil
+}
+
+// Restore rebuilds an item a Store holds, as the store has it, without
+// checking the rules: for a store whose items can only have come through the
+// model (the in-memory one, test seeds). A store holding items from outside
+// the service uses Parse.
 func Restore(id, name, description string, createdAt, updatedAt time.Time) Item {
 	return Item{ID: ID{id}, Name: Name{name}, Description: Description{description}, CreatedAt: createdAt, UpdatedAt: updatedAt}
 }

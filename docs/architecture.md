@@ -108,7 +108,9 @@ the upstream.
 **When the upstream fails.** A GET that fails fast (refused, reset, or a 5xx) is tried once more
 (`UPSTREAM_RETRIES`), within a budget of about one retry per ten requests (ADR-0035). A call that
 times out (`UPSTREAM_TIMEOUT`, 5s) is a 504, and any other
-failure (refused, reset, an error status, a body that won't decode, a redirect) a 502. The
+failure (refused, reset, an error status, a body that won't decode, a redirect, an item that breaks
+the model's rules) a 502. Every item from the upstream is held to the rules a client's is
+(ADR-0039), so the API never passes on one it couldn't have made itself. The
 upstream's message is logged, never returned. `/readyz` stays ready while the upstream answers at
 all, an error included (ADR-0021).
 
