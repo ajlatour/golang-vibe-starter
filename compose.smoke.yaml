@@ -1,0 +1,8 @@
+# The smoke test's dependencies (scripts/smoke-image.sh): WireMock and flagd
+# from compose.yaml, with no ports published, so a smoke test runs beside a
+# local stack without either taking the other's ports.
+services:
+  mock:
+    ports: !reset []
+  flagd:
+    ports: !reset []
