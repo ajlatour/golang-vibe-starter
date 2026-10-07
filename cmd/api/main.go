@@ -282,9 +282,33 @@ func newHandler(logger *slog.Logger, cfg handlerConfig, items item.Store, opts .
 	if cfg.RequestTimeout > 0 {
 		mwOpts = append(mwOpts, httpx.WithRequestTimeout(cfg.RequestTimeout))
 	}
-	return httpx.Middleware(logger, httpx.RejectInvalidTarget(limit.InFlight(limits,
-		headerguard.Middleware(logger, cfg.Guard, httpx.APIVersion(probes, apikey.Middleware(logger, auth, limit.PerClient(limits, identifyByKey, validate(logger, cfg, probes, httpx.RecordRoute(mux)))))))),
-		mwOpts...)
+	// The order a request meets them, outermost first. It's a security
+	// property, so cmd/api/middleware_order_test.go holds each step to the
+	// ones around it.
+	return httpx.Chain(httpx.RecordRoute(mux),
+		// A correlation ID, the request's log lines, panic recovery and its
+		// deadline, around everything, so a request any step refuses is
+		// logged like the rest.
+		func(h http.Handler) http.Handler { return httpx.Middleware(logger, h, mwOpts...) },
+		// A target that isn't a path goes no further.
+		httpx.RejectInvalidTarget,
+		// The cap on requests in flight: before anything reads the request,
+		// so it bounds floods with no valid key too.
+		func(h http.Handler) http.Handler { return limit.InFlight(limits, h) },
+		// The header guard: before authentication, so a doubled
+		// Authorization header is refused before either copy is read.
+		func(h http.Handler) http.Handler { return headerguard.Middleware(logger, cfg.Guard, h) },
+		// The API version: an unsupported one is refused before the request
+		// is read as one.
+		func(h http.Handler) http.Handler { return httpx.APIVersion(probes, h) },
+		func(h http.Handler) http.Handler { return apikey.Middleware(logger, auth, h) },
+		// The per-client rate limit: after authentication, so a client is
+		// its key, and a request without a valid one is refused, not counted.
+		func(h http.Handler) http.Handler { return limit.PerClient(limits, identifyByKey, h) },
+		// The request-validation check, if there's one: last, so a client's
+		// flood never reaches it, and it knows who's calling.
+		func(h http.Handler) http.Handler { return validate(logger, cfg, probes, h) },
+	)
 }
 
 // validate puts the request-validation check in front of next, if there's a
