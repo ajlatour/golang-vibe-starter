@@ -41,7 +41,7 @@ don't, and its message says what to fix.
 | ------------- | ----------- | ---------- |
 | A route, status code, request or response body, or header | `docs/openapi.json` | `cmd/api/openapi_test.go` runs the real handlers against the spec |
 | The fields of `item.Item`, the name limit, or the correlation ID format | `docs/openapi.json` | `cmd/api/openapi_test.go` |
-| A log message (new, renamed, or a level or field changed) | `logtest.Contract` (`internal/logtest/contract.go`) and the Messages table in `docs/logging.md` | `internal/logx/schema_test.go`, and `cmd/api/logcontract_test.go`, which runs the whole service |
+| A log message (new, renamed, or a level or field changed) | `logtest.Contract` (`internal/logtest/contract.go`) and the Messages table in `docs/logging.md`; and `logtest.OutsideRequests` for one logged outside any request (without a context, or with `context.Background`) | `internal/logx/schema_test.go`, and `cmd/api/logcontract_test.go`, which runs the whole service |
 | A log field name | A `Key` constant in `internal/logx/keys.go` and the Fields table in `docs/logging.md` | `internal/logx/schema_test.go`; a raw string key fails the build |
 | A feature flag | `flagd/flags.json`, and the package's `FlagKeys` in code | The service won't start if a listed flag is missing; `cmd/api/main_test.go` |
 | A header rule or default limit (`headerguard.DefaultPolicy`) | `docs/openapi.json` (the 400, 415 and 431 responses) and the Request headers section of the README | `cmd/api/openapi_test.go` produces each status on every operation; `integration/features/headers.feature` |
