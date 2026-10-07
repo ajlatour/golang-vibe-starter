@@ -171,6 +171,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, handler,
 		httpx.MaxHeaderBytes(serverHeaderLimit(cfg.HeaderGuard)),
 		httpx.WriteTimeout(cfg.RequestTimeout+writeTimeoutMargin),
+		httpx.LogRejected(cfg.LogClientIP, metrics.Rejected),
 		httpx.OnShutdown(readiness.Stopping), httpx.ShutdownDelay(cfg.ShutdownDelay))
 }
 

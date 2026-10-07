@@ -41,12 +41,12 @@ include `.git`; without it, container logs show `version=devel`.
 | `route`       | `response sent`, error lines | Matched route pattern, e.g. `GET /items/{id}`. Group by this, not `path`. Empty if no route matched. Not on `request received`: routing hasn't happened yet. |
 | `path`        | `request received`, `response sent`, error lines | Raw URL path. The query string is never logged. |
 | `content_length` | `request received`  | Size of the request body the client declared, in bytes; -1 if unknown. The body itself is never logged. |
-| `client_ip`   | `request received`, `response sent` | The IP address the request's connection came from: behind a load balancer, the balancer's, since proxy headers are never trusted. Off with `LOG_CLIENT_IP=off`. |
+| `client_ip`   | `request received`, `response sent`, `request rejected by the server` | The IP address the request's connection came from: behind a load balancer, the balancer's, since proxy headers are never trusted. Off with `LOG_CLIENT_IP=off`. |
 | `status`      | `response sent`        | Response status code.                                        |
 | `response_code` | `response sent`, when the response was an error | The error's code (`httpx.Code`), e.g. `rate_limited`: what it means, stable, so group and alert on this rather than on `response_error`. |
 | `response_error` | `response sent`, when the response was an error | The error message the client was sent (`{"error": "..."}`): why the request was refused, or what failed. Capped at 200 characters, since it can quote the client's own input. |
 | `bytes`       | `response sent`        | Response body size.                                          |
-| `duration_ms` | `response sent`, `flag service recovered` | Time to serve the request, or the length of a flagd outage, in milliseconds (a decimal number). |
+| `duration_ms` | `response sent`, `flag service recovered`, `request rejected by the server` | Time to serve the request, the length of a flagd outage, or how long a rejected request's connection was reading it, in milliseconds (a decimal number). |
 | `upstream`    | upstream call lines, `internal error` | The upstream call, `METHOD /path`, e.g. `GET /items`. |
 | `upstream_status` | `upstream response received`, failure lines, `internal error` | Upstream response status. Absent if no response arrived (timeout, connection error). |
 | `attempt`     | `upstream request retried` | Which try the retried GET is about to make: `2` for the first retry. |
@@ -110,6 +110,7 @@ upstream, comes back, and leaves the API.
 | `request refused by authentication` | INFO | `reason`, `status` | A request had no valid API key (401: `missing key`, `not a bearer token`, `unknown key`) or a read-only key tried to write (403: `read-only key`, with `api_key` naming it). The key itself is never logged. |
 | `request headers stripped` | DEBUG | `headers` | Proxy or method-override headers were removed before the handlers ran. |
 | `upstream request failed` | WARN | `upstream`, `upstream_duration_ms`, `error` | An upstream call failed: no response, an unexpected status, or a body that won't decode. `upstream_status` is also present if a response arrived. |
+| `request rejected by the server` | WARN | `duration_ms` | The server answered a request itself, before the handler, so it has no `request received` or `response sent`: one it couldn't parse (400), headers over twice the guard's limit (431), an unsupported `Transfer-Encoding` (501), or headers that didn't arrive within 5 seconds (no answer). Also counted in `http_requests_rejected_total`. |
 | `upstream request retried` | INFO | `upstream`, `upstream_duration_ms`, `attempt`, `error` | A GET the upstream gave no usable answer to, fast (refused, reset, or a 5xx), is tried again, within the retry budget. The attempt before it logged its response, if it had one. |
 | `upstream request cancelled` | DEBUG | `upstream`, `upstream_duration_ms`, `error` | The client left during an upstream call, so it isn't the upstream's failure. |
 | `flag service unavailable, using default flag values` | WARN | `flag`, `error` | flagd stopped answering. Logged once per outage. |
@@ -164,6 +165,13 @@ produces (4xx are the client's mistake, not an incident), so alerting on `level=
 server and upstream failures alike; a failing healthcheck is still `ERROR`. A client that
 disconnects mid-request logs `client disconnected` at `INFO` and a `response sent` line with
 status 499, not an error.
+
+**Requests the server rejects itself.** Every request that reaches the handler is logged as above,
+whatever happens to it. A few never get that far: the HTTP server answers them itself, so no
+`request received` or `response sent` is written. Each is logged as one `request rejected by the
+server` line at `WARN` instead, with `client_ip` and how long the connection spent reading it,
+but no `request_id`, method or path, which the server never got to (and doesn't report). See its
+row above for what these are; a burst of them usually means a misbehaving client or a scanner.
 
 **Upstream failures.** `upstream response received` is logged whenever any response came back, a
 JSON 404 ("no such item") and a 503 alike. If the call then failed (an unexpected status, a body

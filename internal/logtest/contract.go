@@ -58,6 +58,9 @@ var Contract = map[string]Message{
 	"upstream request failed":    {[]string{"WARN"}, []string{"upstream", "upstream_duration_ms", "error"}},
 	"upstream request cancelled": {[]string{"DEBUG"}, []string{"upstream", "upstream_duration_ms", "error"}},
 	"upstream request retried":   {[]string{"INFO"}, []string{"upstream", "upstream_duration_ms", "attempt", "error"}},
+	// A request the server answered itself, before the handler: no
+	// request_id, method or path, since it never got that far.
+	"request rejected by the server": {[]string{"WARN"}, []string{"duration_ms"}},
 
 	// Header screening (internal/headerguard).
 	"request headers rejected":          {[]string{"INFO"}, []string{"reason", "status"}},
