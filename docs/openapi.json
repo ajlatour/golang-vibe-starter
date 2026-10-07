@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "golang-vibe-starter API",
-    "version": "0.5.0",
+    "version": "0.6.0",
     "description": "A small HTTP API over a placeholder `items` resource. Item data comes from an upstream service, so a failure to reach or understand the upstream is reported as 502 or 504, never as a 500. Every response carries a `Client-Correlation-Id` header; send one to tie the service's log lines to your own, or quote the one returned when reporting a problem. Every response also carries `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`. Every route but `/healthz` needs an API key (`Authorization: Bearer <key>`): 401 without a valid one, 403 for a write with a read-only key, or a request the request-validation service refuses (where there is one: VALIDATOR_URL). Every request's headers are screened first: a request with a body must send `Content-Type: application/json` (415 otherwise), headers have size limits (431), some may appear only once (400), and proxy and method-override headers (`X-Forwarded-*`, `Forwarded`, `X-Real-IP`, `X-HTTP-Method-Override`) are ignored. A request no route below takes gets a JSON error too: 404, `not_found`, for a path none has; 405, `method_not_allowed`, with `Allow`, for a method its path has no route for; and 400, `invalid_target`, for a target that isn't a path, such as `OPTIONS *`.\n\nThis file is checked against the running handlers by tests (`cmd/api/openapi_test.go`): routes, status codes, response bodies, headers and the limits stated here must match what the service actually does."
   },
   "security": [{ "apiKey": [] }],
