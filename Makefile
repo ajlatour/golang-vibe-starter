@@ -48,7 +48,7 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
 	lint api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check docs-release godoc spec spec-lint \
-	release-prepare release-tag perf perf-profile perf-soak bench bench-compare load-compare perf-compare perf-data perf-trends monitor
+	api-compat release-prepare release-tag perf perf-profile perf-soak bench bench-compare load-compare perf-compare perf-data perf-trends monitor
 
 ##@ Help
 
@@ -234,11 +234,16 @@ perf-compare: ## Both comparisons, written up as the pull request comment CI pos
 
 ##@ Releasing (see docs/releasing.md)
 
+api-compat: ## What changed in the API since the last release, and whether the changelog says so for a breaking change
+	sh scripts/api-compat.sh pr
+
 release-prepare: ## Turn Unreleased into VERSION on a branch, for a pull request: make release-prepare VERSION=v0.1.0
 	@echo "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "usage: make release-prepare VERSION=vX.Y.Z"; exit 2; }
 	@[ "$$(git rev-parse --abbrev-ref HEAD)" = main ] || { echo "switch to main first"; exit 1; }
 	@[ -z "$$(git status --porcelain)" ] || { echo "commit or stash your changes first"; exit 1; }
 	git pull -q --ff-only origin main
+	git fetch -q --tags origin
+	sh scripts/api-compat.sh release $(VERSION)
 	git checkout -q -b release-$(VERSION)
 	sh scripts/changelog.sh cut $(VERSION)
 	sh scripts/spec-version.sh $(VERSION)

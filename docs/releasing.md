@@ -33,6 +33,17 @@ request so a problem shows before it's tagged:
   setting at the default `.env.example` documents. A release that would refuse one, or that no
   longer reads one of its settings (silently ignoring it), fails the build. Add your own
   deployments' configurations there, secrets replaced.
+- **Breaking API changes are called out, and versioned.** `cmd/apidiff` compares
+  `docs/openapi.json` with the last release's and sorts what changed for clients: breaking (an
+  operation, success status, response field or documented header removed; a new required
+  parameter or field; a request limit tightened; a type changed) or additive (a new operation,
+  optional parameter or field, status, or error code). Descriptions don't count. On a pull
+  request (`make api-compat`, and CI's docs job, which shows the report in its summary), a
+  breaking change needs a `**Breaking**` entry in the changelog's Unreleased section, so it's a
+  decision, written down for the release notes. For a release, `make release-prepare` and the
+  Release workflow refuse a version bump too small for the changes: an additive change needs at
+  least a minor release, and a breaking one a minor release while the version is 0.x, a major
+  one from 1.0.0. `sh scripts/api-compat.sh release vX.Y.Z` runs that check alone.
 
 ## What the tag publishes
 
