@@ -2,9 +2,9 @@
 # (pinned to commit SHAs, with the version in a comment, which Dependabot
 # updates together), and the container images (pinned to digests). Weekly,
 # with each kind grouped into one pull request, so updates arrive as a few
-# reviewable PRs rather than a stream. The pandoc and Redocly images in the
-# Makefile are outside what Dependabot reads; update their digests by hand
-# (docker buildx imagetools inspect <image>:<tag>).
+# reviewable PRs rather than a stream. The images the build runs elsewhere
+# (pandoc, Redocly, the SBOM generator) are listed in tools/images/Dockerfile
+# for this; docs/pins_test.go checks no pinned image is written anywhere else.
 version: 2
 updates:
   - package-ecosystem: gomod
@@ -24,7 +24,7 @@ updates:
         patterns: ["*"]
 
   - package-ecosystem: docker
-    directory: "/cmd/api"
+    directories: ["/cmd/api", "/tools/images"]
     schedule:
       interval: weekly
     groups:
