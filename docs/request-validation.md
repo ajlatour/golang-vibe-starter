@@ -3,7 +3,7 @@
 Some APIs can't serve a request until another service has approved it: a fraud or entitlement
 check, a policy engine, token introspection. `internal/validator` is a scaffold for that: with
 `VALIDATOR_URL` set, every request but the probes is checked against that service before the
-routes see it ([ADR-0032](decisions.md#adr-0032-every-request-can-be-checked-against-a-validation-service-failing-closed)).
+routes see it ([ADR-0032](adr/0032-every-request-can-be-checked-against-a-validation-service-failing-closed.md)).
 
 ## Where it sits
 
@@ -85,7 +85,7 @@ that gets an answer ends the outage.
 
 Failing closed is the default because a check the API can't serve without shouldn't be skipped
 quietly. Then `/readyz` also checks the validation service can be reached (any HTTP answer
-counts, as for the upstream: [ADR-0021](decisions.md#adr-0021-readiness-means-the-upstream-can-be-reached)),
+counts, as for the upstream: [ADR-0021](adr/0021-readiness-means-the-upstream-can-be-reached.md)),
 so an instance that can't reach it is taken out of rotation. Failing open, it isn't: the instance
 can still serve.
 

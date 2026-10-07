@@ -2,9 +2,11 @@
 
 Notable changes to this project. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions on
-[Semantic Versioning](https://semver.org/). Changes not yet released are under Unreleased; each
-release has a section of its own, made by `make release-prepare` ([Releasing](docs/releasing.md)).
-A change that may break API clients is marked **Breaking**: a pull request with one in
+[Semantic Versioning](https://semver.org/). Changes not yet released are in
+[`changes/`](changes/README.md), one file per change, so pull requests don't conflict here;
+each release gathers them into a section of its own, made by `make release-prepare`
+([Releasing](docs/releasing.md)), and `sh scripts/changelog.sh notes` shows what the next one
+holds. A change that may break API clients is marked **Breaking**: a pull request with one in
 `docs/openapi.json` needs such an entry (`make api-compat`).
 
 Ideas considered but not planned are listed under
@@ -21,7 +23,7 @@ Ideas considered but not planned are listed under
   process, and every request in flight with it. And without `GOMEMLIMIT`, the Go runtime's memory
   limit is 90% of the container's, so it collects garbage harder before the kernel would kill the
   process for using too much; `using runtime` logs where the limit came from
-  ([ADR-0044](docs/decisions.md#adr-0044-a-panic-or-memory-pressure-doesnt-take-the-process-down-with-every-request)).
+  ([ADR-0044](docs/adr/0044-a-panic-or-memory-pressure-doesnt-take-the-process-down-with-every-request.md)).
 - Requests the HTTP server answers itself, before the API sees them (one it can't parse, headers
   over its limit, an unsupported `Transfer-Encoding`, or headers that never finish arriving), are
   now logged, as `request rejected by the server` at `WARN`, and counted in
@@ -39,19 +41,19 @@ Ideas considered but not planned are listed under
   `REQUEST_TIMEOUT` (10s), at which it's answered (usually 504) and logged, and the write timeout is
   5 seconds longer. An upstream GET is retried only after a fast failure, and only if there's time
   for another attempt
-  ([ADR-0041](docs/decisions.md#adr-0041-every-request-has-a-deadline-inside-the-servers-write-timeout)).
+  ([ADR-0041](docs/adr/0041-every-request-has-a-deadline-inside-the-servers-write-timeout.md)).
 - A request no route takes now gets a JSON error with a code, like every other, and its log line:
   404 `not_found` for an unknown path, 405 `method_not_allowed` (with `Allow`) for a method the path
   has no route for, and 400 `invalid_target` for `OPTIONS *`, which the server used to answer
   itself, unlogged. They were plain text, `404 page not found`
-  ([ADR-0042](docs/decisions.md#adr-0042-requests-no-route-takes-get-json-errors-too)).
+  ([ADR-0042](docs/adr/0042-requests-no-route-takes-get-json-errors-too.md)).
 - `response sent` now says when the client didn't get the whole response, in `write_error`: it had
   gone, a write failed, or the response was aborted. Aborted requests are logged too; they had no
   `response sent` at all. A panic after the response has started drops the connection instead of
   appending a 500 to the partial body. And requests still running when shutdown runs out of time
   are stopped and answered, 503 `shutting_down` with `Retry-After`, instead of being cut off
   unanswered and unlogged
-  ([ADR-0043](docs/decisions.md#adr-0043-every-request-the-handler-gets-is-logged-as-what-the-client-got)).
+  ([ADR-0043](docs/adr/0043-every-request-the-handler-gets-is-logged-as-what-the-client-got.md)).
 
 ## [0.5.0] - 2026-10-07
 
@@ -60,11 +62,11 @@ Ideas considered but not planned are listed under
 - The per-client rate limit can't be escaped, or used to fill memory, by changing address: an IPv6
   client is its /64, and the limiter remembers at most 100,000 clients, forgetting idle ones at once
   when full and otherwise putting newcomers under one shared limit
-  ([ADR-0038](docs/decisions.md#adr-0038-the-rate-limit-remembers-a-bounded-number-of-clients-and-an-ipv6-client-is-its-64)).
+  ([ADR-0038](docs/adr/0038-the-rate-limit-remembers-a-bounded-number-of-clients-and-an-ipv6-client-is-its-64.md)).
 - Every item the upstream sends is held to the rules a client's input meets: an ID no item can have,
   a name or description out of bounds, or missing timestamps make the call a 502, logged with which
   rule, and not retried. The API no longer passes on an item it couldn't have made
-  ([ADR-0039](docs/decisions.md#adr-0039-items-from-the-upstream-are-held-to-the-models-rules)).
+  ([ADR-0039](docs/adr/0039-items-from-the-upstream-are-held-to-the-models-rules.md)).
 
 ### Added
 
@@ -72,7 +74,7 @@ Ideas considered but not planned are listed under
   goes ahead only if the item is still that version (else a 412, `precondition_failed`), and a `GET`
   with a matching `If-None-Match` is a 304. Clients that use them can't silently overwrite each
   other's changes
-  ([ADR-0040](docs/decisions.md#adr-0040-items-have-etags-and-writes-can-be-conditional)).
+  ([ADR-0040](docs/adr/0040-items-have-etags-and-writes-can-be-conditional.md)).
 - A nightly soak test on `main`: 30 minutes of steady load, failing if the API's live heap or
   goroutines grew, with each night's result kept on the `perf-data` branch (`make perf-soak`
   locally; [Soak](docs/performance.md#soak)).
@@ -80,23 +82,23 @@ Ideas considered but not planned are listed under
   refused or reset connection, or a 5xx. Never a write, a timeout, or a 4xx. Retries share a
   budget of about one per ten requests, so a down upstream isn't hit harder, and each is logged,
   `upstream request retried`
-  ([ADR-0035](docs/decisions.md#adr-0035-upstream-gets-are-retried-once-within-a-budget)).
+  ([ADR-0035](docs/adr/0035-upstream-gets-are-retried-once-within-a-budget.md)).
 - API versioning by header: a request may send `API-Version` (today, `1`, the default without it),
   every response carries the version that answered, and a version the API doesn't serve is a 400,
   `unsupported_api_version`. URLs don't change with versions
-  ([ADR-0036](docs/decisions.md#adr-0036-the-api-is-versioned-by-a-header-not-by-path)).
+  ([ADR-0036](docs/adr/0036-the-api-is-versioned-by-a-header-not-by-path.md)).
 - W3C trace context: a request's `traceparent` header, or a new trace without one, puts its log
   lines in the trace (`trace_id`), and every call the API makes onward (the upstream, the validation
   service, flagd) carries the trace on, with a span ID of its own. No tracing SDK: when
   OpenTelemetry is added, its spans join the traces already flowing
-  ([ADR-0034](docs/decisions.md#adr-0034-w3c-trace-context-is-carried-through-without-a-tracing-sdk)).
+  ([ADR-0034](docs/adr/0034-w3c-trace-context-is-carried-through-without-a-tracing-sdk.md)).
 - Every error response carries a stable `code` beside its message: `{"error": "...", "code":
   "rate_limited"}`. The message is for people and may be reworded; the code is for clients to act
   on, and tells apart errors that share a status (a 403 for a read-only key or a validation
   refusal; a 503 for a busy service or unavailable validation). The codes are one list
   (`internal/httpx/codes.go`), documented in the README and the OpenAPI spec, which tests hold to
   it; "response sent" logs the code as `response_code`
-  ([ADR-0033](docs/decisions.md#adr-0033-errors-carry-a-stable-code-from-one-list)). Additive: the
+  ([ADR-0033](docs/adr/0033-errors-carry-a-stable-code-from-one-list.md)). Additive: the
   `error` field is unchanged.
 
 ### Changed
@@ -107,7 +109,7 @@ Ideas considered but not planned are listed under
   deleted. A `limit` out of range, or a cursor the list didn't give out, is a 400,
   `invalid_parameter`. The upstream contract pages the same way, and the `items-list-total`
   flag's `total` counts the page
-  ([ADR-0037](docs/decisions.md#adr-0037-the-list-is-paged-by-cursor-50-a-page-by-default)).
+  ([ADR-0037](docs/adr/0037-the-list-is-paged-by-cursor-50-a-page-by-default.md)).
 - Handlers return their errors, and `httpx.Handle` answers them in one place: an `httpx.Error`
   (the client's mistake) as its status, code and message, anything else through
   `httpx.ServerError`, logged and kept from the client. The item handlers no longer each write
@@ -157,7 +159,7 @@ Ideas considered but not planned are listed under
 ### Changed
 
 - Packages are told what they need instead of reaching into each other
-  ([ADR-0031](docs/decisions.md#adr-0031-packages-are-told-what-they-need-by-the-composition-root)):
+  ([ADR-0031](docs/adr/0031-packages-are-told-what-they-need-by-the-composition-root.md)):
   the upstream store reports what went wrong and the item handlers choose the 502 or 504; the rate
   limiter is told who a client is and their limit, rather than reading the API key itself; and the
   item package lists the flags it reads, replacing the global flag registry. The API behaves as
@@ -171,7 +173,7 @@ Ideas considered but not planned are listed under
   can only be made valid, and stores take a validated draft rather than a loose item. The model no
   longer has a JSON shape: the API's is the handlers' (`item.Request`, `item.Response`) and the
   upstream's is `httpstore`'s, each translated at its edge, so either can change without the
-  other ([ADR-0030](docs/decisions.md#adr-0030-the-item-model-enforces-its-rules-and-wire-formats-stay-at-the-edges)).
+  other ([ADR-0030](docs/adr/0030-the-item-model-enforces-its-rules-and-wire-formats-stay-at-the-edges.md)).
   The API behaves as before.
 
 ## [0.3.0] - 2026-10-06

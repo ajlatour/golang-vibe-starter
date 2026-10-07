@@ -244,6 +244,17 @@ func TestChecks(t *testing.T) {
 	head := write("new.json", string(b))
 	noEntry := write("CHANGELOG.md", "# Changelog\n\n## Unreleased\n\n### Added\n\n- Something.\n\n## [0.6.0] - 2026-10-07\n\n- **Breaking**: an old one.\n")
 	withEntry := write("CHANGELOG2.md", "# Changelog\n\n## Unreleased\n\n### Removed\n\n- **Breaking**: `DELETE /items/{id}` is gone.\n")
+	changesDir := filepath.Join(dir, "changes")
+	if err := os.Mkdir(changesDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	emptyChanges := filepath.Join(dir, "no-changes")
+	if err := os.Mkdir(emptyChanges, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(changesDir, "remove-delete.md"), []byte("### Removed\n\n- **Breaking**: `DELETE /items/{id}` is gone.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	for _, tc := range []struct {
 		name   string
@@ -255,6 +266,8 @@ func TestChecks(t *testing.T) {
 		{"minor release with a breaking change, 1.x", []string{"-base", base, "-head", head, "-from", "v1.6.0", "-to", "v1.7.0"}, true},
 		{"breaking, no changelog entry (an older release's doesn't count)", []string{"-base", base, "-head", head, "-changelog", noEntry}, true},
 		{"breaking, with a changelog entry", []string{"-base", base, "-head", head, "-changelog", withEntry}, false},
+		{"breaking, with an entry in a change file", []string{"-base", base, "-head", head, "-changelog", noEntry, "-changes", changesDir}, false},
+		{"breaking, and no change file says so", []string{"-base", base, "-head", head, "-changelog", noEntry, "-changes", emptyChanges}, true},
 		{"nothing changed", []string{"-base", base, "-head", base, "-changelog", noEntry, "-from", "v0.6.0", "-to", "v0.6.1"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

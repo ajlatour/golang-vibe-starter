@@ -10,13 +10,13 @@ where it's a decision, an [ADR](docs/decisions.md).
 **Status:** ✅ done · 🔄 in progress · ⏭️ queued (decided, not yet built) · 💡 proposed.
 
 **Dependency cost**, because the service uses the standard library only (DEP-1,
-[ADR-0002](docs/decisions.md#adr-0002-the-service-uses-the-standard-library-only), enforced by a
+[ADR-0002](docs/adr/0002-the-service-uses-the-standard-library-only.md), enforced by a
 test):
 
 | Cost | Meaning |
 | ---- | ------- |
 | **stdlib** | Code in this module, no new dependency. Fits as is. |
-| **container** | A tool run in Docker, in the compose stack or CI, like WireMock and Redocly ([ADR-0011](docs/decisions.md#adr-0011-tooling-runs-in-docker-or-through-go-run)). No change to the service. |
+| **container** | A tool run in Docker, in the compose stack or CI, like WireMock and Redocly ([ADR-0011](docs/adr/0011-tooling-runs-in-docker-or-through-go-run.md)). No change to the service. |
 | **tool module** | A Go dependency in a module of its own (like `integration/` and `perf/report/`), or run with `go run`: tests and tooling only (DEP-2). |
 | **service dep** | A dependency of the service itself. Needs an ADR that replaces DEP-1 first. |
 
@@ -140,6 +140,6 @@ matters, but consistent matters more: a flaky check costs more than a slow one.
 
 | | Item | Why | Cost |
 | - | ---- | --- | ---- |
-| 💡 | **Domain, application and infrastructure layers** ([ADR-0015](docs/decisions.md#adr-0015-the-domain-driven-restructure-is-deferred), [ADR-0030](docs/decisions.md#adr-0030-the-item-model-enforces-its-rules-and-wire-formats-stay-at-the-edges)). | Rules beyond CRUD need a place to live. | stdlib |
+| 💡 | **Domain, application and infrastructure layers** ([ADR-0015](docs/adr/0015-the-domain-driven-restructure-is-deferred.md), [ADR-0030](docs/adr/0030-the-item-model-enforces-its-rules-and-wire-formats-stay-at-the-edges.md)). | Rules beyond CRUD need a place to live. | stdlib |
 | 💡 | **Extract a versioned `kit` module** of the generic packages (`httpx`, `logx`, the protections) once a second service exists. | Fixes, security fixes above all, reach every service from one place. | a module of its own |
 | 💡 | **A deprecation policy for API versions**, with `Deprecation` and `Sunset` headers. | Clients learn a version is going before it's gone. | stdlib |

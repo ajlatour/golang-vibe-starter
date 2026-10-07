@@ -41,7 +41,7 @@ flag, the API logs a warning and falls back to the flag's `defaultVariant` from
   reaches it within a second, and flagd is asked about each flag about once a second however busy
   the API is. While flagd isn't answering, the API asks it once per `FLAGS_CACHE_TTL` too, and
   every evaluation in between takes its default at once instead of waiting out `FLAGS_TIMEOUT`.
-  Why, and what it costs, is [ADR-0029](decisions.md#adr-0029-flag-values-are-cached-and-a-flagd-outage-is-retried-once-per-ttl).
+  Why, and what it costs, is [ADR-0029](adr/0029-flag-values-are-cached-and-a-flagd-outage-is-retried-once-per-ttl.md).
 - Only boolean flags are supported; a flag whose default variant isn't a boolean stops the
   service at startup.
 
