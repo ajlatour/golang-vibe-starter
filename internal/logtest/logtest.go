@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // Buffer collects log output. It is safe for concurrent use, so a service
@@ -84,6 +85,25 @@ func (b *Buffer) Records(t testing.TB) []map[string]any {
 		out = append(out, m)
 	}
 	return out
+}
+
+// WaitFor waits up to timeout for a record with msg to be logged, and
+// returns the first; it fails the test if none is. For a server started in
+// the background, its "server started" line says when it's listening, and
+// where (addr).
+func (b *Buffer) WaitFor(t testing.TB, msg string, timeout time.Duration) map[string]any {
+	t.Helper()
+	for deadline := time.Now().Add(timeout); ; time.Sleep(5 * time.Millisecond) {
+		for _, r := range b.Records(t) {
+			if r["msg"] == msg {
+				return r
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no %q line within %v; logged:\n%s", msg, timeout, b.String())
+			return nil
+		}
+	}
 }
 
 // Msgs returns the "msg" of each record, in order.

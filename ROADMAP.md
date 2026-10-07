@@ -30,29 +30,32 @@ For context: what the items below build on.
 - **Dependencies.** Timeouts and a dedicated connection pool for each; outage tracking with
   back-off (`internal/outage`); upstream GET retries within a budget; feature flags with a cache
   and embedded defaults; readiness that tracks reachability.
-- **Observability.** A log contract checked by tests; trace context carried through (W3C
-  `traceparent`); request and runtime metrics; validator call metrics; `runtime stats` in the logs.
+- **Every request answered, and logged as what the client got.** A deadline inside the server's
+  write timeout ([ADR-0041](docs/adr/0041-every-request-has-a-deadline-inside-the-servers-write-timeout.md));
+  JSON errors with codes for every request, unknown routes and methods included
+  ([ADR-0042](docs/adr/0042-requests-no-route-takes-get-json-errors-too.md)); requests the HTTP
+  server rejects itself logged and counted; `write_error` when a response didn't arrive, and
+  requests stopped by a shutdown answered
+  ([ADR-0043](docs/adr/0043-every-request-the-handler-gets-is-logged-as-what-the-client-got.md));
+  background tasks' panics recovered, and a memory limit from the container's
+  ([ADR-0044](docs/adr/0044-a-panic-or-memory-pressure-doesnt-take-the-process-down-with-every-request.md)).
+- **Observability.** A log contract checked by tests, including which messages carry no
+  `request_id`; trace context carried through (W3C `traceparent`); request and runtime metrics;
+  validator call metrics; `runtime stats` in the logs.
 - **Pipeline.** Unit, race, fuzz, OpenAPI-scenario and Gherkin integration tests; gosec,
   staticcheck and govulncheck; a performance comparison on every pull request with an allocation
   gate; main's performance and CI-time trends, attached to every release with its docs; a nightly
-  soak test that fails on heap or goroutine growth.
+  soak test that fails on heap or goroutine growth; the middleware's order held by a test; every
+  image pin kept current by Dependabot.
+- **Releases.** Known deployment configurations must still start; breaking API changes are
+  flagged on their pull request and need a big enough version bump (`cmd/apidiff`); the image is
+  smoke-tested on both platforms, by digest, before it's tagged; changelog entries and decision
+  records are a file each, so pull requests don't conflict over them.
 
-## In flight: the improvement queue
+## In flight
 
-| | Item | Notes |
-| - | ---- | ----- |
-| ✅ | Stable error codes (ADR-0033) | |
-| ✅ | Handlers that return errors (`httpx.Handle`) | |
-| ✅ | One outage tracker (`internal/outage`) | |
-| ✅ | W3C trace context (ADR-0034) | |
-| ✅ | Upstream GET retries within a budget (ADR-0035) | |
-| ✅ | API versioning by header (ADR-0036) | |
-| ✅ | Cursor paging, 50 by default (ADR-0037) | |
-| ✅ | Bound the rate limiter's memory; key IPv6 by /64 (ADR-0038) | |
-| ✅ | Check what the upstream sends back (ADR-0039) | items that break the model's rules become a 502 |
-| ✅ | `ETag` / `If-Match` for safe concurrent updates (ADR-0040) | |
-| ✅ | Nightly soak test, failing on heap or goroutine growth | `.github/workflows/soak.yml` |
-| ✅ | Check the WireMock stubs against the `/items` contract | `cmd/api/openapi_stubs_test.go`; see contract testing below |
+Nothing queued. What earlier batches built is above, and in the
+[changelog](CHANGELOG.md) and the [decision records](docs/decisions.md).
 
 ## Resilience
 
@@ -61,7 +64,7 @@ How the service behaves when what it depends on doesn't.
 | | Item | Why | Cost |
 | - | ---- | --- | ---- |
 | 💡 | **Circuit breaker for the upstream.** After repeated failures, fail fast for a cool-off instead of trying every request. | The retry budget limits extra load, but a dead upstream still costs each request a timeout. `internal/outage` already has the state a breaker needs. | stdlib; or [`sony/gobreaker`](https://github.com/sony/gobreaker) as a service dep |
-| 💡 | **Deadline budgets.** Give each call the time the request has left, not a fixed timeout, and pass it on (`Request-Timeout`-style header or gRPC-like deadline). | A 5s upstream timeout inside a 3s client deadline wastes work nobody will read. | stdlib (`context.WithDeadline` already flows) |
+| 💡 | **Deadline budgets, passed on.** Each request has a deadline now (`REQUEST_TIMEOUT`, ADR-0041), and every call it makes is bounded by it; what's left is telling the upstream how long it has (a `Request-Timeout`-style header). | Lets the upstream stop work nobody will read. Needs an upstream that honours it. | stdlib |
 | 💡 | **Bulkheads.** A separate in-flight cap per dependency (upstream, validator, flagd). | Today one slow dependency can hold every one of the `MAX_IN_FLIGHT` slots, starving requests that don't need it. | stdlib (a semaphore per client) |
 | 💡 | **Adaptive concurrency limits.** Learn the cap from latency (Gradient2, Vegas) instead of a fixed `MAX_IN_FLIGHT`. | A fixed cap is right for one machine and load; adaptive limits track the real capacity. | [`platinummonkey/go-concurrency-limits`](https://github.com/platinummonkey/go-concurrency-limits) as a service dep; or a small stdlib AIMD limiter |
 | 💡 | **Serve stale on failure.** Keep the last good answer for idempotent GETs and serve it, marked, when the upstream fails. | Turns an upstream outage into slightly stale data for reads. | stdlib (a bounded LRU) |
