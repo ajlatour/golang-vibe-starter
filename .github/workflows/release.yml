@@ -70,6 +70,12 @@ jobs:
             integration/go.sum
             perf/report/go.sum
 
+      # A version bump big enough for what changed in the API since the last
+      # release (make release-prepare checked it too).
+      - name: API changes since the last release
+        if: env.DRY_RUN != 'true'
+        run: sh scripts/api-compat.sh release "$TAG"
+
       # What's tagged passed CI on main; this is a last check of the exact
       # commit being published.
       - name: Checks

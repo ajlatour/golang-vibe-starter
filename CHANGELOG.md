@@ -4,6 +4,8 @@ Notable changes to this project. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions on
 [Semantic Versioning](https://semver.org/). Changes not yet released are under Unreleased; each
 release has a section of its own, made by `make release-prepare` ([Releasing](docs/releasing.md)).
+A change that may break API clients is marked **Breaking**: a pull request with one in
+`docs/openapi.json` needs such an entry (`make api-compat`).
 
 Ideas considered but not planned are listed under
 [Open ideas](docs/development.md#open-ideas).

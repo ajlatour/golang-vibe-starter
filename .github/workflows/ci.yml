@@ -103,6 +103,13 @@ jobs:
       - name: Build and check the docs site
         run: make docs-check
 
+      # What changed in the API since the last release: a breaking change
+      # needs a **Breaking** changelog entry, for the release notes.
+      - name: API changes since the last release
+        run: |
+          git fetch -q --tags --unshallow origin 2>/dev/null || git fetch -q --tags origin
+          sh scripts/api-compat.sh pr
+
   # Known vulnerabilities in the code's dependencies and the Go standard
   # library, for all three modules. govulncheck reports only those the code
   # can actually reach.
