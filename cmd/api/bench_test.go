@@ -36,8 +36,9 @@ func BenchmarkAPI(b *testing.B) {
 
 	logger := logx.New(io.Discard, slog.LevelInfo, "json", "api", "bench")
 	store := httpstore.New(upstream.URL, &http.Client{Timeout: 5 * time.Second}, httpstore.WithLogger(logger))
-	// ClientIP as in production, where LOG_CLIENT_IP defaults to on.
-	api := newHandler(logger, handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: noAuth, Metrics: httpmetrics.New(), ClientIP: true}, store)
+	// ClientIP and the request deadline as in production, where
+	// LOG_CLIENT_IP is on and REQUEST_TIMEOUT 10s by default.
+	api := newHandler(logger, handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: noAuth, Metrics: httpmetrics.New(), ClientIP: true, RequestTimeout: 10 * time.Second}, store)
 
 	for _, tt := range []struct {
 		name, method, path, body string

@@ -34,6 +34,17 @@ func failing(t *testing.T, failures int32, status int) (*httptest.Server, *atomi
 	return srv, &calls
 }
 
+// A deadline with room for another whole attempt doesn't stop the retry.
+func TestRetriesWithinADeadline(t *testing.T) {
+	srv, calls := failing(t, 1, http.StatusServiceUnavailable)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	store := httpstore.New(srv.URL, &http.Client{Timeout: 5 * time.Second}, httpstore.WithRetries(1))
+	if _, err := store.List(ctx, firstPage); err != nil || calls.Load() != 2 {
+		t.Errorf("List = %v after %d calls, want the retry's answer after 2", err, calls.Load())
+	}
+}
+
 func TestRetriesAGetThatFailedFast(t *testing.T) {
 	srv, calls := failing(t, 1, http.StatusServiceUnavailable)
 	var logs logtest.Buffer
@@ -54,7 +65,8 @@ func TestRetriesAGetThatFailedFast(t *testing.T) {
 	}
 }
 
-// TestNeverRetries checks what isn't retried: a write, a timeout, a call
+// TestNeverRetries checks what isn't retried: a write, a timeout, a slow
+// failure, a call without the time left for another attempt, a call
 // whose client has gone, a 4xx (the upstream answered), and any GET when
 // retries are off.
 func TestNeverRetries(t *testing.T) {
@@ -94,6 +106,33 @@ func TestNeverRetries(t *testing.T) {
 		_, err := store.List(t.Context(), firstPage)
 		if !errors.Is(err, item.ErrStoreTimeout) || calls.Load() != 1 {
 			t.Errorf("a timeout: %v after %d calls; want ErrStoreTimeout after one", err, calls.Load())
+		}
+	})
+	t.Run("a slow failure", func(t *testing.T) {
+		// A 5xx that took more than a second: the upstream is struggling.
+		var calls atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			time.Sleep(1100 * time.Millisecond)
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		defer srv.Close()
+		store := httpstore.New(srv.URL, srv.Client(), httpstore.WithRetries(3))
+		_, _ = store.List(t.Context(), firstPage)
+		if n := calls.Load(); n != 1 {
+			t.Errorf("a slow 503 was retried: %d calls", n)
+		}
+	})
+	t.Run("no time for another attempt", func(t *testing.T) {
+		// The request's deadline is nearer than the client's timeout: a
+		// retry would be cut short, so the failure is answered now.
+		srv, calls := failing(t, 5, http.StatusServiceUnavailable)
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		store := httpstore.New(srv.URL, &http.Client{Timeout: 5 * time.Second}, httpstore.WithRetries(3))
+		_, _ = store.List(ctx, firstPage)
+		if n := calls.Load(); n != 1 {
+			t.Errorf("retried with no time for a whole attempt: %d calls", n)
 		}
 	})
 	t.Run("the client left", func(t *testing.T) {

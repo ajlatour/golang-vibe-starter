@@ -14,10 +14,12 @@ import (
 
 // WithRetries lets the store try a GET again, up to n times, when the
 // upstream gave no usable answer fast: a refused or reset connection, or a
-// 5xx. A GET reads, so trying it again can't change anything; a write might
-// already have happened, so it's never retried. Neither is a timeout, which
-// already cost the client the whole UPSTREAM_TIMEOUT, nor a call whose
-// client has gone. The default, 0, retries nothing.
+// 5xx, within retryFastFailure. A GET reads, so trying it again can't change
+// anything; a write might already have happened, so it's never retried.
+// Neither is a timeout or a slow failure, which already cost the client
+// time a retry would double, nor a call whose client has gone, nor one whose
+// request hasn't the time left for a whole attempt (the client's timeout)
+// before its deadline. The default, 0, retries nothing.
 //
 // Retries share a budget: across all calls, at most about one retry for
 // every ten requests (retryRatio). So when the upstream is down, not merely
@@ -36,6 +38,11 @@ const (
 	// retryPause is the shortest pause before a retry; it's jittered up to
 	// twice that, so retries after one blip don't all arrive at once.
 	retryPause = 25 * time.Millisecond
+	// retryFastFailure is the longest a failed attempt may have taken and
+	// still be retried: a refused connection or an upstream's quick 5xx is
+	// worth another try, while an upstream that took longer to fail is
+	// struggling, and a retry would mostly add to the wait.
+	retryFastFailure = time.Second
 )
 
 // retryBudget is a token bucket of retries: each request deposits
@@ -76,6 +83,18 @@ func retriable(ctx context.Context, method string, err error) bool {
 	}
 	var ne net.Error
 	return !errors.Is(err, context.DeadlineExceeded) && !(errors.As(err, &ne) && ne.Timeout())
+}
+
+// worthRetrying reports whether there's time for another attempt: the one
+// that failed did so fast, and if the call has a deadline (the request's),
+// a whole attempt still fits before it, pause included. Otherwise the retry
+// would only turn the failure into a timeout later.
+func (s *Store) worthRetrying(ctx context.Context, elapsed time.Duration) bool {
+	if elapsed > retryFastFailure {
+		return false
+	}
+	deadline, ok := ctx.Deadline()
+	return !ok || s.client.Timeout == 0 || time.Until(deadline) > s.client.Timeout+2*retryPause
 }
 
 // pause waits before a retry, jittered, unless ctx ends first.

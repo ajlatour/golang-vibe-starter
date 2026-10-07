@@ -450,7 +450,7 @@
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "GatewayTimeout": {
-        "description": "The upstream didn't answer in time.",
+        "description": "The upstream didn't answer in time: within `UPSTREAM_TIMEOUT`, or before the request reached its deadline, `REQUEST_TIMEOUT`.",
         "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       }

@@ -132,7 +132,7 @@ apart errors that share a status:
 | 502 | `upstream_failed` | The upstream couldn't give a usable answer: connection refused or reset, an error status, a body that won't decode, or an item that breaks the API's own rules. Its message is logged, not returned |
 | 503 | `busy` | The service is serving as many requests as it takes at once (with `Retry-After`) |
 | 503 | `validation_unavailable` | The request-validation service can't answer, and the API fails closed (with `Retry-After`) |
-| 504 | `upstream_timeout` | The upstream didn't answer within `UPSTREAM_TIMEOUT` |
+| 504 | `upstream_timeout` | The upstream didn't answer within `UPSTREAM_TIMEOUT`, or the request reached `REQUEST_TIMEOUT` waiting for it |
 
 Every response carries a `Client-Correlation-Id` header. Send your own to tie the service's log
 lines to yours, or quote the one returned when reporting a problem. A W3C `traceparent` header,
@@ -205,8 +205,9 @@ The API reads these environment variables:
 | Variable              | Default    | Description                                                |
 | --------------------- | ---------- | ---------------------------------------------------------- |
 | `UPSTREAM_URL`        | (required) | Base URL of the items upstream. May include a path prefix, but no query string or fragment. |
-| `UPSTREAM_TIMEOUT`    | `5s`       | Timeout for each upstream request.                         |
-| `UPSTREAM_RETRIES`    | `1`        | How often a GET to the upstream is tried again after a fast failure (refused, reset, or a 5xx; never a timeout, never a write), 0 to 3. Retries share a budget of about one per ten requests, so a down upstream isn't hit harder. |
+| `UPSTREAM_TIMEOUT`    | `5s`       | Timeout for each upstream request. Must be shorter than `REQUEST_TIMEOUT`. |
+| `UPSTREAM_RETRIES`    | `1`        | How often a GET to the upstream is tried again after a fast failure (refused, reset, or a 5xx, within a second; never a timeout, never a write), 0 to 3, and only while a whole attempt still fits before the request's deadline. Retries share a budget of about one per ten requests, so a down upstream isn't hit harder. |
+| `REQUEST_TIMEOUT`     | `10s`      | How long a request has to be answered, whatever it waits on: past it, the calls it's making give up and it gets its answer, usually 504. The server cuts off a response only 5s after this, so every request is answered and logged. `UPSTREAM_TIMEOUT`, and `VALIDATOR_TIMEOUT` and `FLAGS_TIMEOUT` when those are used, must be shorter. |
 | `FLAGS_URL`           |            | flagd OFREP base URL, e.g. `http://flagd:8016`, without a query string or fragment. Unset disables flags. |
 | `FLAGS_TIMEOUT`       | `500ms`    | Timeout for each flag evaluation.                          |
 | `FLAGS_CACHE_TTL`     | `1s`       | How long a flag's value is kept after flagd serves it, so a change in flagd shows within this; during a flagd outage, how often flagd is retried, with the evaluations in between taking their defaults at once. `0s` asks flagd every time. |
@@ -215,7 +216,7 @@ The API reads these environment variables:
 | `PORT`                |            | Listen port, used only when `ADDR` is unset.               |
 | `LOG_LEVEL`           | `info`     | `debug`, `info`, `warn`, or `error`.                       |
 | `LOG_FORMAT`          | `json`     | `json` or `text`.                                          |
-| `SHUTDOWN_TIMEOUT`    | `10s`      | How long in-flight requests get to finish on SIGTERM.      |
+| `SHUTDOWN_TIMEOUT`    | `10s`      | How long in-flight requests get to finish on SIGTERM. At least `REQUEST_TIMEOUT`, so any request can. |
 | `SHUTDOWN_DELAY`      | `0s`       | How long to keep serving after SIGTERM, reporting not ready on `/readyz`, before refusing new connections: time for a load balancer to stop sending requests. |
 | `API_KEYS`            | (required) | API keys: comma-separated `name:scope:sha256` entries, scope `read` or `write`, with an optional fourth field, the key's own rate limit (`:500` or `:500/1000` for a burst). `make api-key NAME=<who> SCOPE=read\|write` generates one. Only the key's hash goes here. Required unless `API_KEYS_FILE` is set or `API_AUTH=off`. |
 | `API_KEYS_FILE`       |            | Instead of `API_KEYS`, a file of the same entries, one per line, reloaded while the service runs: keys are added, removed or rotated without a restart. A file that won't parse changes nothing. |

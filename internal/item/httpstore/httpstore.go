@@ -218,7 +218,7 @@ func (s *Store) do(ctx context.Context, method, path string, body any, want int,
 		if status != 0 {
 			s.logger.LogAttrs(ctx, slog.LevelInfo, "upstream response received", attrs...)
 		}
-		if err == nil || attempt > s.retries || !retriable(ctx, method, err) || !s.budget.spend() {
+		if err == nil || attempt > s.retries || !retriable(ctx, method, err) || !s.worthRetrying(ctx, elapsed) || !s.budget.spend() {
 			break
 		}
 		s.logger.LogAttrs(ctx, slog.LevelInfo, "upstream request retried",
