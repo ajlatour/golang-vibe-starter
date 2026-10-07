@@ -65,8 +65,21 @@ type StatusError interface {
 // If err (or an error it wraps) is a logx.AttrsError, its fields are logged too.
 // If err is only because the client went away (the request's context was
 // cancelled), that's not a server fault: it is logged at info as
-// "client disconnected" and answered with 499 instead.
+// "client disconnected" and answered with 499 instead. If shutdown stopped
+// the request (its context's cause is ErrShuttingDown), it's a 503 with
+// shutting_down and Retry-After, logged at warn as "request stopped by
+// shutdown".
 func ServerError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, err error) {
+	if context.Cause(r.Context()) == ErrShuttingDown {
+		// Shutdown ran out of time and stopped the request (Serve): not a
+		// failure of its own, and the client can retry elsewhere.
+		logger.LogAttrs(r.Context(), slog.LevelWarn, "request stopped by shutdown",
+			append(requestAttrs(r), logx.ErrorAttrs(err)...)...,
+		)
+		w.Header().Set("Retry-After", "1")
+		WriteError(w, http.StatusServiceUnavailable, CodeShuttingDown, "the service is shutting down; retry the request")
+		return
+	}
 	if errors.Is(r.Context().Err(), context.Canceled) && errors.Is(err, context.Canceled) {
 		logger.LogAttrs(r.Context(), slog.LevelInfo, "client disconnected",
 			append(requestAttrs(r), logx.ErrorAttrs(err)...)...,

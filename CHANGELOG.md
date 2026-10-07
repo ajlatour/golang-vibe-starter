@@ -35,6 +35,13 @@ Ideas considered but not planned are listed under
   has no route for, and 400 `invalid_target` for `OPTIONS *`, which the server used to answer
   itself, unlogged. They were plain text, `404 page not found`
   ([ADR-0042](docs/decisions.md#adr-0042-requests-no-route-takes-get-json-errors-too)).
+- `response sent` now says when the client didn't get the whole response, in `write_error`: it had
+  gone, a write failed, or the response was aborted. Aborted requests are logged too; they had no
+  `response sent` at all. A panic after the response has started drops the connection instead of
+  appending a 500 to the partial body. And requests still running when shutdown runs out of time
+  are stopped and answered, 503 `shutting_down` with `Retry-After`, instead of being cut off
+  unanswered and unlogged
+  ([ADR-0043](docs/decisions.md#adr-0043-every-request-the-handler-gets-is-logged-as-what-the-client-got)).
 
 ## [0.5.0] - 2026-10-07
 

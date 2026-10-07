@@ -133,6 +133,7 @@ apart errors that share a status:
 | 500 | `internal` | An unexpected failure in the API itself; details are logged, not returned |
 | 502 | `upstream_failed` | The upstream couldn't give a usable answer: connection refused or reset, an error status, a body that won't decode, or an item that breaks the API's own rules. Its message is logged, not returned |
 | 503 | `busy` | The service is serving as many requests as it takes at once (with `Retry-After`) |
+| 503 | `shutting_down` | The service is shutting down and stopped the request before it finished (with `Retry-After`): retry it, and another instance will serve it |
 | 503 | `validation_unavailable` | The request-validation service can't answer, and the API fails closed (with `Retry-After`) |
 | 504 | `upstream_timeout` | The upstream didn't answer within `UPSTREAM_TIMEOUT`, or the request reached `REQUEST_TIMEOUT` waiting for it |
 

@@ -163,12 +163,33 @@ func ShutdownDelay(d time.Duration) ServeOption {
 	return func(c *serveConfig) { c.delay = d }
 }
 
+// ErrShuttingDown is the cause of a request's context ending when shutdown
+// ran out of time for it: ServerError answers it with 503, shutting_down.
+var ErrShuttingDown = errors.New("the service is shutting down")
+
+// stopGrace is how long requests get to answer once shutdown has stopped
+// them, before their connections are closed.
+const stopGrace = 2 * time.Second
+
 // Serve runs handler on addr until ctx is cancelled, then shuts down
 // gracefully, giving in-flight requests up to shutdownTimeout to finish.
+// Those still running then are stopped (their contexts end, with cause
+// ErrShuttingDown), so each answers and logs, within stopGrace; only what's
+// left after that is cut off, and Serve returns an error saying how many.
 // It returns nil after a clean shutdown.
 func Serve(ctx context.Context, logger *slog.Logger, addr string, shutdownTimeout time.Duration, handler http.Handler, opts ...ServeOption) error {
+	// Every request's context derives from base, so shutdown can stop
+	// them all (stopRequests); inFlight counts them, for the log.
+	base, stopRequests := context.WithCancelCause(context.WithoutCancel(ctx))
+	defer stopRequests(nil)
+	var inFlight atomic.Int64
 	srv := &http.Server{
-		Handler:           handler,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			inFlight.Add(1)
+			defer inFlight.Add(-1)
+			handler.ServeHTTP(w, r)
+		}),
+		BaseContext:       func(net.Listener) context.Context { return base },
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
@@ -220,7 +241,21 @@ func Serve(ctx context.Context, logger *slog.Logger, addr string, shutdownTimeou
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutdown: %w", err)
+		// Requests are still in flight after shutdownTimeout. Rather than
+		// cut them off unanswered and unlogged, stop them: each one's
+		// context ends with ErrShuttingDown, so what it waits on gives up,
+		// and it answers 503 (ServerError) and logs it, while its
+		// connection is still open. Then close whatever is left.
+		logger.LogAttrs(context.Background(), slog.LevelWarn, "shutdown timed out; stopping requests in flight",
+			slog.Int64(logx.KeyInFlight, inFlight.Load()))
+		stopRequests(ErrShuttingDown)
+		graceCtx, cancelGrace := context.WithTimeout(context.WithoutCancel(ctx), stopGrace)
+		defer cancelGrace()
+		if err := srv.Shutdown(graceCtx); err != nil {
+			n := inFlight.Load()
+			_ = srv.Close()
+			return fmt.Errorf("shutdown: %d requests still in flight %v after being stopped, cut off: %w", n, stopGrace, err)
+		}
 	}
 	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serve: %w", err)

@@ -33,8 +33,9 @@ var Contract = map[string]Message{
 	"using limits":        {[]string{"INFO"}, []string{"max_in_flight", "rate_limit", "rate_burst"}},
 	"authentication is off: every request is allowed":        {[]string{"WARN"}, nil},
 	"feature flags: no FLAGS_URL, using default values only": {[]string{"INFO"}, nil},
-	"server started":           {[]string{"INFO"}, []string{"addr"}},
-	"shutting down":            {[]string{"INFO"}, []string{"timeout"}},
+	"server started": {[]string{"INFO"}, []string{"addr"}},
+	"shutting down":  {[]string{"INFO"}, []string{"timeout"}},
+	"shutdown timed out; stopping requests in flight": {[]string{"WARN"}, []string{"in_flight"}},
 	"server stopped":           {[]string{"INFO"}, nil},
 	"not ready":                {[]string{"WARN"}, []string{"reason"}},
 	"ready again":              {[]string{"INFO"}, nil},
@@ -52,12 +53,13 @@ var Contract = map[string]Message{
 	"response sent":              {[]string{"INFO", "DEBUG", "ERROR"}, []string{"method", "route", "path", "status", "bytes", "duration_ms"}},
 
 	// What can go wrong in between.
-	"internal error":             {[]string{"ERROR"}, []string{"method", "route", "path", "error"}},
-	"client disconnected":        {[]string{"INFO"}, []string{"method", "route", "path", "error"}},
-	"panic serving request":      {[]string{"ERROR"}, []string{"method", "route", "path", "panic", "stack"}},
-	"upstream request failed":    {[]string{"WARN"}, []string{"upstream", "upstream_duration_ms", "error"}},
-	"upstream request cancelled": {[]string{"DEBUG"}, []string{"upstream", "upstream_duration_ms", "error"}},
-	"upstream request retried":   {[]string{"INFO"}, []string{"upstream", "upstream_duration_ms", "attempt", "error"}},
+	"internal error":              {[]string{"ERROR"}, []string{"method", "route", "path", "error"}},
+	"client disconnected":         {[]string{"INFO"}, []string{"method", "route", "path", "error"}},
+	"request stopped by shutdown": {[]string{"WARN"}, []string{"method", "route", "path", "error"}},
+	"panic serving request":       {[]string{"ERROR"}, []string{"method", "route", "path", "panic", "stack"}},
+	"upstream request failed":     {[]string{"WARN"}, []string{"upstream", "upstream_duration_ms", "error"}},
+	"upstream request cancelled":  {[]string{"DEBUG"}, []string{"upstream", "upstream_duration_ms", "error"}},
+	"upstream request retried":    {[]string{"INFO"}, []string{"upstream", "upstream_duration_ms", "attempt", "error"}},
 	// A request the server answered itself, before the handler: no
 	// request_id, method or path, since it never got that far.
 	"request rejected by the server": {[]string{"WARN"}, []string{"duration_ms"}},

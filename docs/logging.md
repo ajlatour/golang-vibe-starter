@@ -44,6 +44,7 @@ include `.git`; without it, container logs show `version=devel`.
 | `client_ip`   | `request received`, `response sent`, `request rejected by the server` | The IP address the request's connection came from: behind a load balancer, the balancer's, since proxy headers are never trusted. Off with `LOG_CLIENT_IP=off`. |
 | `status`      | `response sent`        | Response status code.                                        |
 | `response_code` | `response sent`, when the response was an error | The error's code (`httpx.Code`), e.g. `rate_limited`: what it means, stable, so group and alert on this rather than on `response_error`. |
+| `write_error` | `response sent`, when the client didn't get the whole response | Why: `client closed the connection` (it left before the response could be sent), a failed write's error, `response aborted after a panic` (the handler panicked after the response had started, so the connection was dropped rather than a 500 appended to it), or `response aborted`. The `status` is then what the response began with, not what arrived. |
 | `response_error` | `response sent`, when the response was an error | The error message the client was sent (`{"error": "..."}`): why the request was refused, or what failed. Capped at 200 characters, since it can quote the client's own input. |
 | `bytes`       | `response sent`        | Response body size.                                          |
 | `duration_ms` | `response sent`, `flag service recovered`, `request rejected by the server` | Time to serve the request, the length of a flagd outage, or how long a rejected request's connection was reading it, in milliseconds (a decimal number). |
@@ -66,6 +67,7 @@ include `.git`; without it, container logs show `version=devel`.
 | `api_keys`    | `using API keys`, `API keys reloaded` | The keys' names, scopes and own rate limits, e.g. `ci (write, 500/s in bursts of 1000), dashboard (read)`. |
 | `reads`       | `using API keys`       | Whether reads need a key: `required` or `open` (`API_AUTH_READS`). |
 | `max_in_flight` | `using limits`       | The cap on requests being served at once (`MAX_IN_FLIGHT`). |
+| `in_flight` | `shutdown timed out; stopping requests in flight` | How many requests were still being served when shutdown ran out of time. |
 | `rate_limit`  | `using limits`         | Requests per second each client may make on average (`RATE_LIMIT`). |
 | `rate_burst`  | `using limits`         | Requests a client may make at once after a quiet spell (`RATE_BURST`). |
 | `mode`        | `using header guard`   | `enforce` or `report` (`HEADER_GUARD_MODE`).                 |
@@ -99,9 +101,10 @@ upstream, comes back, and leaves the API.
 | `request received` | INFO; DEBUG for `/healthz` | `method`, `path`, `content_length` | A request arrives. With `LOG_CLIENT_IP` on (the default), this and `response sent` add `client_ip`. |
 | `upstream request sent` | INFO | `upstream` | Before each call to the upstream. |
 | `upstream response received` | INFO | `upstream`, `upstream_status`, `upstream_duration_ms` | The upstream answered, with any status. |
-| `response sent` | INFO; DEBUG for `/healthz`; ERROR for 5xx | `method`, `route`, `path`, `status`, `bytes`, `duration_ms` | The reply goes to the client. An error response adds `response_error`, what the client was told. |
+| `response sent` | INFO; DEBUG for `/healthz`; ERROR for 5xx | `method`, `route`, `path`, `status`, `bytes`, `duration_ms` | The reply goes to the client. An error response adds `response_error`, what the client was told; one the client didn't get in full adds `write_error`. Logged for every request the handler gets, aborted ones included. |
 | `internal error` | ERROR | `method`, `route`, `path`, `error` | A request failed with a 5xx. When an upstream call caused it, the `upstream*` fields are on this line too. |
 | `client disconnected` | INFO | `method`, `route`, `path`, `error` | The client left mid-request; it is answered with 499, not an error. |
+| `request stopped by shutdown` | WARN | `method`, `route`, `path`, `error` | Shutdown ran out of time (`SHUTDOWN_TIMEOUT`) with this request still running, and stopped it: it's answered 503, `shutting_down`, with `Retry-After`, so the client can retry on another instance. |
 | `panic serving request` | ERROR | `method`, `route`, `path`, `panic`, `stack` | A handler panicked; the client gets a 500. |
 | `request headers rejected` | INFO | `reason`, `status` | A request broke a header rule and was answered with `status` (400, 415 or 431); `header` names the header when one is to blame. See [request headers](../README.md#request-headers). |
 | `request headers would be rejected` | INFO | `reason`, `status` | The same, with `HEADER_GUARD_MODE=report`: logged, but let through. |
@@ -126,6 +129,7 @@ upstream, comes back, and leaves the API.
 | `feature flags: no FLAGS_URL, using default values only` | INFO | none | Startup, with `FLAGS_URL` unset. |
 | `server started` | INFO | `addr` | The server is listening. |
 | `shutting down` | INFO | `timeout` | A shutdown signal arrived. |
+| `shutdown timed out; stopping requests in flight` | WARN | `in_flight` | `SHUTDOWN_TIMEOUT` passed with requests still running. Each is stopped, and answers and logs (`request stopped by shutdown`) within 2 seconds; any still running then are cut off, and `service failed` says how many. |
 | `not ready` | WARN | `reason` | `/readyz` started answering 503: `shutting down`, or a check failed (`upstream unavailable`, with `error`). Logged once per change, not per probe. |
 | `ready again` | INFO | none | A failing readiness check passes again. |
 | `server stopped` | INFO | none | Shutdown finished cleanly. |
