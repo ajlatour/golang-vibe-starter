@@ -86,11 +86,16 @@ const (
 	KeyGoVersion          = "go_version"
 	KeyGOMAXPROCS         = "gomaxprocs"
 	KeyMemoryLimitBytes   = "memory_limit_bytes"
+	KeyMemoryLimitSource  = "memory_limit_source"
 	KeyStatsInterval      = "stats_interval"
 	KeyHeapBytes          = "heap_bytes"
 	KeyRuntimeMemoryBytes = "runtime_memory_bytes"
 	KeyGoroutines         = "goroutines"
 	KeyGCCycles           = "gc_cycles"
+
+	// KeyTask names a background task: one that runs beside the requests,
+	// such as reloading the API keys.
+	KeyTask = "task"
 )
 
 // MaxLoggedPath caps the request and upstream paths written to logs, which

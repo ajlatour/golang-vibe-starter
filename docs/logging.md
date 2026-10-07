@@ -82,7 +82,9 @@ include `.git`; without it, container logs show `version=devel`.
 | `failures`    | `request validation recovered` | Requests answered with the failure mode (refused, or let through unchecked) during the outage. |
 | `go_version`  | `using runtime`        | The Go version the binary was built with, e.g. `go1.27.0`.  |
 | `gomaxprocs`  | `using runtime`        | How many CPUs the Go scheduler uses at once (`GOMAXPROCS`). |
-| `memory_limit_bytes` | `using runtime` | The Go runtime's soft memory limit (`GOMEMLIMIT`); `0` when there's none. |
+| `memory_limit_bytes` | `using runtime` | The Go runtime's soft memory limit; `0` when there's none. |
+| `memory_limit_source` | `using runtime` | Where it came from: `GOMEMLIMIT`; `container`, 90% of the container's memory limit (its cgroup's), when `GOMEMLIMIT` isn't set; or `none`. |
+| `task` | `panic in background task` | Which background task panicked: `runtime stats`, `API keys reload` or `profiling server`. |
 | `stats_interval` | `using runtime`     | How often `runtime stats` is logged (`RUNTIME_STATS_INTERVAL`); `0s` when it isn't. |
 | `heap_bytes`  | `runtime stats`        | Bytes held by heap objects: live ones, and dead ones not yet swept. |
 | `runtime_memory_bytes` | `runtime stats` | All the memory the Go runtime holds from the OS: the heap, stacks, and what it's kept but not returned. Close to the process's resident memory. |
@@ -140,7 +142,8 @@ upstream, comes back, and leaves the API.
 | `request would be refused by validation` | INFO | `reason` | Shadow mode (the `request-validation-enforce` flag off): the validation service refused a request, which went through anyway. |
 | `request validation unavailable` | WARN | `enforcing`, `fail_open`, `error` | The validation service stopped answering: once per outage. Until it's back, requests are refused (503) or, failing open or in shadow mode, let through unchecked, and the service is asked again once a second. |
 | `request validation recovered` | INFO | `failures`, `duration_ms` | The validation service answers again: how many requests the outage cost, and how long it lasted. |
-| `using runtime` | INFO | `go_version`, `gomaxprocs`, `memory_limit_bytes`, `stats_interval` | Startup: what the Go runtime runs with. |
+| `using runtime` | INFO | `go_version`, `gomaxprocs`, `memory_limit_bytes`, `memory_limit_source`, `stats_interval` | Startup: what the Go runtime runs with. |
+| `panic in background task` | ERROR | `task`, `panic`, `stack` | A task beside the requests panicked. It's stopped, and the service carries on without it (without reloading API keys, say), where an unrecovered panic would have ended the process and every request in flight. Alert on it. |
 | `runtime stats` | INFO | `heap_bytes`, `runtime_memory_bytes`, `goroutines`, `gc_cycles` | Every `RUNTIME_STATS_INTERVAL` (5m): what the runtime holds. See [Memory over time](#memory-over-time). |
 | `profiling server started` | INFO | `addr` | Startup, with `PPROF_ADDR` set: the runtime profiles are served there. |
 | `profiling server is reachable beyond this machine; keep its port private` | WARN | `addr` | Startup, with `PPROF_ADDR` on an address other machines can reach. Expected inside a container whose port is published privately, as in the compose stack; anywhere else, a mistake. |
@@ -209,7 +212,9 @@ never as one line:
 - **Pressure** is `gc_cycles` rising quickly between lines: the collector is working hard to stay
   inside the memory limit.
 
-`using runtime` at startup says what limits applied (`memory_limit_bytes` is `GOMEMLIMIT`), and
+`using runtime` at startup says what limits applied: `memory_limit_bytes`, from `GOMEMLIMIT` or,
+without it, 90% of the container's memory limit (`memory_limit_source`), so the collector works
+harder before the kernel's out-of-memory killer would end the process. And
 `service failed` is the last line if the service stops on an error. To find which code holds the
 memory, profiles are the next step: [Performance](performance.md#profiling).
 

@@ -13,10 +13,10 @@ import (
 )
 
 // LogRuntime logs, once, what the Go runtime runs with: the Go version,
-// GOMAXPROCS, and the memory limit (GOMEMLIMIT; 0 when there's none), the
-// first things to check when memory or CPU misbehave, and how often
-// LogRuntimeStats reports.
-func LogRuntime(logger *slog.Logger, statsInterval time.Duration) {
+// GOMAXPROCS, and the memory limit (0 when there's none) and where it came
+// from (LimitMemory's answer), the first things to check when memory or CPU
+// misbehave, and how often LogRuntimeStats reports.
+func LogRuntime(logger *slog.Logger, statsInterval time.Duration, memoryLimitSource string) {
 	limit := debug.SetMemoryLimit(-1) // -1 reads it without changing it
 	if limit == math.MaxInt64 {
 		limit = 0 // the default: no limit
@@ -25,6 +25,7 @@ func LogRuntime(logger *slog.Logger, statsInterval time.Duration) {
 		logx.KeyGoVersion, runtime.Version(),
 		logx.KeyGOMAXPROCS, runtime.GOMAXPROCS(0),
 		logx.KeyMemoryLimitBytes, limit,
+		logx.KeyMemoryLimitSource, memoryLimitSource,
 		logx.KeyStatsInterval, statsInterval.String())
 }
 

@@ -42,9 +42,10 @@ var Contract = map[string]Message{
 	"profiling server started": {[]string{"INFO"}, []string{"addr"}},
 	"profiling server failed":  {[]string{"ERROR"}, []string{"error"}},
 	"profiling server is reachable beyond this machine; keep its port private": {[]string{"WARN"}, []string{"addr"}},
-	"using runtime":  {[]string{"INFO"}, []string{"go_version", "gomaxprocs", "memory_limit_bytes", "stats_interval"}},
-	"runtime stats":  {[]string{"INFO"}, []string{"heap_bytes", "runtime_memory_bytes", "goroutines", "gc_cycles"}},
-	"service failed": {[]string{"ERROR"}, []string{"error"}},
+	"using runtime":            {[]string{"INFO"}, []string{"go_version", "gomaxprocs", "memory_limit_bytes", "memory_limit_source", "stats_interval"}},
+	"panic in background task": {[]string{"ERROR"}, []string{"task", "panic", "stack"}},
+	"runtime stats":            {[]string{"INFO"}, []string{"heap_bytes", "runtime_memory_bytes", "goroutines", "gc_cycles"}},
+	"service failed":           {[]string{"ERROR"}, []string{"error"}},
 
 	// The four ends of a request, in order.
 	"request received":           {[]string{"INFO", "DEBUG"}, []string{"method", "path", "content_length"}},
@@ -96,6 +97,7 @@ var OutsideRequests = []string{
 	"authentication is off: every request is allowed", "feature flags: no FLAGS_URL, using default values only",
 	"server started", "shutting down", "server stopped", "not ready", "ready again", "profiling server started", "profiling server failed",
 	"profiling server is reachable beyond this machine; keep its port private",
-	"using runtime", "runtime stats", "service failed",
+	"using runtime", "runtime stats", "service failed", "panic in background task",
+	"request rejected by the server", "shutdown timed out; stopping requests in flight",
 	"using request validation", "request validation is off: no VALIDATOR_URL; every request goes unchecked",
 }

@@ -248,6 +248,12 @@ code, `.env.example` and this table in step. The header limits must be whole num
 1048576, with `HEADER_MAX_BYTES` no larger than `HEADER_MAX_TOTAL_BYTES`; the service refuses to
 start otherwise, so a typo can't switch a limit off.
 
+**Memory.** The Go runtime's own `GOMEMLIMIT` sets its soft memory limit. Without it, the API
+takes 90% of its container's memory limit (its cgroup's), so garbage is collected harder as memory
+nears the limit, rather than the kernel killing the process, and every request in flight with it,
+for going over. Outside a container, or in one without a limit, there's none. The startup line
+`using runtime` says which (`memory_limit_source`).
+
 ## Documentation
 
 `make docs-open` renders all of this as a local website and opens it in your browser, with the
