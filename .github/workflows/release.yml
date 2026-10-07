@@ -95,32 +95,89 @@ jobs:
             echo
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Build the image, and push it unless this is a dry run
+      # To run the arm64 image on this amd64 runner, for its smoke test.
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+
+      # Built once, for both platforms, with the SBOM and provenance, and
+      # pushed by digest alone: no tag points at it until it has passed its
+      # smoke test, and then the tags point at exactly that digest. A dry
+      # run loads each platform's image locally instead, to test the same
+      # way, and pushes nothing.
+      - name: Build the image
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           image=$(echo "ghcr.io/$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
-          number=${VERSION#v}
-          set -- --platform linux/amd64,linux/arm64 -f cmd/api/Dockerfile \
+          set -- -f cmd/api/Dockerfile \
             --build-arg VERSION="$VERSION" \
             --label org.opencontainers.image.source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --label org.opencontainers.image.revision="$GITHUB_SHA" \
-            --label org.opencontainers.image.version="$VERSION" \
-            --sbom="generator=docker/buildkit-syft-scanner:stable-1@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9" \
-            --provenance=mode=max \
-            -t "$image:$VERSION" -t "$image:${number%.*}" -t "$image:latest"
+            --label org.opencontainers.image.version="$VERSION"
           docker buildx create --use --name release --driver docker-container > /dev/null
           if [ "$DRY_RUN" = true ]; then
-            docker buildx build "$@" --output "type=oci,dest=$RUNNER_TEMP/image.tar" .
+            # The multi-platform build, with the SBOM and provenance, as a
+            # release makes it, then each platform's image for its test.
+            docker buildx build "$@" --platform linux/amd64,linux/arm64 \
+              --sbom="generator=docker/buildkit-syft-scanner:stable-1@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9" \
+              --provenance=mode=max --output "type=oci,dest=$RUNNER_TEMP/image.tar" .
+            for arch in amd64 arm64; do
+              docker buildx build "$@" --platform "linux/$arch" --load -t "release-candidate:$arch" .
+            done
+            echo "IMAGE_AMD64=release-candidate:amd64" >> "$GITHUB_ENV"
+            echo "IMAGE_ARM64=release-candidate:arm64" >> "$GITHUB_ENV"
             echo "Built $(du -h "$RUNNER_TEMP/image.tar" | cut -f1) for linux/amd64 and linux/arm64, with SBOM and provenance; pushed nothing." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          docker buildx build "$@" --push .
+          docker buildx build "$@" --platform linux/amd64,linux/arm64 \
+            --sbom="generator=docker/buildkit-syft-scanner:stable-1@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9" \
+            --provenance=mode=max \
+            --output "type=image,name=$image,push-by-digest=true,name-canonical=true,push=true" \
+            --metadata-file "$RUNNER_TEMP/build.json" .
+          digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/build.json")
+          echo "IMAGE_DIGEST=$digest" >> "$GITHUB_ENV"
+          echo "IMAGE_AMD64=$image@$digest" >> "$GITHUB_ENV"
+          echo "IMAGE_ARM64=$image@$digest" >> "$GITHUB_ENV"
+
+      # The image as it will ship, run on each platform against WireMock and
+      # flagd: it starts, says it's this version, serves the basics, and
+      # shuts down cleanly (scripts/smoke-image.sh). Nothing is tagged
+      # unless both pass.
+      - name: Smoke-test the image, linux/amd64
+        run: sh scripts/smoke-image.sh "$IMAGE_AMD64" linux/amd64 "$VERSION"
+
+      - name: Smoke-test the image, linux/arm64 (emulated)
+        run: sh scripts/smoke-image.sh "$IMAGE_ARM64" linux/arm64 "$VERSION"
+
+      # The version's tags, pointed at the digest that was tested: nothing is
+      # rebuilt. Then a check that they name exactly that image, with its
+      # SBOM and provenance.
+      - name: Publish the tested image
+        if: env.DRY_RUN != 'true'
+        run: |
+          image=$(echo "ghcr.io/$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          number=${VERSION#v}
+          docker buildx imagetools create -t "$image:$VERSION" -t "$image:${number%.*}" -t "$image:latest" "$image@$IMAGE_DIGEST"
+          for tag in "$VERSION" "${number%.*}" latest; do
+            got=$(docker buildx imagetools inspect "$image:$tag" --format '{{json .Manifest}}' | jq -r .digest)
+            if [ "$got" != "$IMAGE_DIGEST" ]; then
+              echo "$image:$tag is $got, not the tested $IMAGE_DIGEST"
+              exit 1
+            fi
+          done
+          # Each platform's SBOM (SPDX) and provenance (SLSA) came along.
+          for what in SBOM:SPDX Provenance:SLSA; do
+            if ! docker buildx imagetools inspect "$image:$VERSION" --format "{{json .${what%%:*}}}" | grep -q "\"${what#*:}\""; then
+              echo "$image:$VERSION has no ${what%%:*}"
+              exit 1
+            fi
+          done
           {
             echo "## $VERSION"
             echo
-            echo "Image: \`$image:$VERSION\` (also \`${number%.*}\` and \`latest\`), for linux/amd64 and linux/arm64."
+            echo "Image: \`$image:$VERSION\` (also \`${number%.*}\` and \`latest\`), for linux/amd64 and linux/arm64, smoke-tested on both: \`$IMAGE_DIGEST\`."
             echo
             echo '```'
             docker buildx imagetools inspect "$image:$VERSION"

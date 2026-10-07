@@ -48,7 +48,7 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .PHONY: help up down logs run test fmt fmt-check vet test-race check \
 	integration integration-up integration-test integration-logs integration-down \
 	lint api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check docs-release godoc spec spec-lint \
-	api-compat release-prepare release-tag perf perf-profile perf-soak bench bench-compare load-compare perf-compare perf-data perf-trends monitor
+	api-compat smoke release-prepare release-tag perf perf-profile perf-soak bench bench-compare load-compare perf-compare perf-data perf-trends monitor
 
 ##@ Help
 
@@ -236,6 +236,10 @@ perf-compare: ## Both comparisons, written up as the pull request comment CI pos
 
 api-compat: ## What changed in the API since the last release, and whether the changelog says so for a breaking change
 	sh scripts/api-compat.sh pr
+
+smoke: ## Build the image for this machine and smoke-test it as the Release workflow does (PLATFORM=linux/amd64 for another)
+	docker buildx build --platform $(or $(PLATFORM),linux/$(shell docker version -f '{{.Server.Arch}}')) --load --build-arg VERSION=v0.0.0-smoke -f cmd/api/Dockerfile -t vibe-smoke:local .
+	sh scripts/smoke-image.sh vibe-smoke:local $(or $(PLATFORM),linux/$(shell docker version -f '{{.Server.Arch}}')) v0.0.0-smoke
 
 release-prepare: ## Turn Unreleased into VERSION on a branch, for a pull request: make release-prepare VERSION=v0.1.0
 	@echo "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "usage: make release-prepare VERSION=vX.Y.Z"; exit 2; }

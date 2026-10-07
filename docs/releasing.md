@@ -45,11 +45,27 @@ request so a problem shows before it's tagged:
   least a minor release, and a breaking one a minor release while the version is 0.x, a major
   one from 1.0.0. `sh scripts/api-compat.sh release vX.Y.Z` runs that check alone.
 
+- **The image that ships is run before it's published.** `scripts/smoke-image.sh` runs an image
+  for one platform against WireMock and flagd and checks: it is that platform's image, it says
+  it's the version being released, it runs as a non-root user, the probes answer, a request
+  without a key is refused, the items list, an item has an `ETag`, a create works, an unknown
+  path gets a JSON 404, and SIGTERM stops it cleanly (exit 0, `server stopped`). The Release
+  workflow runs it on the image it's about to publish (above); `make smoke` builds this machine's
+  image and runs it (`PLATFORM=linux/amd64` for the other one, emulated). Its dependencies run in
+  a compose project of their own, `vibe-smoke`, with no ports published, so it runs beside a
+  local stack.
+
 ## What the tag publishes
 
 The workflow checks the tag is on a commit that's on `main`, that the changelog has the
 version's section, and that `docs/openapi.json` is that version, runs `make check` once more on
-the tagged commit, builds and checks the documentation (`make docs-release`), then publishes:
+the tagged commit, and builds and checks the documentation (`make docs-release`). Then it builds
+the image, for both platforms, and pushes it by digest alone, with no tag. It runs that exact
+image on each platform, arm64 under emulation, against WireMock and flagd
+(`scripts/smoke-image.sh`, below), and only if both pass points the version's tags at that digest:
+nothing is rebuilt between the test and the release, and the workflow checks the tags name the
+tested digest, with its SBOM and provenance. A failed smoke test leaves an untagged image in the
+registry, and no release. Then it publishes:
 
 | What | Where |
 | ---- | ----- |
@@ -77,8 +93,8 @@ docker buildx imagetools inspect ghcr.io/ajlatour/golang-vibe-starter:v0.1.0 --f
 ## A dry run
 
 Run the Release workflow by hand (Actions, Release, Run workflow) to rehearse on any branch: it
-makes the same checks and the same multi-platform build, with the SBOM and provenance, and
-publishes nothing. `sh scripts/changelog.sh notes` prints what the next release's notes would be.
+makes the same checks and the same multi-platform build, with the SBOM and provenance, smoke-tests
+each platform's image, and publishes nothing. `sh scripts/changelog.sh notes` prints what the next release's notes would be.
 
 ## Not yet
 
