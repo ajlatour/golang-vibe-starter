@@ -9,8 +9,9 @@
 //
 //   - with -from and -to, when the version bump is too small for what changed
 //     (see RequiredBump): a release's check;
-//   - with -changelog, when there's a breaking change and the changelog's
-//     Unreleased section doesn't say so with a "**Breaking**" entry: a pull
+//   - with -changelog, when there's a breaking change and neither the
+//     changelog's Unreleased section nor a file in -changes (changes/, the
+//     next release's entries) says so with a "**Breaking**" entry: a pull
 //     request's check, so a breaking change is always a decision, written
 //     down for the release notes.
 //
@@ -25,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -51,7 +53,8 @@ func run(args []string, out io.Writer) error {
 	head := fs.String("head", "docs/openapi.json", "the new spec")
 	from := fs.String("from", "", "the old spec's version, vX.Y.Z, to check the bump to -to")
 	to := fs.String("to", "", "the version being released, vX.Y.Z")
-	changelog := fs.String("changelog", "", "require a **Breaking** entry in this changelog's Unreleased section for a breaking change")
+	changelog := fs.String("changelog", "", "require a **Breaking** entry in this changelog's Unreleased section, or in -changes, for a breaking change")
+	changesDir := fs.String("changes", "", "the directory of change files for the next release (changes/), searched with -changelog")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -98,8 +101,26 @@ func run(args []string, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		if !strings.Contains(unreleased(string(b)), "**Breaking**") {
-			return checkFailed{fmt.Sprintf("%d breaking API changes, and %s's Unreleased section has no **Breaking** entry: if they're intended, say what breaks there, for the release notes", breaking, *changelog)}
+		pending := unreleased(string(b))
+		if *changesDir != "" {
+			files, err := filepath.Glob(filepath.Join(*changesDir, "*.md"))
+			if err != nil {
+				return err
+			}
+			for _, f := range files {
+				c, err := os.ReadFile(f) // #nosec G304 -- a change file in the directory named on the command line
+				if err != nil {
+					return err
+				}
+				pending += string(c)
+			}
+		}
+		if !strings.Contains(pending, "**Breaking**") {
+			where := *changelog + "'s Unreleased section"
+			if *changesDir != "" {
+				where = "no file in " + *changesDir
+			}
+			return checkFailed{fmt.Sprintf("%d breaking API changes, and %s has a **Breaking** entry: if they're intended, add one saying what breaks, for the release notes", breaking, where)}
 		}
 	}
 	return nil

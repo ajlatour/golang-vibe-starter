@@ -17,10 +17,12 @@ git push -u origin release-v0.1.0     # then open a pull request and merge it
 make release-tag VERSION=v0.1.0       # on main, once it's merged
 ```
 
-`release-prepare` turns the changelog's Unreleased section into `## [0.1.0] - <today>`, under a
-new empty Unreleased, sets the OpenAPI spec's `info.version` to `0.1.0`
-(`scripts/spec-version.sh`), and commits both on the branch `release-v0.1.0`. It refuses an empty
-Unreleased, or a version already released. `release-tag` checks `main` has that section, tags it,
+`release-prepare` gathers what's unreleased, the change files in `changes/` (one per pull request
+that changed something worth telling; see [its README](../changes/README.md)), into the
+changelog's `## [0.1.0] - <today>` section, each heading once in Keep a Changelog's order, and
+removes them. It sets the OpenAPI spec's `info.version` to `0.1.0` (`scripts/spec-version.sh`),
+and commits it all on the branch `release-v0.1.0`. It refuses when nothing is unreleased, or a
+version already released. `release-tag` checks `main` has that section, tags it,
 and pushes the tag.
 
 ## What keeps a release safe to deploy
@@ -39,7 +41,7 @@ request so a problem shows before it's tagged:
   parameter or field; a request limit tightened; a type changed) or additive (a new operation,
   optional parameter or field, status, or error code). Descriptions don't count. On a pull
   request (`make api-compat`, and CI's docs job, which shows the report in its summary), a
-  breaking change needs a `**Breaking**` entry in the changelog's Unreleased section, so it's a
+  breaking change needs a `**Breaking**` entry in a change file in `changes/`, so it's a
   decision, written down for the release notes. For a release, `make release-prepare` and the
   Release workflow refuse a version bump too small for the changes: an additive change needs at
   least a minor release, and a breaking one a minor release while the version is 0.x, a major

@@ -58,11 +58,27 @@ func expectedPages(t *testing.T) []string {
 	return pages
 }
 
+// recordPages lists the decision records' pages, one per docs/adr file,
+// named like it. They're reached from the decisions page, not the
+// navigation.
+func recordPages(t *testing.T) []string {
+	t.Helper()
+	records, err := filepath.Glob("../adr/*.md")
+	if err != nil || len(records) == 0 {
+		t.Fatalf("no records in docs/adr: %v", err)
+	}
+	var pages []string
+	for _, r := range records {
+		pages = append(pages, strings.TrimSuffix(filepath.Base(r), ".md")+".html")
+	}
+	return pages
+}
+
 // TestSitePages fails if a page is missing or has no title: the build can go
 // wrong quietly, for example by writing every source to the same page.
 func TestSitePages(t *testing.T) {
 	dir := siteDir(t)
-	for _, page := range expectedPages(t) {
+	for _, page := range append(append(expectedPages(t), recordPages(t)...), "changes.html") {
 		b, err := os.ReadFile(filepath.Join(dir, page))
 		if err != nil {
 			t.Errorf("missing page %s: %v", page, err)
@@ -76,6 +92,20 @@ func TestSitePages(t *testing.T) {
 		}
 		if !strings.Contains(string(b), `aria-current="page"`) {
 			t.Errorf("%s has no navigation bar marking it as the current page", page)
+		}
+	}
+}
+
+// TestDecisionsIndex checks the decisions page lists every record, each
+// linking to its page, as docs/site/build.sh makes it from their files.
+func TestDecisionsIndex(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join(siteDir(t), "decisions.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, page := range recordPages(t) {
+		if !strings.Contains(string(b), `href="`+page+`"`) {
+			t.Errorf("decisions.html doesn't list %s", page)
 		}
 	}
 }

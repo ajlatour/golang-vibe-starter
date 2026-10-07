@@ -53,8 +53,32 @@ for guide in docs/*.md; do
 	fi
 done
 
-# The pages this script renders, as source:output.
+# The pages this script renders, as source:output: those in the navigation,
+# and a page for each decision record (docs/adr), named like its file,
+# reached from the decisions page.
 pages=$(echo "$navigation" | awk -F'|' '$2 != "-" { printf "%s:%s ", $2, $3 }')
+for record in docs/adr/*.md; do
+	pages="$pages$record:$(basename "$record" .md).html "
+done
+# How to write a change file, reached from the releasing guide.
+pages="${pages}changes/README.md:changes.html "
+
+# The decisions page's source: docs/decisions.md, and an index of the
+# records, made from their files: each one's title and status. The index
+# isn't kept in the Markdown, so records added at the same time don't
+# conflict there.
+decisions_md="$out/.decisions.md"
+{
+	cat docs/decisions.md
+	echo
+	echo "| Record | Decision | Status |"
+	echo "| ------ | -------- | ------ |"
+	for record in docs/adr/*.md; do
+		heading=$(sed -n '1s/^# //p' "$record")
+		status=$(sed -n 's/^- \*\*Status:\*\* //p' "$record" | head -n 1)
+		echo "| [${heading%%:*}](adr/$(basename "$record")) | ${heading#*: } | $status |"
+	done
+} > "$decisions_md"
 
 # The Performance history page's source: the charts, a raw HTML block with no
 # blank line (one would end it), or where to find them.
@@ -111,7 +135,12 @@ nav() {
 for page in $pages; do
 	src=${page%%:*} dest=${page#*:}
 	[ "$src" = +history ] && src=$history_md
-	nav "$dest" > "$out/.nav.html"
+	[ "$src" = docs/decisions.md ] && src=$decisions_md
+	case $src in
+	docs/adr/*) nav decisions.html ;; # a record is part of the decisions
+	changes/*) nav releasing.html ;;
+	*) nav "$dest" ;;
+	esac > "$out/.nav.html"
 	# --wrap=none keeps each element on one line, so the sed rewrites below
 	# can rely on matching it.
 	pandoc "$src" --from gfm --to html5 --standalone --no-highlight --wrap=none \
@@ -124,10 +153,14 @@ for page in $pages; do
 			-e 's#href="(\.\./)?README\.md#href="index.html#g' \
 			-e 's#href="(\.\./)?CHANGELOG\.md#href="changelog.html#g' \
 			-e 's#href="(\.\./)?ROADMAP\.md#href="roadmap.html#g' \
+			-e 's#href="adr/"#href="decisions.html\#the-records"#g' \
+			-e 's#href="(\.\./)?changes/README\.md#href="changes.html#g' \
+			-e 's#href="(docs/)?adr/([^"/]+)\.md#href="\2.html#g' \
+			-e 's#href="\.\./([^":/]+)\.md#href="\1.html#g' \
 			-e 's#href="docs/([^"/]+)\.md#href="\1.html#g' \
 			-e 's#href="([^":/]+)\.md#href="\1.html#g' \
 			-e 's#<img src="[^"]*/badge\.svg"[^>]*>#CI status#g' \
 		> "$out/$dest"
 	echo "  $src -> $out/$dest"
 done
-rm -f "$out/.nav.html" "$history_md"
+rm -f "$out/.nav.html" "$history_md" "$decisions_md"

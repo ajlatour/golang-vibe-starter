@@ -93,7 +93,7 @@ scripts/api GET '/items?limit=2&cursor=<next_cursor>'  # the next 2, and so on
 A cursor is opaque: use it as given, and don't build one. Pages stay right while items are added
 or deleted: none is skipped or listed twice. A `limit` out of range, or a cursor the list didn't
 give out, is a 400, `invalid_parameter`
-([ADR-0037](docs/decisions.md#adr-0037-the-list-is-paged-by-cursor-50-a-page-by-default)).
+([ADR-0037](docs/adr/0037-the-list-is-paged-by-cursor-50-a-page-by-default.md)).
 
 `/healthz` says the process is alive: the container's healthcheck restarts it if not. `/readyz`
 says whether to send it traffic: 503 once it starts shutting down (see `SHUTDOWN_DELAY`), or if it
@@ -160,7 +160,7 @@ Send it back to make a request conditional:
 
 Without them, requests behave as before. The check reads the item before the write, so two writers
 racing in that moment can both pass; the upstream taking `If-Match` itself would close that
-([ADR-0040](docs/decisions.md#adr-0040-items-have-etags-and-writes-can-be-conditional)).
+([ADR-0040](docs/adr/0040-items-have-etags-and-writes-can-be-conditional.md)).
 
 ### Versioning
 
@@ -172,7 +172,7 @@ carries `API-Version`, the version that answered. A version the API doesn't serv
 A change that would break a client comes as a new version, served beside the old one for a while;
 a change that can't break one (a new field, a new route) doesn't need one. So sending the header
 is what pins a client to the behaviour it was written against
-([ADR-0036](docs/decisions.md#adr-0036-the-api-is-versioned-by-a-header-not-by-path)).
+([ADR-0036](docs/adr/0036-the-api-is-versioned-by-a-header-not-by-path.md)).
 
 ### Request headers
 

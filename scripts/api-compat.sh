@@ -4,8 +4,8 @@
 #
 #   sh scripts/api-compat.sh pr                a pull request's check: report the
 #                                              changes, and require a **Breaking**
-#                                              entry in the changelog's Unreleased
-#                                              section for a breaking one
+#                                              entry in changes/ (the next release's
+#                                              entries) for a breaking one
 #   sh scripts/api-compat.sh release vX.Y.Z    a release's check: the bump from the
 #                                              last release to vX.Y.Z must cover the
 #                                              changes (0.x: minor for a breaking
@@ -32,7 +32,7 @@ git show "$last:docs/openapi.json" >"$base"
 
 status=0
 if [ "$mode" = pr ]; then
-	go run ./cmd/apidiff -base "$base" -head docs/openapi.json -changelog CHANGELOG.md >"$report" || status=$?
+	go run ./cmd/apidiff -base "$base" -head docs/openapi.json -changelog CHANGELOG.md -changes changes >"$report" || status=$?
 else
 	go run ./cmd/apidiff -base "$base" -head docs/openapi.json -from "$last" -to "$version" >"$report" || status=$?
 fi

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -190,7 +191,7 @@ func TestDocumentedPathsExist(t *testing.T) {
 	}
 	code := regexp.MustCompile("`([^`\\s]+)`")
 	checked := 0
-	for _, doc := range []string{"architecture.md", "decisions.md"} {
+	for _, doc := range append([]string{"architecture.md", "decisions.md"}, recordFiles(t)...) {
 		for _, m := range code.FindAllStringSubmatch(read(t, doc), -1) {
 			p := m[1]
 			first, _, nested := strings.Cut(p, "/")
@@ -211,61 +212,82 @@ func TestDocumentedPathsExist(t *testing.T) {
 }
 
 var (
-	recordRE = regexp.MustCompile(`(?m)^## (ADR-(\d{4})): (.+)$`)
+	recordRE = regexp.MustCompile(`^# (ADR-(\d{4})): (.+)\n`)
 	statusRE = regexp.MustCompile(`^(Proposed|Accepted|Superseded by (ADR-\d{4}))$`)
 )
 
-// TestDecisionRecords checks each record in docs/decisions.md is complete,
-// they're numbered in order, the index matches them, and every ADR either
-// document cites exists.
-func TestDecisionRecords(t *testing.T) {
-	doc := read(t, "decisions.md")
-	heads := recordRE.FindAllStringSubmatchIndex(doc, -1)
-	if len(heads) == 0 {
-		t.Fatal("no records")
+// recordFiles lists the decision records, docs/adr/NNNN-*.md, in order, as
+// paths read accepts.
+func recordFiles(t *testing.T) []string {
+	t.Helper()
+	files, err := filepath.Glob("adr/*.md")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no records in docs/adr: %v", err)
 	}
+	sort.Strings(files)
+	return files
+}
+
+// TestDecisionRecords checks the records in docs/adr: numbered in order,
+// with no gaps or repeats (two pull requests that take the same number
+// meet here), each file named for its number and its title, and each
+// complete; and that every record a document cites exists.
+func TestDecisionRecords(t *testing.T) {
 	ids := map[string]bool{}
-	index := section(t, doc, "## Index")
-	for i, h := range heads {
-		id, num, title := doc[h[2]:h[3]], doc[h[4]:h[5]], doc[h[6]:h[7]]
+	files := recordFiles(t)
+	for i, f := range files {
+		doc := read(t, f)
+		h := recordRE.FindStringSubmatch(doc)
+		if h == nil {
+			t.Errorf("%s: want a first line \"# ADR-NNNN: <title>\"", f)
+			continue
+		}
+		id, num, title := h[1], h[2], h[3]
+		if ids[id] {
+			t.Errorf("%s: %s is taken; renumber this one", f, id)
+		}
 		ids[id] = true
 		if n, _ := strconv.Atoi(num); n != i+1 {
-			t.Errorf("%s is record %d: number them in order, with no gaps", id, i+1)
+			t.Errorf("%s is %s, the %dth record: number them in order, with no gaps or repeats", f, id, i+1)
 		}
-		end := len(doc)
-		if i+1 < len(heads) {
-			end = heads[i+1][0]
+		if want := "adr/" + num + "-" + slug(title) + ".md"; f != want {
+			t.Errorf("%s: name it %s, for its number and title", f, want)
 		}
-		body := doc[h[1]:end]
-		status := regexp.MustCompile(`(?m)^- \*\*Status:\*\* (.+)$`).FindStringSubmatch(body)
+		status := regexp.MustCompile(`(?m)^- \*\*Status:\*\* (.+)$`).FindStringSubmatch(doc)
 		if status == nil || !statusRE.MatchString(status[1]) {
 			t.Errorf("%s: want a status line, Proposed, Accepted or Superseded by ADR-NNNN", id)
 		}
-		if !regexp.MustCompile(`(?m)^- \*\*Date:\*\* \d{4}-\d{2}-\d{2}`).MatchString(body) {
+		if !regexp.MustCompile(`(?m)^- \*\*Date:\*\* \d{4}-\d{2}-\d{2}`).MatchString(doc) {
 			t.Errorf("%s: want a date line, YYYY-MM-DD", id)
 		}
 		for _, part := range []string{"**Context.**", "**Decision.**", "**Consequences.**"} {
-			if !strings.Contains(body, "\n"+part+" ") {
+			if !strings.Contains(doc, "\n"+part+" ") {
 				t.Errorf("%s: no %s paragraph", id, part)
 			}
 		}
-		row := regexp.MustCompile(`(?m)^\| \[` + id + `\]\(#[^)]+\) \| (.+) \| (.+) \|$`).FindStringSubmatch(index)
-		switch {
-		case row == nil:
-			t.Errorf("%s isn't in the index", id)
-		case row[1] != title:
-			t.Errorf("%s: the index says %q, the record %q", id, row[1], title)
-		case status != nil && row[2] != status[1]:
-			t.Errorf("%s: the index says %s, the record %s", id, row[2], status[1])
-		}
 	}
-	for _, d := range []string{"decisions.md", "architecture.md"} {
+	for _, d := range append([]string{"decisions.md", "architecture.md"}, files...) {
 		for _, cited := range regexp.MustCompile(`ADR-\d{4}`).FindAllString(read(t, d), -1) {
 			if cited != "ADR-NNNN" && !ids[cited] {
 				t.Errorf("%s cites %s, which doesn't exist", d, cited)
 			}
 		}
 	}
+}
+
+// slug is a title as GitHub makes a heading's anchor, and so as the
+// record's file is named: lower case, letters, digits and dashes.
+func slug(title string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(title) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		case r == ' ':
+			b.WriteByte('-')
+		}
+	}
+	return b.String()
 }
 
 // TestRequirementIDsAreUnique checks no two requirements share an ID.
