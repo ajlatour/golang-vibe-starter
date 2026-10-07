@@ -20,17 +20,7 @@ func TestGoRecoversAPanic(t *testing.T) {
 		panic("a bug in the task")
 	})
 	<-done
-	var rec map[string]any
-	for deadline := time.Now().Add(2 * time.Second); rec == nil && time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
-		for _, r := range logs.Records(t) {
-			if r["msg"] == "panic in background task" {
-				rec = r
-			}
-		}
-	}
-	if rec == nil {
-		t.Fatalf("no panic in background task line:\n%s", logs.String())
-	}
+	rec := logs.WaitFor(t, "panic in background task", 2*time.Second)
 	if rec["level"] != "ERROR" || rec[logx.KeyTask] != "keys reload" ||
 		rec[logx.KeyPanic] != "a bug in the task" || !strings.Contains(rec[logx.KeyStack].(string), "recover_test.go") {
 		t.Errorf("logged %v", rec)

@@ -36,15 +36,7 @@ func serveUntilShutdown(t *testing.T, handler http.Handler) shutdownResult {
 	go func() {
 		done <- httpx.Serve(ctx, logger, "127.0.0.1:0", 200*time.Millisecond, httpx.Middleware(logger, handler))
 	}()
-	var addr string
-	for addr == "" {
-		for _, r := range logs.Records(t) {
-			if r["msg"] == "server started" {
-				addr = r["addr"].(string)
-			}
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	addr := logs.WaitFor(t, "server started", 5*time.Second)["addr"].(string)
 	type result struct {
 		status int
 		body   string

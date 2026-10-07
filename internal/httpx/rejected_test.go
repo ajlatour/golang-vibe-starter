@@ -24,27 +24,14 @@ func TestLogRejected(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var logs logtest.Buffer
 	var count atomic.Int32
-	addrc := make(chan string, 1)
 	done := make(chan error, 1)
-	// Serve logs "server started" with the address; read it from there.
 	logger := slog.New(logs.Handler(slog.LevelDebug))
 	go func() {
 		done <- httpx.Serve(ctx, logger, "127.0.0.1:0", time.Second, http.HandlerFunc(httpx.Healthz),
 			httpx.MaxHeaderBytes(4<<10), httpx.LogRejected(true, func() { count.Add(1) }))
 	}()
 	defer func() { cancel(); <-done }()
-	go func() {
-		for {
-			for _, r := range logs.Records(t) {
-				if r["msg"] == "server started" {
-					addrc <- r["addr"].(string)
-					return
-				}
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
-	}()
-	addr := <-addrc
+	addr := logs.WaitFor(t, "server started", 5*time.Second)["addr"].(string)
 
 	// send writes raw to a new connection, reads what comes back until the
 	// server closes it, and returns the first line.

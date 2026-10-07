@@ -95,7 +95,6 @@ func str(v any) string {
 func TestShutdownDelay(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var stopped atomic.Bool
-	addrc := make(chan string, 1)
 	var logs logtest.Buffer
 	errc := make(chan error, 1)
 	go func() {
@@ -107,17 +106,7 @@ func TestShutdownDelay(t *testing.T) {
 			}),
 			httpx.OnShutdown(func() { stopped.Store(true) }), httpx.ShutdownDelay(300*time.Millisecond))
 	}()
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
-		for _, r := range logs.Records(t) {
-			if r["msg"] == "server started" {
-				addrc <- r["addr"].(string)
-			}
-		}
-		if len(addrc) > 0 {
-			break
-		}
-	}
-	addr := <-addrc
+	addr := logs.WaitFor(t, "server started", 5*time.Second)["addr"].(string)
 
 	start := time.Now()
 	cancel()

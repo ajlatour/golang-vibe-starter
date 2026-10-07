@@ -83,8 +83,57 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	default:
 		return fmt.Errorf("unexpected arguments %q (want none, or \"healthcheck\")", args)
 	}
+	if err := loadKeys(&cfg); err != nil {
+		return err
+	}
 
-	// Keys from a file are held in a keyring the watcher below can replace.
+	logger := cfg.NewLogger(stdout, "api", buildVersion())
+	profiling.LogRuntime(logger, cfg.RuntimeStatsInterval, profiling.LimitMemory(getenv))
+	logx.Go(logger, "runtime stats", func() { profiling.LogRuntimeStats(ctx, logger, cfg.RuntimeStatsInterval) })
+	logSettings(logger, cfg)
+	if cfg.Auth.Ring != nil {
+		logx.Go(logger, "API keys reload", func() { apikey.WatchFile(ctx, logger, cfg.KeysFile, cfg.Auth.Ring, cfg.KeysReload) })
+	}
+	store := newStore(logger, cfg)
+	evaluator, err := newFlags(logger, cfg)
+	if err != nil {
+		return err
+	}
+
+	// Request metrics: recorded always, served with the runtime's on
+	// PPROF_ADDR when it's set. Calls to the request-validation service, by
+	// outcome and how long they took: what the check costs, for the
+	// performance tests and dashboards.
+	metrics := httpmetrics.New()
+	outcomes := make([]string, len(validator.Outcomes))
+	for i, o := range validator.Outcomes {
+		outcomes[i] = string(o)
+	}
+	validatorCalls := httpmetrics.NewCalls("validator", "Requests checked against the request-validation service", outcomes...)
+	if err := serveProfiling(ctx, logger, cfg, metrics.WritePrometheus, validatorCalls.WritePrometheus); err != nil {
+		return err
+	}
+
+	// Ready while this instance can reach the upstream, and the validation
+	// service if it can't serve without it, until shutdown.
+	v := newValidation(logger, cfg, evaluator)
+	readiness := httpx.NewReadiness(logger, time.Second, time.Second,
+		append([]httpx.Check{{Name: "upstream", Fn: store.Reachable}}, v.checks...)...)
+	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness, Metrics: metrics, ClientIP: cfg.LogClientIP, RequestTimeout: cfg.RequestTimeout,
+		Validator: v.checker, ValidatorFailOpen: cfg.ValidatorFailOpen, ValidatorEnforce: v.enforce,
+		ValidatorObserve: func(o validator.Outcome, d time.Duration) { validatorCalls.Observe(string(o), d) }},
+		store, item.WithFlags(evaluator))
+	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, handler,
+		httpx.MaxHeaderBytes(serverHeaderLimit(cfg.HeaderGuard)),
+		httpx.WriteTimeout(cfg.RequestTimeout+writeTimeoutMargin),
+		httpx.LogRejected(cfg.LogClientIP, metrics.Rejected),
+		httpx.OnShutdown(readiness.Stopping), httpx.ShutdownDelay(cfg.ShutdownDelay))
+}
+
+// loadKeys completes the authentication settings: keys from API_KEYS_FILE
+// go in a keyring the file's watcher can replace, and the result must be
+// usable (keys, unless authentication is off).
+func loadKeys(cfg *config) error {
 	if cfg.KeysFile != "" {
 		keys, err := apikey.LoadFile(cfg.KeysFile)
 		if err != nil {
@@ -95,10 +144,13 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	if err := cfg.Auth.Validate(); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
+	return nil
+}
 
-	logger := cfg.NewLogger(stdout, "api", buildVersion())
-	profiling.LogRuntime(logger, cfg.RuntimeStatsInterval, profiling.LimitMemory(getenv))
-	logx.Go(logger, "runtime stats", func() { profiling.LogRuntimeStats(ctx, logger, cfg.RuntimeStatsInterval) })
+// logSettings logs, at startup, the settings in force for the upstream, the
+// header guard, authentication and the limits: what a log reader needs to
+// know what this instance does.
+func logSettings(logger *slog.Logger, cfg config) {
 	logger.Info("using upstream", logx.KeyURL, cfg.UpstreamURL.Redacted(), logx.KeyTimeout, cfg.UpstreamTimeout.String(),
 		logx.KeyRetries, cfg.UpstreamRetries)
 	logger.Info("using header guard",
@@ -107,74 +159,65 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		logx.KeyMaxHeaderBytes, cfg.HeaderGuard.MaxHeaderBytes,
 		logx.KeyMaxTotalBytes, cfg.HeaderGuard.MaxTotalBytes)
 	logAuth(logger, cfg.Auth)
-	if cfg.Auth.Ring != nil {
-		logx.Go(logger, "API keys reload", func() { apikey.WatchFile(ctx, logger, cfg.KeysFile, cfg.Auth.Ring, cfg.KeysReload) })
-	}
 	logger.Info("using limits", logx.KeyMaxInFlight, cfg.Limits.MaxInFlight,
 		logx.KeyRateLimit, cfg.Limits.Rate, logx.KeyRateBurst, cfg.Limits.Burst)
-	store := httpstore.New(cfg.UpstreamURL.String(),
-		&http.Client{Timeout: cfg.UpstreamTimeout, Transport: newTransport(cfg.Limits.MaxInFlight)}, httpstore.WithLogger(logger), httpstore.WithRetries(cfg.UpstreamRetries))
+}
 
-	evaluator, err := newFlags(logger, cfg)
+// newStore returns the item store: the upstream, over HTTP, with its own
+// timeout, connection pool and retries.
+func newStore(logger *slog.Logger, cfg config) *httpstore.Store {
+	return httpstore.New(cfg.UpstreamURL.String(),
+		&http.Client{Timeout: cfg.UpstreamTimeout, Transport: newTransport(cfg.Limits.MaxInFlight)},
+		httpstore.WithLogger(logger), httpstore.WithRetries(cfg.UpstreamRetries))
+}
+
+// serveProfiling starts the profiling server, with metrics from extra, when
+// PPROF_ADDR is set. It listens here, so a bad address fails at startup.
+func serveProfiling(ctx context.Context, logger *slog.Logger, cfg config, extra ...func(io.Writer)) error {
+	if cfg.PprofAddr == "" {
+		return nil
+	}
+	ln, err := net.Listen("tcp", cfg.PprofAddr)
 	if err != nil {
-		return err
+		return fmt.Errorf("PPROF_ADDR: %w", err)
 	}
+	logx.Go(logger, "profiling server", func() { profiling.Serve(ctx, logger, ln, extra...) })
+	return nil
+}
 
-	// Request metrics: recorded always, served with the runtime's on
-	// PPROF_ADDR when it's set.
-	metrics := httpmetrics.New()
-	// Calls to the request-validation service, by outcome and how long they
-	// took: what the check costs, for the performance tests and dashboards.
-	outcomes := make([]string, len(validator.Outcomes))
-	for i, o := range validator.Outcomes {
-		outcomes[i] = string(o)
-	}
-	validatorCalls := httpmetrics.NewCalls("validator", "Requests checked against the request-validation service", outcomes...)
-	if cfg.PprofAddr != "" {
-		ln, err := net.Listen("tcp", cfg.PprofAddr)
-		if err != nil {
-			return fmt.Errorf("PPROF_ADDR: %w", err)
-		}
-		logx.Go(logger, "profiling server", func() {
-			profiling.Serve(ctx, logger, ln, metrics.WritePrometheus, validatorCalls.WritePrometheus)
-		})
-	}
+// validation is how requests are checked against the request-validation
+// service: the checker (nil without VALIDATOR_URL), whether to act on its
+// answers, and the readiness check it adds, if any.
+type validation struct {
+	checker validator.Checker
+	enforce func(context.Context) bool
+	checks  []httpx.Check
+}
 
-	// Ready while this instance can reach the upstream, and the validation
-	// service if it can't serve without it, until shutdown.
-	checks := []httpx.Check{{Name: "upstream", Fn: store.Reachable}}
-	// Whether to act on the validation service's answers, or only log them
-	// (shadow mode): the flag, so it's turned on, and back off, at runtime.
-	enforce := func(ctx context.Context) bool { return evaluator.Bool(ctx, validator.FlagEnforce) }
-	var checker validator.Checker
+// newValidation sets up request validation from VALIDATOR_URL. Whether to
+// act on the service's answers, or only log them (shadow mode), is a flag,
+// so it's turned on, and back off, at runtime. Failing closed, the service
+// can't serve without it, so readiness tracks it, while enforcing.
+func newValidation(logger *slog.Logger, cfg config, flags item.Flags) validation {
+	v := validation{enforce: func(ctx context.Context) bool { return flags.Bool(ctx, validator.FlagEnforce) }}
 	if cfg.ValidatorURL == nil {
 		logger.Warn("request validation is off: no VALIDATOR_URL; every request goes unchecked")
-	} else {
-		logger.Info("using request validation", logx.KeyURL, cfg.ValidatorURL.Redacted(),
-			logx.KeyTimeout, cfg.ValidatorTimeout.String(), logx.KeyFailOpen, cfg.ValidatorFailOpen)
-		c := validator.New(cfg.ValidatorURL.String(),
-			&http.Client{Timeout: cfg.ValidatorTimeout, Transport: newTransport(cfg.Limits.MaxInFlight)})
-		if !cfg.ValidatorFailOpen {
-			// Only while enforcing: in shadow mode the API serves without it.
-			checks = append(checks, httpx.Check{Name: "validator", Fn: func(ctx context.Context) error {
-				if !enforce(ctx) {
-					return nil
-				}
-				return c.Reachable(ctx)
-			}})
-		}
-		checker = c
+		return v
 	}
-	readiness := httpx.NewReadiness(logger, time.Second, time.Second, checks...)
-	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness, Metrics: metrics, ClientIP: cfg.LogClientIP, RequestTimeout: cfg.RequestTimeout,
-		Validator: checker, ValidatorFailOpen: cfg.ValidatorFailOpen, ValidatorEnforce: enforce,
-		ValidatorObserve: func(o validator.Outcome, d time.Duration) { validatorCalls.Observe(string(o), d) }},
-		store, item.WithFlags(evaluator))
-	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, handler,
-		httpx.MaxHeaderBytes(serverHeaderLimit(cfg.HeaderGuard)),
-		httpx.WriteTimeout(cfg.RequestTimeout+writeTimeoutMargin),
-		httpx.LogRejected(cfg.LogClientIP, metrics.Rejected),
-		httpx.OnShutdown(readiness.Stopping), httpx.ShutdownDelay(cfg.ShutdownDelay))
+	logger.Info("using request validation", logx.KeyURL, cfg.ValidatorURL.Redacted(),
+		logx.KeyTimeout, cfg.ValidatorTimeout.String(), logx.KeyFailOpen, cfg.ValidatorFailOpen)
+	c := validator.New(cfg.ValidatorURL.String(),
+		&http.Client{Timeout: cfg.ValidatorTimeout, Transport: newTransport(cfg.Limits.MaxInFlight)})
+	if !cfg.ValidatorFailOpen {
+		v.checks = append(v.checks, httpx.Check{Name: "validator", Fn: func(ctx context.Context) error {
+			if !v.enforce(ctx) {
+				return nil // in shadow mode the API serves without it
+			}
+			return c.Reachable(ctx)
+		}})
+	}
+	v.checker = c
+	return v
 }
 
 // newFlags returns the feature flag evaluator: flagd when FLAGS_URL is set,
