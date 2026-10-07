@@ -12,7 +12,7 @@ import (
 
 func TestLogRuntime(t *testing.T) {
 	var logs logtest.Buffer
-	LogRuntime(logs.Logger(slog.LevelInfo), 5*time.Minute)
+	LogRuntime(logs.Logger(slog.LevelInfo), 5*time.Minute, MemoryLimitNone)
 	recs := logs.Records(t)
 	if len(recs) != 1 || recs[0]["msg"] != "using runtime" {
 		t.Fatalf("logs = %v, want one using runtime line", recs)
@@ -26,6 +26,9 @@ func TestLogRuntime(t *testing.T) {
 	}
 	if _, ok := r[logx.KeyMemoryLimitBytes].(float64); !ok {
 		t.Errorf("memory_limit_bytes = %v, want a number (0: no limit)", r[logx.KeyMemoryLimitBytes])
+	}
+	if r[logx.KeyMemoryLimitSource] != "none" {
+		t.Errorf("memory_limit_source = %v, want none", r[logx.KeyMemoryLimitSource])
 	}
 	if r[logx.KeyStatsInterval] != "5m0s" {
 		t.Errorf("stats_interval = %v, want 5m0s", r[logx.KeyStatsInterval])

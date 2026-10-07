@@ -12,6 +12,12 @@ Ideas considered but not planned are listed under
 
 ### Added
 
+- A panic in a background task (reloading the API keys, the runtime stats, the profiling server)
+  is logged, `panic in background task` at `ERROR`, and stops only that task; it used to end the
+  process, and every request in flight with it. And without `GOMEMLIMIT`, the Go runtime's memory
+  limit is 90% of the container's, so it collects garbage harder before the kernel would kill the
+  process for using too much; `using runtime` logs where the limit came from
+  ([ADR-0044](docs/decisions.md#adr-0044-a-panic-or-memory-pressure-doesnt-take-the-process-down-with-every-request)).
 - Requests the HTTP server answers itself, before the API sees them (one it can't parse, headers
   over its limit, an unsupported `Transfer-Encoding`, or headers that never finish arriving), are
   now logged, as `request rejected by the server` at `WARN`, and counted in

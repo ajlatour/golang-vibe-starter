@@ -97,8 +97,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	}
 
 	logger := cfg.NewLogger(stdout, "api", buildVersion())
-	profiling.LogRuntime(logger, cfg.RuntimeStatsInterval)
-	go profiling.LogRuntimeStats(ctx, logger, cfg.RuntimeStatsInterval)
+	profiling.LogRuntime(logger, cfg.RuntimeStatsInterval, profiling.LimitMemory(getenv))
+	logx.Go(logger, "runtime stats", func() { profiling.LogRuntimeStats(ctx, logger, cfg.RuntimeStatsInterval) })
 	logger.Info("using upstream", logx.KeyURL, cfg.UpstreamURL.Redacted(), logx.KeyTimeout, cfg.UpstreamTimeout.String(),
 		logx.KeyRetries, cfg.UpstreamRetries)
 	logger.Info("using header guard",
@@ -108,7 +108,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		logx.KeyMaxTotalBytes, cfg.HeaderGuard.MaxTotalBytes)
 	logAuth(logger, cfg.Auth)
 	if cfg.Auth.Ring != nil {
-		go apikey.WatchFile(ctx, logger, cfg.KeysFile, cfg.Auth.Ring, cfg.KeysReload)
+		logx.Go(logger, "API keys reload", func() { apikey.WatchFile(ctx, logger, cfg.KeysFile, cfg.Auth.Ring, cfg.KeysReload) })
 	}
 	logger.Info("using limits", logx.KeyMaxInFlight, cfg.Limits.MaxInFlight,
 		logx.KeyRateLimit, cfg.Limits.Rate, logx.KeyRateBurst, cfg.Limits.Burst)
@@ -135,7 +135,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		if err != nil {
 			return fmt.Errorf("PPROF_ADDR: %w", err)
 		}
-		go profiling.Serve(ctx, logger, ln, metrics.WritePrometheus, validatorCalls.WritePrometheus)
+		logx.Go(logger, "profiling server", func() {
+			profiling.Serve(ctx, logger, ln, metrics.WritePrometheus, validatorCalls.WritePrometheus)
+		})
 	}
 
 	// Ready while this instance can reach the upstream, and the validation
