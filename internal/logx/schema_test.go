@@ -28,6 +28,10 @@ type logCall struct {
 	name        string   // the method or slog function called
 	msg         string   // the message, if the call passes a string literal
 	literalKeys []string // field names passed as string literals (should be none)
+	// noRequest is set when the call can't carry a request's ID: a method
+	// without a context (Info, Warn, ...), which logs with
+	// context.Background, or one passed context.Background or TODO.
+	noRequest bool
 }
 
 // findLogCalls parses the non-test code of the module and returns every
@@ -98,6 +102,18 @@ func findLogCalls(t *testing.T) []logCall {
 					return true
 				}
 				lc := logCall{pos: fset.Position(call.Pos()), name: name}
+				switch {
+				case idx == 0:
+					lc.noRequest = true
+				case idx > 0:
+					if c, ok := call.Args[0].(*ast.CallExpr); ok {
+						if f, ok := c.Fun.(*ast.SelectorExpr); ok {
+							if pkg, ok := f.X.(*ast.Ident); ok && pkg.Name == "context" && (f.Sel.Name == "Background" || f.Sel.Name == "TODO") {
+								lc.noRequest = true
+							}
+						}
+					}
+				}
 				if idx >= 0 {
 					if !isStringLit(call.Args[idx]) {
 						return true // not a logger call: the message isn't a literal
@@ -208,6 +224,21 @@ func TestEveryMessageIsInContract(t *testing.T) {
 	for _, msg := range logtest.OutsideRequests {
 		if _, ok := logtest.Contract[msg]; !ok {
 			t.Errorf("logtest.OutsideRequests lists %q, which is not in logtest.Contract", msg)
+		}
+	}
+}
+
+// TestMessagesOutsideRequestsAreListed fails if code logs a message in a way
+// that can't carry a request's ID (without a context, or with
+// context.Background) and logtest.OutsideRequests doesn't list it. The log
+// contract test requires a request_id on every line but those, so such a
+// message would fail it, but only if a test happened to log it: the
+// server's own rejections and a shutdown that runs out of time don't, in
+// the run that test makes.
+func TestMessagesOutsideRequestsAreListed(t *testing.T) {
+	for _, c := range findLogCalls(t) {
+		if c.msg != "" && c.noRequest && !slices.Contains(logtest.OutsideRequests, c.msg) {
+			t.Errorf("%s: %s logs %q outside any request; add it to logtest.OutsideRequests", c.pos, c.name, c.msg)
 		}
 	}
 }
