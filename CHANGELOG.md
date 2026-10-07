@@ -10,6 +10,8 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+## [0.5.0] - 2026-10-07
+
 ### Security
 
 - The per-client rate limit can't be escaped, or used to fill memory, by changing address: an IPv6
