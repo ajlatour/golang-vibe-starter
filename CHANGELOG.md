@@ -10,6 +10,8 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+## [0.6.0] - 2026-10-07
+
 ### Added
 
 - A panic in a background task (reloading the API keys, the runtime stats, the profiling server)
