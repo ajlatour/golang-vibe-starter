@@ -263,6 +263,7 @@ func newHandler(logger *slog.Logger, cfg handlerConfig, items item.Store, opts .
 	mux.HandleFunc("GET "+httpx.HealthzPath, httpx.Healthz)
 	mux.Handle("GET "+httpx.ReadyzPath, readiness)
 	item.RegisterRoutes(mux, logger, items, opts...)
+	httpx.HandleUnmatched(mux) // JSON 404s and 405s; last, as the catch-all
 
 	probes := []string{httpx.HealthzPath, httpx.ReadyzPath}
 	auth, limits := cfg.Auth, cfg.Limits
@@ -278,8 +279,8 @@ func newHandler(logger *slog.Logger, cfg handlerConfig, items item.Store, opts .
 	if cfg.RequestTimeout > 0 {
 		mwOpts = append(mwOpts, httpx.WithRequestTimeout(cfg.RequestTimeout))
 	}
-	return httpx.Middleware(logger, limit.InFlight(limits,
-		headerguard.Middleware(logger, cfg.Guard, httpx.APIVersion(probes, apikey.Middleware(logger, auth, limit.PerClient(limits, identifyByKey, validate(logger, cfg, probes, httpx.RecordRoute(mux))))))),
+	return httpx.Middleware(logger, httpx.RejectInvalidTarget(limit.InFlight(limits,
+		headerguard.Middleware(logger, cfg.Guard, httpx.APIVersion(probes, apikey.Middleware(logger, auth, limit.PerClient(limits, identifyByKey, validate(logger, cfg, probes, httpx.RecordRoute(mux)))))))),
 		mwOpts...)
 }
 

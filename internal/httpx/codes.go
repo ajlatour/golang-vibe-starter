@@ -21,6 +21,8 @@ const (
 	CodeUnsupportedAPIVersion Code = "unsupported_api_version"
 	// 400: a query parameter that isn't valid: a list's limit or cursor.
 	CodeInvalidParameter Code = "invalid_parameter"
+	// 400: a request target that isn't a path, such as OPTIONS *.
+	CodeInvalidTarget Code = "invalid_target"
 	// 401: no API key, or not sent as a bearer token.
 	CodeAPIKeyRequired Code = "api_key_required"
 	// 401: an API key that isn't a valid one.
@@ -29,8 +31,10 @@ const (
 	CodeReadOnlyKey Code = "read_only_key"
 	// 403: the request-validation service refused the request.
 	CodeValidationRefused Code = "validation_refused"
-	// 404: no item has that ID.
+	// 404: no item has that ID, or no route has that path.
 	CodeNotFound Code = "not_found"
+	// 405: the path has routes, but none for that method; Allow lists them.
+	CodeMethodNotAllowed Code = "method_not_allowed"
 	// 412: a write's If-Match no longer matches the item: it changed since
 	// the client read it.
 	CodePreconditionFailed Code = "precondition_failed"

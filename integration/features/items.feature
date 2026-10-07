@@ -120,3 +120,14 @@ Feature: Items
     When I GET "/items/widget"
     Then the response status is 304
     And the response body is empty
+
+  Scenario: A path no route has is a JSON 404
+    When I GET "/nope"
+    Then the response status is 404
+    And the JSON field "code" is "not_found"
+
+  Scenario: A method the path has no route for is a JSON 405, saying which it has
+    When I DELETE "/items"
+    Then the response status is 405
+    And the JSON field "code" is "method_not_allowed"
+    And the response header "Allow" is "GET, HEAD, POST"

@@ -165,7 +165,7 @@ says so.
 | ID | Requirement | Why | Verified by |
 | -- | ----------- | --- | ----------- |
 | API-1 | The service does exactly what `docs/openapi.json` says: routes, status codes, bodies, headers and limits. | Clients can rely on the spec (ADR-0008) | `cmd/api/openapi_test.go`, `cmd/api/openapi_routes_test.go`, `cmd/api/openapi_params_test.go`; the upstream's stubs too: `cmd/api/openapi_stubs_test.go` |
-| API-2 | Every error is JSON, `{"error": "...", "code": "..."}`, with a code from one list (`internal/httpx/codes.go`), and never reveals internals: 5xx messages are generic, and decode errors speak JSON, not Go. | Safe to show any caller | `cmd/api/openapi_test.go`, `internal/httpx/fuzz_test.go` |
+| API-2 | Every error is JSON, `{"error": "...", "code": "..."}`, with a code from one list (`internal/httpx/codes.go`), and never reveals internals: 5xx messages are generic, and decode errors speak JSON, not Go. Requests no route takes too: unknown paths, methods and targets (ADR-0042). | Safe to show any caller | `cmd/api/openapi_test.go`, `internal/httpx/fuzz_test.go`, `internal/httpx/routing_test.go`, `cmd/api/routing_test.go` |
 | API-3 | Every response carries a correlation ID, `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`. | Traceable, and never sniffed or cached | `cmd/api/security_test.go`, `cmd/api/openapi_test.go` |
 | API-4 | An item ID is 1 to 128 letters, digits, `-` and `_`; any other is a 404 that never reaches the upstream. | No path traversal into the upstream (ADR-0017) | `cmd/api/openapi_params_test.go`, `internal/item/fuzz_test.go`, `integration/features/items.feature` |
 | API-5 | Every example in `docs/curl.md` gets the status it shows. | The guide stays usable | `cmd/api/curl_test.go` |

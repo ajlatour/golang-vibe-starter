@@ -23,6 +23,11 @@ Ideas considered but not planned are listed under
   5 seconds longer. An upstream GET is retried only after a fast failure, and only if there's time
   for another attempt
   ([ADR-0041](docs/decisions.md#adr-0041-every-request-has-a-deadline-inside-the-servers-write-timeout)).
+- A request no route takes now gets a JSON error with a code, like every other, and its log line:
+  404 `not_found` for an unknown path, 405 `method_not_allowed` (with `Allow`) for a method the path
+  has no route for, and 400 `invalid_target` for `OPTIONS *`, which the server used to answer
+  itself, unlogged. They were plain text, `404 page not found`
+  ([ADR-0042](docs/decisions.md#adr-0042-requests-no-route-takes-get-json-errors-too)).
 
 ## [0.5.0] - 2026-10-07
 

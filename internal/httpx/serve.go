@@ -62,6 +62,10 @@ func Serve(ctx context.Context, logger *slog.Logger, addr string, shutdownTimeou
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
+		// The server would answer OPTIONS * itself, with a 200, before the
+		// handler and so unlogged; the handler answers it instead (see
+		// RejectInvalidTarget).
+		DisableGeneralOptionsHandler: true,
 	}
 	cfg := serveConfig{srv: srv}
 	for _, opt := range opts {
