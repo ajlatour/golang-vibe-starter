@@ -10,6 +10,13 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+### Added
+
+- Requests the HTTP server answers itself, before the API sees them (one it can't parse, headers
+  over its limit, an unsupported `Transfer-Encoding`, or headers that never finish arriving), are
+  now logged, as `request rejected by the server` at `WARN`, and counted in
+  `http_requests_rejected_total`. They left no trace before.
+
 ### Changed
 
 - The service refuses to start if `UPSTREAM_TIMEOUT`, `VALIDATOR_TIMEOUT` or `FLAGS_TIMEOUT` isn't

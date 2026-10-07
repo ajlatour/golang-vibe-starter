@@ -58,3 +58,32 @@ func TestUnroutedRequestsAreJSON(t *testing.T) {
 		}
 	}
 }
+
+// TestRejectedRequestsAreLogged checks run wires LogRejected: a request the
+// HTTP server answers itself is logged, though the handler never sees it.
+func TestRejectedRequestsAreLogged(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	addr, logs, errc := startApp(t, ctx, map[string]string{"ADDR": "127.0.0.1:0", "UPSTREAM_URL": "http://mock", "API_AUTH": "off"})
+	defer waitForShutdown(t, errc)
+	defer cancel()
+
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprint(conn, "GARBAGE\r\n\r\n")
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, _ = io.ReadAll(conn) // until the server closes it
+	conn.Close()
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		for _, r := range logs.Records(t) {
+			if r["msg"] == "request rejected by the server" {
+				if r["level"] != "WARN" || r["client_ip"] != "127.0.0.1" {
+					t.Errorf("logged %v", r)
+				}
+				return
+			}
+		}
+	}
+	t.Errorf("no request rejected by the server line:\n%s", logs)
+}

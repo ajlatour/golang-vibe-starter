@@ -215,6 +215,7 @@ says so.
 | OBS-2 | Every log line of a request carries its `request_id`, and once known, its route and API key's name. | One query finds a request, and who made it (ADR-0023) | `cmd/api/auth_test.go`, `internal/apikey/apikey_test.go` |
 | OBS-3 | Request rate, errors and duration per route, and the Go runtime's state, are available as metrics. | Production alerting and diagnosis (ADR-0022) | `internal/httpmetrics/httpmetrics_test.go`, `internal/profiling/metrics_test.go`, `monitoring/monitoring_test.go` |
 | OBS-4 | The configuration in force is logged at startup, secrets redacted. | Know what a running instance is doing | `cmd/api/logcontract_test.go` |
+| OBS-5 | Every request leaves a log line: `response sent` for each one the handler gets, and `request rejected by the server` (and `http_requests_rejected_total`) for each the HTTP server answers itself. | No request goes unrecorded | `internal/httpx/rejected_test.go`, `cmd/api/routing_test.go` |
 
 ### Configuration and delivery
 

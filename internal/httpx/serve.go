@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
@@ -19,6 +20,7 @@ type serveConfig struct {
 	srv        *http.Server
 	onShutdown []func()
 	delay      time.Duration
+	rejected   *rejectedLog
 }
 
 // MaxHeaderBytes caps how much of a request's line and headers the server
@@ -35,6 +37,116 @@ func MaxHeaderBytes(n int) ServeOption {
 // its answer cut off.
 func WriteTimeout(d time.Duration) ServeOption {
 	return func(c *serveConfig) { c.srv.WriteTimeout = d }
+}
+
+// LogRejected logs each request the server answers itself, before the
+// handler, which so never logs it: one it can't parse (400), one whose
+// headers are over MaxHeaderBytes (431), one with a Transfer-Encoding it
+// doesn't support (501), and one whose headers don't arrive within the
+// read-header timeout, which gets no answer. net/http reports none of these,
+// so what's logged, at warn as "request rejected by the server", is that a
+// connection closed having read bytes of a request no handler received; the
+// status isn't known. A bad request pipelined behind a good one, read before
+// the connection went idle, isn't seen. clientIP adds client_ip; count, if not nil, is
+// called for each, for a metric.
+func LogRejected(clientIP bool, count func()) ServeOption {
+	return func(c *serveConfig) { c.rejected = &rejectedLog{clientIP: clientIP, count: count} }
+}
+
+type rejectedLog struct {
+	clientIP bool
+	count    func()
+}
+
+// trackedConn counts the bytes read from a connection that belong to no
+// request a handler got: those read since the connection was last idle, or
+// a handler started on it, unless a handler has finished since (then they
+// are its request's unread body, which the server drains or abandons).
+type trackedConn struct {
+	net.Conn
+	unseen  atomic.Int64
+	since   atomic.Int64 // UnixNano of the first unseen byte
+	handled atomic.Bool  // a handler finished, and the connection hasn't been idle since
+}
+
+func (c *trackedConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if n > 0 && c.unseen.Add(int64(n)) == int64(n) {
+		c.since.Store(time.Now().UnixNano())
+	}
+	return n, err
+}
+
+// fresh starts the count again: a handler has the request read so far, or
+// the connection is idle, waiting for the next.
+func (c *trackedConn) fresh() {
+	c.unseen.Store(0)
+	c.handled.Store(false)
+}
+
+// rejected reports whether the connection closed with bytes of a request no
+// handler got.
+func (c *trackedConn) rejected() bool { return c.unseen.Load() > 0 && !c.handled.Load() }
+
+type trackingListener struct{ net.Listener }
+
+func (l trackingListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &trackedConn{Conn: c}, nil
+}
+
+type trackedConnKey struct{}
+
+// install hooks l into srv and wraps ln: each connection counts what it
+// reads, the handler marks it seen as it starts and finishes, and a
+// connection that closes with bytes unseen is logged.
+func (l *rejectedLog) install(logger *slog.Logger, srv *http.Server, ln net.Listener) net.Listener {
+	next := srv.Handler
+	srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, ok := r.Context().Value(trackedConnKey{}).(*trackedConn)
+		if ok {
+			c.fresh()
+			defer c.handled.Store(true)
+		}
+		next.ServeHTTP(w, r)
+	})
+	srv.ConnContext = func(ctx context.Context, c net.Conn) context.Context {
+		return context.WithValue(ctx, trackedConnKey{}, c)
+	}
+	srv.ConnState = func(nc net.Conn, s http.ConnState) {
+		c, ok := nc.(*trackedConn)
+		if !ok {
+			return
+		}
+		if s == http.StateIdle {
+			c.fresh()
+			return
+		}
+		if (s != http.StateClosed && s != http.StateHijacked) || !c.rejected() {
+			return
+		}
+		attrs := []slog.Attr{logx.DurationMS(time.Since(time.Unix(0, c.since.Load())))}
+		if l.clientIP {
+			attrs = append(attrs, slog.String(logx.KeyClientIP, hostOf(c.RemoteAddr())))
+		}
+		logger.LogAttrs(context.Background(), slog.LevelWarn, "request rejected by the server", attrs...)
+		if l.count != nil {
+			l.count()
+		}
+	}
+	return trackingListener{ln}
+}
+
+// hostOf is addr's IP address, without the port.
+func hostOf(addr net.Addr) string {
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return addr.String()
+	}
+	return host
 }
 
 // OnShutdown runs f as soon as shutdown begins, before ShutdownDelay and
@@ -77,6 +189,9 @@ func Serve(ctx context.Context, logger *slog.Logger, addr string, shutdownTimeou
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
+	}
+	if cfg.rejected != nil {
+		ln = cfg.rejected.install(logger, srv, ln)
 	}
 
 	serveErr := make(chan error, 1)

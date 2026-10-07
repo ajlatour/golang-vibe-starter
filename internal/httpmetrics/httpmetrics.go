@@ -45,6 +45,7 @@ type Recorder struct {
 	mu       sync.RWMutex
 	series   map[key]*series
 	inFlight atomic.Int64
+	rejected atomic.Int64
 }
 
 // New returns an empty Recorder.
@@ -53,6 +54,11 @@ func New() *Recorder {
 }
 
 var methods = map[string]bool{"GET": true, "HEAD": true, "POST": true, "PUT": true, "PATCH": true, "DELETE": true, "OPTIONS": true}
+
+// Rejected counts a request the server answered itself, before any
+// handler, so Observe never saw it: one it couldn't parse, or whose headers
+// were over its limit or too slow to arrive (httpx.LogRejected).
+func (rec *Recorder) Rejected() { rec.rejected.Add(1) }
 
 // Start notes a request has begun; Observe notes it has ended.
 func (rec *Recorder) Start() { rec.inFlight.Add(1) }
@@ -165,4 +171,5 @@ func (rec *Recorder) WritePrometheus(w io.Writer) {
 	}
 
 	fmt.Fprintf(bw, "# HELP http_requests_in_flight Requests being served right now.\n# TYPE http_requests_in_flight gauge\nhttp_requests_in_flight %d\n", rec.inFlight.Load())
+	fmt.Fprintf(bw, "# HELP http_requests_rejected_total Requests the server answered itself, before the handler: malformed, headers over its limit, or too slow.\n# TYPE http_requests_rejected_total counter\nhttp_requests_rejected_total %d\n", rec.rejected.Load())
 }

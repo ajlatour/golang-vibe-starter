@@ -31,7 +31,15 @@ func TestEmpty(t *testing.T) {
 	contains(t, scrape(httpmetrics.New()),
 		"# TYPE http_requests_total counter\n",
 		"# TYPE http_request_duration_seconds histogram\n",
-		"# TYPE http_requests_in_flight gauge\nhttp_requests_in_flight 0\n")
+		"# TYPE http_requests_in_flight gauge\nhttp_requests_in_flight 0\n",
+		"# TYPE http_requests_rejected_total counter\nhttp_requests_rejected_total 0\n")
+}
+
+func TestRejected(t *testing.T) {
+	rec := httpmetrics.New()
+	rec.Rejected()
+	rec.Rejected()
+	contains(t, scrape(rec), "http_requests_rejected_total 2\n")
 }
 
 func TestObserve(t *testing.T) {

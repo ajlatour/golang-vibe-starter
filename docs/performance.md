@@ -101,8 +101,10 @@ Three layers, from the lightest. None adds a dependency to the service.
 
 **The API's request metrics.** With `PPROF_ADDR` set, `/metrics` there has every request the API
 served (`internal/httpmetrics`): `http_requests_total` by route pattern, method and status,
-`http_request_duration_seconds`, a latency histogram by the same labels, and
-`http_requests_in_flight`. They're what you'd alert on in production: the rate, errors and
+`http_request_duration_seconds`, a latency histogram by the same labels,
+`http_requests_in_flight`, and `http_requests_rejected_total`, the requests the HTTP server answered
+itself before the API saw them (malformed, headers over its limit, or too slow; each also logged
+as `request rejected by the server`). They're what you'd alert on in production: the rate, errors and
 duration of each route. A route is the pattern a request matched, `none` for one answered before
 routing (refused by the header guard, authentication or the limits), and an unusual method counts
 as `OTHER`, so no request can create series at will. Recording a request allocates nothing.
