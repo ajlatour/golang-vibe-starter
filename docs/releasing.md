@@ -23,6 +23,17 @@ new empty Unreleased, sets the OpenAPI spec's `info.version` to `0.1.0`
 Unreleased, or a version already released. `release-tag` checks `main` has that section, tags it,
 and pushes the tag.
 
+## What keeps a release safe to deploy
+
+Besides the tests every change runs, some exist for releases above all, and run on every pull
+request so a problem shows before it's tagged:
+
+- **Known configurations still start.** `cmd/api/testdata/configs` holds configurations
+  deployments run with, and `TestKnownConfigsStart` starts this version with each, and with every
+  setting at the default `.env.example` documents. A release that would refuse one, or that no
+  longer reads one of its settings (silently ignoring it), fails the build. Add your own
+  deployments' configurations there, secrets replaced.
+
 ## What the tag publishes
 
 The workflow checks the tag is on a commit that's on `main`, that the changelog has the
