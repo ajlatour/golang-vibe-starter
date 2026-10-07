@@ -28,6 +28,15 @@ func MaxHeaderBytes(n int) ServeOption {
 	return func(c *serveConfig) { c.srv.MaxHeaderBytes = n }
 }
 
+// WriteTimeout is how long the server gives a request, from reading its
+// headers, to write its response, before cutting the connection: the
+// default is 15s. Keep it longer than the request timeout
+// (WithRequestTimeout), so a request answers before it, rather than having
+// its answer cut off.
+func WriteTimeout(d time.Duration) ServeOption {
+	return func(c *serveConfig) { c.srv.WriteTimeout = d }
+}
+
 // OnShutdown runs f as soon as shutdown begins, before ShutdownDelay and
 // before the server stops accepting connections: to start reporting not
 // ready, for one.

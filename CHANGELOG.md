@@ -10,6 +10,20 @@ Ideas considered but not planned are listed under
 
 ## Unreleased
 
+### Changed
+
+- The service refuses to start if `UPSTREAM_TIMEOUT`, `VALIDATOR_TIMEOUT` or `FLAGS_TIMEOUT` isn't
+  shorter than `REQUEST_TIMEOUT`, or `SHUTDOWN_TIMEOUT` is shorter than it.
+
+### Fixed
+
+- A request that ran longer than the server's 15-second write timeout had its connection cut, so
+  the client got no response, though the log said one was sent. Every request now has a deadline,
+  `REQUEST_TIMEOUT` (10s), at which it's answered (usually 504) and logged, and the write timeout is
+  5 seconds longer. An upstream GET is retried only after a fast failure, and only if there's time
+  for another attempt
+  ([ADR-0041](docs/decisions.md#adr-0041-every-request-has-a-deadline-inside-the-servers-write-timeout)).
+
 ## [0.5.0] - 2026-10-07
 
 ### Security

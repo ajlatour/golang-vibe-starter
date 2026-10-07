@@ -164,12 +164,13 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		checker = c
 	}
 	readiness := httpx.NewReadiness(logger, time.Second, time.Second, checks...)
-	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness, Metrics: metrics, ClientIP: cfg.LogClientIP,
+	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness, Metrics: metrics, ClientIP: cfg.LogClientIP, RequestTimeout: cfg.RequestTimeout,
 		Validator: checker, ValidatorFailOpen: cfg.ValidatorFailOpen, ValidatorEnforce: enforce,
 		ValidatorObserve: func(o validator.Outcome, d time.Duration) { validatorCalls.Observe(string(o), d) }},
 		store, item.WithFlags(evaluator))
 	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, handler,
 		httpx.MaxHeaderBytes(serverHeaderLimit(cfg.HeaderGuard)),
+		httpx.WriteTimeout(cfg.RequestTimeout+writeTimeoutMargin),
 		httpx.OnShutdown(readiness.Stopping), httpx.ShutdownDelay(cfg.ShutdownDelay))
 }
 
@@ -230,6 +231,9 @@ type handlerConfig struct {
 	Metrics *httpmetrics.Recorder
 	// ClientIP logs each request's client IP (LOG_CLIENT_IP).
 	ClientIP bool
+	// RequestTimeout is each request's deadline (REQUEST_TIMEOUT). Zero:
+	// none.
+	RequestTimeout time.Duration
 	// Validator checks every request but the probes (internal/validator).
 	// Nil checks nothing.
 	Validator validator.Checker
@@ -270,6 +274,9 @@ func newHandler(logger *slog.Logger, cfg handlerConfig, items item.Store, opts .
 	}
 	if cfg.ClientIP {
 		mwOpts = append(mwOpts, httpx.WithClientIP())
+	}
+	if cfg.RequestTimeout > 0 {
+		mwOpts = append(mwOpts, httpx.WithRequestTimeout(cfg.RequestTimeout))
 	}
 	return httpx.Middleware(logger, limit.InFlight(limits,
 		headerguard.Middleware(logger, cfg.Guard, httpx.APIVersion(probes, apikey.Middleware(logger, auth, limit.PerClient(limits, identifyByKey, validate(logger, cfg, probes, httpx.RecordRoute(mux))))))),

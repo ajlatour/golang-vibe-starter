@@ -17,6 +17,11 @@ import (
 // plus where to reach the upstream items service.
 type config struct {
 	envconfig.Service
+	// RequestTimeout is how long a request has, from arriving, to be
+	// answered (httpx.WithRequestTimeout). The server's write timeout is
+	// longer by writeTimeoutMargin, so the answer always gets out.
+	RequestTimeout time.Duration
+
 	UpstreamURL     *url.URL
 	UpstreamTimeout time.Duration
 	// UpstreamRetries is how often a GET to the upstream is tried again
@@ -83,6 +88,12 @@ func loadConfig(getenv func(string) string) (config, error) {
 	env := envconfig.NewEnv(getenv)
 	cfg := config{
 		Service: srv,
+
+		// Ten seconds: twice the upstream's own timeout, for a request that
+		// makes two upstream calls (a conditional write reads, then writes),
+		// and the shutdown timeout's default, so a request in flight at
+		// shutdown can finish.
+		RequestTimeout: envconfig.Optional(env, "REQUEST_TIMEOUT", 10*time.Second, envconfig.ParsePositiveDuration),
 
 		// Required: there is no sensible default upstream, and silently
 		// talking to the wrong one is worse than failing at startup.
@@ -167,8 +178,42 @@ func loadConfig(getenv func(string) string) (config, error) {
 	if err := guard.Validate(); err != nil && env.Err() == nil {
 		errs = append(errs, fmt.Errorf("HEADER_MAX_BYTES, HEADER_MAX_TOTAL_BYTES: %w", err))
 	}
+	if srvErr == nil && env.Err() == nil {
+		errs = append(errs, cfg.checkTimeouts()...)
+	}
 	return cfg, errors.Join(errs...)
 }
+
+// checkTimeouts refuses timeouts that can't work together. Each call a
+// request makes must be able to time out on its own before the request's
+// deadline cuts it short, or its timeout would never be the one that fires;
+// and shutdown must give a request in flight the whole of its time, or it's
+// cut off unanswered.
+func (cfg config) checkTimeouts() []error {
+	var errs []error
+	for _, t := range []struct {
+		name string
+		d    time.Duration
+		set  bool
+	}{
+		{"UPSTREAM_TIMEOUT", cfg.UpstreamTimeout, true},
+		{"VALIDATOR_TIMEOUT", cfg.ValidatorTimeout, cfg.ValidatorURL != nil},
+		{"FLAGS_TIMEOUT", cfg.FlagsTimeout, cfg.FlagsURL != nil},
+	} {
+		if t.set && t.d >= cfg.RequestTimeout {
+			errs = append(errs, fmt.Errorf("%s (%v) must be shorter than REQUEST_TIMEOUT (%v), the time a whole request has", t.name, t.d, cfg.RequestTimeout))
+		}
+	}
+	if cfg.ShutdownTimeout < cfg.RequestTimeout {
+		errs = append(errs, fmt.Errorf("SHUTDOWN_TIMEOUT (%v) must be at least REQUEST_TIMEOUT (%v), so a request in flight at shutdown can finish", cfg.ShutdownTimeout, cfg.RequestTimeout))
+	}
+	return errs
+}
+
+// writeTimeoutMargin is how much longer than REQUEST_TIMEOUT the server
+// gives a response to be written: time for the handler to answer once the
+// deadline passes, and for the answer to reach the client.
+const writeTimeoutMargin = 5 * time.Second
 
 // parseHTTPURL parses v as an absolute http(s) base URL, without a query
 // string or fragment.

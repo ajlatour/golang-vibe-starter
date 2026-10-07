@@ -1,6 +1,7 @@
 package main
 
 import (
+	"maps"
 	"reflect"
 	"strings"
 	"testing"
@@ -278,5 +279,43 @@ func TestLoadConfigUpstreamRetries(t *testing.T) {
 		if _, err := loadConfig(env(bad)); err == nil {
 			t.Errorf("UPSTREAM_RETRIES=%s: no error, want one", bad)
 		}
+	}
+}
+
+func TestLoadConfigRequestTimeout(t *testing.T) {
+	base := map[string]string{"UPSTREAM_URL": "http://mock"}
+	with := func(kv ...string) map[string]string {
+		env := maps.Clone(base)
+		for i := 0; i < len(kv); i += 2 {
+			env[kv[i]] = kv[i+1]
+		}
+		return env
+	}
+	cfg, err := loadConfig(getenvFrom(base))
+	if err != nil || cfg.RequestTimeout != 10*time.Second {
+		t.Fatalf("default: %v, %v; want 10s", cfg.RequestTimeout, err)
+	}
+	if cfg, err := loadConfig(getenvFrom(with("REQUEST_TIMEOUT", "20s", "SHUTDOWN_TIMEOUT", "30s"))); err != nil || cfg.RequestTimeout != 20*time.Second {
+		t.Errorf("REQUEST_TIMEOUT=20s: %v, %v", cfg.RequestTimeout, err)
+	}
+	for name, tc := range map[string]struct {
+		env  map[string]string
+		want string // in the error
+	}{
+		"not a duration":             {with("REQUEST_TIMEOUT", "soon"), "REQUEST_TIMEOUT"},
+		"zero":                       {with("REQUEST_TIMEOUT", "0s"), "REQUEST_TIMEOUT"},
+		"upstream timeout too long":  {with("UPSTREAM_TIMEOUT", "10s"), "UPSTREAM_TIMEOUT (10s) must be shorter than REQUEST_TIMEOUT (10s)"},
+		"validator timeout too long": {with("VALIDATOR_URL", "http://v", "VALIDATOR_TIMEOUT", "12s"), "VALIDATOR_TIMEOUT (12s)"},
+		"flags timeout too long":     {with("FLAGS_URL", "http://f", "FLAGS_TIMEOUT", "11s"), "FLAGS_TIMEOUT (11s)"},
+		"shutdown shorter":           {with("SHUTDOWN_TIMEOUT", "5s"), "SHUTDOWN_TIMEOUT (5s) must be at least REQUEST_TIMEOUT (10s)"},
+	} {
+		_, err := loadConfig(getenvFrom(tc.env))
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want one naming %q", name, err, tc.want)
+		}
+	}
+	// A timeout for a service that isn't configured doesn't matter.
+	if _, err := loadConfig(getenvFrom(with("VALIDATOR_TIMEOUT", "12s", "FLAGS_TIMEOUT", "12s"))); err != nil {
+		t.Errorf("timeouts of unconfigured services were checked: %v", err)
 	}
 }

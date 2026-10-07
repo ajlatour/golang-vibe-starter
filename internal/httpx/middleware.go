@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"net/http"
@@ -19,6 +20,9 @@ func Middleware(logger *slog.Logger, h http.Handler, opts ...MiddlewareOption) h
 	for _, opt := range opts {
 		opt(&o)
 	}
+	if o.timeout > 0 {
+		h = withDeadline(o.timeout, h)
+	}
 	return defensiveHeaders(assignRequestID(logRequests(logger, o, recoverPanics(logger, h))))
 }
 
@@ -28,6 +32,7 @@ type MiddlewareOption func(*middlewareOptions)
 type middlewareOptions struct {
 	metrics  Metrics
 	clientIP bool
+	timeout  time.Duration
 }
 
 // Metrics records each request: Start as it arrives, Observe as its response
@@ -51,6 +56,26 @@ func WithMetrics(m Metrics) MiddlewareOption {
 // an option.
 func WithClientIP() MiddlewareOption {
 	return func(o *middlewareOptions) { o.clientIP = true }
+}
+
+// WithRequestTimeout gives every request a deadline, d after it arrives:
+// its context is done then, so the calls it's waiting on (the upstream, the
+// validation service, flagd) give up, and the handler answers in time,
+// usually 504. Serve's write timeout must be longer than d (see
+// WriteTimeout), or a slow request's answer is cut off unsent while its log
+// line says it was sent. Inside the logging and panic recovery, so a request
+// that hits it is logged like any other.
+func WithRequestTimeout(d time.Duration) MiddlewareOption {
+	return func(o *middlewareOptions) { o.timeout = d }
+}
+
+// withDeadline is WithRequestTimeout's middleware.
+func withDeadline(d time.Duration, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), d)
+		defer cancel()
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 // clientIP is the IP address r's connection came from.
