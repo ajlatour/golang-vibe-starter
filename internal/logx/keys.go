@@ -27,8 +27,13 @@ const (
 	// KeyResponseCode is the error response's code (httpx.Code): what it
 	// means, stable, to group and alert on.
 	KeyResponseCode = "response_code"
-	KeyBytes        = "bytes"
-	KeyDurationMS   = "duration_ms"
+	// KeyWriteError says the client didn't get the whole response: writing
+	// it failed (the client went away), or it was aborted mid-way.
+	KeyWriteError = "write_error"
+	// KeyInFlight is how many requests were being served at a moment.
+	KeyInFlight   = "in_flight"
+	KeyBytes      = "bytes"
+	KeyDurationMS = "duration_ms"
 
 	// Failures.
 	KeyError = "error"

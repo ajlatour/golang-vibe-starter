@@ -369,7 +369,7 @@
           "code": {
             "type": "string",
             "description": "What the error means, for a client to act on: stable, unlike `error`. Two errors with one status can mean different things (a 403 for a read-only key, or one the validation service refused), and the code tells them apart.",
-            "enum": ["invalid_body", "duplicate_header", "unsupported_api_version", "invalid_parameter", "invalid_target", "precondition_failed", "api_key_required", "api_key_invalid", "read_only_key", "validation_refused", "not_found", "method_not_allowed", "unsupported_media_type", "invalid_field", "rate_limited", "headers_too_large", "client_closed", "internal", "upstream_failed", "busy", "validation_unavailable", "upstream_timeout"]
+            "enum": ["invalid_body", "duplicate_header", "unsupported_api_version", "invalid_parameter", "invalid_target", "precondition_failed", "api_key_required", "api_key_invalid", "read_only_key", "validation_refused", "not_found", "method_not_allowed", "unsupported_media_type", "invalid_field", "rate_limited", "headers_too_large", "client_closed", "internal", "upstream_failed", "busy", "shutting_down", "validation_unavailable", "upstream_timeout"]
           }
         }
       }
@@ -417,7 +417,7 @@
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "ServiceUnavailable": {
-        "description": "The service is serving as many requests as it takes at once (MAX_IN_FLIGHT, 512 by default), or, where the service checks requests (VALIDATOR_URL) and fails closed, the request-validation service can't answer. Retry after the given number of seconds.",
+        "description": "The service is serving as many requests as it takes at once (MAX_IN_FLIGHT, 512 by default), or, where the service checks requests (VALIDATOR_URL) and fails closed, the request-validation service can't answer, or the service is shutting down and stopped the request (`shutting_down`). Retry after the given number of seconds.",
         "headers": {
           "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" },
           "Retry-After": { "$ref": "#/components/headers/RetryAfter" }

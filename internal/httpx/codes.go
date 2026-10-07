@@ -54,6 +54,9 @@ const (
 	CodeUpstreamFailed Code = "upstream_failed"
 	// 503: the service is serving as many requests as it takes at once.
 	CodeBusy Code = "busy"
+	// 503: the service is shutting down, and stopped the request before it
+	// finished: retry it, and another instance will serve it.
+	CodeShuttingDown Code = "shutting_down"
 	// 503: the request-validation service can't answer, and the API fails
 	// closed.
 	CodeValidationUnavailable Code = "validation_unavailable"

@@ -1,6 +1,8 @@
 package httpx
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -232,6 +234,89 @@ func TestTraceContext(t *testing.T) {
 				if r[logx.KeyTraceID] != first {
 					t.Errorf("%s has trace_id %v, want %s on every line", r["msg"], r[logx.KeyTraceID], first)
 				}
+			}
+		})
+	}
+}
+
+// failingWriter is a ResponseWriter whose body writes fail, as they do to a
+// client that has gone.
+type failingWriter struct{ *httptest.ResponseRecorder }
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("write: broken pipe") }
+
+// TestResponseSentSaysWhenTheClientMissedIt checks "response sent" says,
+// in write_error, when the client didn't get the whole response, and that
+// a panic once the response has started drops the connection rather than
+// append a 500 to it.
+func TestResponseSentSaysWhenTheClientMissedIt(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		handler    http.HandlerFunc
+		w          func() http.ResponseWriter
+		cancel     bool // the client goes away while the handler runs
+		wantAbort  bool // the handler's panic reaches net/http as ErrAbortHandler
+		wantStatus float64
+		want       any // write_error, or nil for none
+	}{
+		{name: "delivered", handler: func(w http.ResponseWriter, r *http.Request) {
+			WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		}, wantStatus: 200},
+		{name: "a write fails", handler: func(w http.ResponseWriter, r *http.Request) {
+			WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		}, w: func() http.ResponseWriter { return failingWriter{httptest.NewRecorder()} }, wantStatus: 200, want: "write: broken pipe"},
+		{name: "the client went away", handler: func(w http.ResponseWriter, r *http.Request) {
+			WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		}, cancel: true, wantStatus: 200, want: "client closed the connection"},
+		{name: "a panic mid-response", handler: func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"items":[`))
+			panic("boom")
+		}, wantAbort: true, wantStatus: 200, want: "response aborted after a panic"},
+		{name: "an abort", handler: func(w http.ResponseWriter, r *http.Request) {
+			panic(http.ErrAbortHandler)
+		}, wantAbort: true, wantStatus: 200, want: "response aborted"},
+		// Before anything is written, a panic is still a clean 500.
+		{name: "a panic before the response", handler: func(w http.ResponseWriter, r *http.Request) {
+			panic("boom")
+		}, wantStatus: 500},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var logs logtest.Buffer
+			h := Middleware(logs.Logger(slog.LevelInfo), tt.handler)
+			rec := httptest.NewRecorder()
+			var w http.ResponseWriter = rec
+			if tt.w != nil {
+				w = tt.w()
+			}
+			r := httptest.NewRequest(http.MethodGet, "/items", nil)
+			if tt.cancel {
+				ctx, cancel := context.WithCancel(r.Context())
+				cancel()
+				r = r.WithContext(ctx)
+			}
+			func() {
+				defer func() {
+					if v := recover(); (v == http.ErrAbortHandler) != tt.wantAbort || (v != nil && v != http.ErrAbortHandler) {
+						t.Errorf("recovered %v; want ErrAbortHandler: %v", v, tt.wantAbort)
+					}
+				}()
+				h.ServeHTTP(w, r)
+			}()
+			var sent map[string]any
+			for _, l := range logs.Records(t) {
+				if l["msg"] == "response sent" {
+					sent = l
+				}
+			}
+			if sent == nil {
+				t.Fatalf("no response sent line:\n%s", logs.String())
+			}
+			if sent["status"] != tt.wantStatus || sent[logx.KeyWriteError] != tt.want {
+				t.Errorf("response sent: status %v, write_error %v; want %v, %v", sent["status"], sent[logx.KeyWriteError], tt.wantStatus, tt.want)
+			}
+			if tt.name == "a panic mid-response" && rec.Body.String() != `{"items":[` {
+				t.Errorf("body %q: something was appended to the partial response", rec.Body.String())
 			}
 		})
 	}

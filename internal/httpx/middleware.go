@@ -169,29 +169,59 @@ func logRequests(logger *slog.Logger, o middlewareOptions, next http.Handler) ht
 			// in-flight gauge doesn't drift.
 			defer func() { metrics.Observe(route(r), r.Method, rec.status, time.Since(start)) }()
 		}
+		// A handler that panics with http.ErrAbortHandler (recoverPanics
+		// passes that on, and turns a panic mid-response into one) never
+		// returns here: its connection is dropped. It's logged all the same,
+		// as what it is.
+		finished := false
+		defer func() {
+			if !finished {
+				if rec.writeErr == "" {
+					rec.writeErr = "response aborted"
+				}
+				logResponse(logger, o, r, rec, start)
+			}
+		}()
 		next.ServeHTTP(rec, r)
-		// The route is known once the handler has returned: RecordRoute
-		// noted it (see route).
-		// Room for every field "response sent" can have, so appending them
-		// never has to grow the slice.
-		attrs := appendRequestAttrs(make([]slog.Attr, 0, 9), r)
-		attrs = append(attrs,
-			slog.Int(logx.KeyStatus, rec.status),
-			slog.Int(logx.KeyBytes, rec.bytes),
-			logx.DurationMS(time.Since(start)),
-		)
-		if o.clientIP {
-			attrs = append(attrs, slog.String(logx.KeyClientIP, clientIP(r)))
-		}
-		if rec.errMsg != "" {
-			// What the client was told, which may quote its own input (a
-			// JSON field name, say): bounded like any outside value.
-			attrs = append(attrs,
-				slog.String(logx.KeyResponseCode, string(rec.errCode)),
-				slog.String(logx.KeyResponseError, logx.Truncate(rec.errMsg, maxLoggedResponseError)))
-		}
-		logger.LogAttrs(r.Context(), responseLevel(r, rec.status), "response sent", attrs...)
+		finished = true
+		logResponse(logger, o, r, rec, start)
 	})
+}
+
+// logResponse writes a request's "response sent" line.
+func logResponse(logger *slog.Logger, o middlewareOptions, r *http.Request, rec *statusRecorder, start time.Time) {
+	// The route is known once the handler has returned: RecordRoute noted
+	// it (see route). Room for every field "response sent" can have, so
+	// appending them never has to grow the slice.
+	attrs := appendRequestAttrs(make([]slog.Attr, 0, 10), r)
+	attrs = append(attrs,
+		slog.Int(logx.KeyStatus, rec.status),
+		slog.Int(logx.KeyBytes, rec.bytes),
+		logx.DurationMS(time.Since(start)),
+	)
+	if o.clientIP {
+		attrs = append(attrs, slog.String(logx.KeyClientIP, clientIP(r)))
+	}
+	if rec.errMsg != "" {
+		// What the client was told, which may quote its own input (a JSON
+		// field name, say): bounded like any outside value.
+		attrs = append(attrs,
+			slog.String(logx.KeyResponseCode, string(rec.errCode)),
+			slog.String(logx.KeyResponseError, logx.Truncate(rec.errMsg, maxLoggedResponseError)))
+	}
+	if rec.writeErr == "" && context.Cause(r.Context()) == context.Canceled {
+		// The server cancels a request's context when its client goes
+		// away. The response is still in the server's buffer (writes to a
+		// gone client rarely fail before it's flushed), and it won't arrive.
+		rec.writeErr = "client closed the connection"
+	}
+	if rec.writeErr != "" {
+		// The client didn't get the whole response, whatever its status
+		// says. The level stays the status's: a client leaving isn't an
+		// incident, and an abort's panic has its own ERROR line.
+		attrs = append(attrs, slog.String(logx.KeyWriteError, rec.writeErr))
+	}
+	logger.LogAttrs(r.Context(), responseLevel(r, rec.status), "response sent", attrs...)
 }
 
 // requestAttrs identifies a request in a log line: method, route pattern (for
@@ -210,7 +240,8 @@ func appendRequestAttrs(attrs []slog.Attr, r *http.Request) []slog.Attr {
 }
 
 // recoverPanics turns a handler panic into a 500 instead of a dropped
-// connection, and logs the stack.
+// connection, and logs the stack. A panic after the response has started
+// can't become a 500: the connection is dropped (http.ErrAbortHandler).
 func recoverPanics(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -227,6 +258,13 @@ func recoverPanics(logger *slog.Logger, next http.Handler) http.Handler {
 					slog.String(logx.KeyStack, string(debug.Stack())),
 				)...,
 			)
+			if rec := recorderOf(w); rec != nil && rec.wroteHeader {
+				// Part of the response has gone: a 500 now would be appended
+				// to it, a corrupt body under the first status. Drop the
+				// connection instead, so the client sees the response failed.
+				rec.writeErr = "response aborted after a panic"
+				panic(http.ErrAbortHandler)
+			}
 			WriteError(w, http.StatusInternalServerError, CodeInternal, "internal server error")
 		}()
 		next.ServeHTTP(w, r)
@@ -245,21 +283,30 @@ type statusRecorder struct {
 	wroteHeader bool
 	errMsg      string
 	errCode     Code
+	// writeErr says why the client didn't get the whole response, if it
+	// didn't: the first write that failed, an abort, or the client gone.
+	writeErr string
 }
 
 // noteError tells the statusRecorder under w, if there is one, the error
-// message the response sends. Handlers in between may wrap w, so it looks
-// through each Unwrap.
+// message the response sends.
 func noteError(w http.ResponseWriter, code Code, msg string) {
+	if rec := recorderOf(w); rec != nil {
+		rec.errMsg, rec.errCode = msg, code
+	}
+}
+
+// recorderOf finds the statusRecorder under w, if there is one. Handlers in
+// between may wrap w, so it looks through each Unwrap.
+func recorderOf(w http.ResponseWriter) *statusRecorder {
 	for {
 		switch rw := w.(type) {
 		case *statusRecorder:
-			rw.errMsg, rw.errCode = msg, code
-			return
+			return rw
 		case interface{ Unwrap() http.ResponseWriter }:
 			w = rw.Unwrap()
 		default:
-			return
+			return nil
 		}
 	}
 }
@@ -276,6 +323,9 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 	r.wroteHeader = true
 	n, err := r.ResponseWriter.Write(b)
 	r.bytes += n
+	if err != nil && r.writeErr == "" {
+		r.writeErr = err.Error()
+	}
 	return n, err
 }
 
