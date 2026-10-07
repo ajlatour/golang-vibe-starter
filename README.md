@@ -117,12 +117,14 @@ apart errors that share a status:
 | 400 | `invalid_body` | The body is malformed JSON, the wrong shape or types, has an unknown field, is empty, or is over 1 MiB |
 | 400 | `duplicate_header` | A header that may appear only once is sent twice |
 | 400 | `invalid_parameter` | A query parameter that isn't valid: a list's `limit` out of range, or a `cursor` it didn't give out ([Paging](#paging)) |
+| 400 | `invalid_target` | A request target that isn't a path, such as `OPTIONS *` |
 | 400 | `unsupported_api_version` | An `API-Version` the API doesn't serve ([Versioning](#versioning)) |
 | 401 | `api_key_required` | No API key, or not sent as `Authorization: Bearer <key>` (with `WWW-Authenticate: Bearer`) |
 | 401 | `api_key_invalid` | An API key that isn't valid |
 | 403 | `read_only_key` | A write with a read-only API key |
 | 403 | `validation_refused` | The request-validation service refused the request ([Request validation](docs/request-validation.md)) |
-| 404 | `not_found` | No item has that ID |
+| 404 | `not_found` | No item has that ID, or no route has that path |
+| 405 | `method_not_allowed` | The path has routes, but not for that method; `Allow` lists those it has |
 | 412 | `precondition_failed` | A write whose `If-Match` the item no longer matches: it changed since you read it ([Concurrent updates](#concurrent-updates)) |
 | 415 | `unsupported_media_type` | A request body not sent as `Content-Type: application/json` |
 | 422 | `invalid_field` | A value breaks a rule: `name` missing, blank or too long, or `description` too long |

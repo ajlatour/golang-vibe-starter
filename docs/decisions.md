@@ -79,6 +79,7 @@ Template:
 | [ADR-0039](#adr-0039-items-from-the-upstream-are-held-to-the-models-rules) | Items from the upstream are held to the model's rules | Accepted |
 | [ADR-0040](#adr-0040-items-have-etags-and-writes-can-be-conditional) | Items have ETags, and writes can be conditional | Accepted |
 | [ADR-0041](#adr-0041-every-request-has-a-deadline-inside-the-servers-write-timeout) | Every request has a deadline, inside the server's write timeout | Accepted |
+| [ADR-0042](#adr-0042-requests-no-route-takes-get-json-errors-too) | Requests no route takes get JSON errors too | Accepted |
 
 ## ADR-0001: Record architecture decisions
 
@@ -893,3 +894,26 @@ startup with a message naming both, rather than misbehaving later. The deadline 
 a context and a timer. The deadline isn't passed on to the upstream (a header such as
 `Request-Timeout`): each call is bounded by both its own timeout and the request's, which is
 enough while there's one upstream hop.
+
+## ADR-0042: Requests no route takes get JSON errors too
+
+- **Status:** Accepted
+- **Date:** 2026-10-06
+
+**Context.** Every error the API's own code sends is JSON with a code (ADR-0033), but a request
+that matched no route was answered by `http.ServeMux` itself, in plain text: `404 page not found`
+for an unknown path, `Method Not Allowed` for a method its path has no route for. And `OPTIONS *`
+never reached the handler at all: `net/http` answers it with an empty 200, unlogged.
+
+**Decision.** The router gets a catch-all route, `httpx.HandleUnmatched`, registered last. It
+answers 404 `not_found` for a path no route has, or 405 `method_not_allowed` with `Allow` when the
+path has routes for other methods, which it works out by asking the router about each method only
+when nothing matched. A target that isn't a path (`OPTIONS *`, `CONNECT`'s) is answered 400
+`invalid_target` before routing (`httpx.RejectInvalidTarget`), and the server passes `OPTIONS *` on
+instead of answering it (`DisableGeneralOptionsHandler`). These requests are logged with an empty
+`route`, as before, and come after authentication and the limits, like any request.
+
+**Consequences.** A client can treat every error from the API the same way. Two codes are new,
+`method_not_allowed` and `invalid_target`, and `not_found` now also means a path nothing serves. A
+matched route costs nothing more. A route added later must be registered before the catch-all,
+which `HandleUnmatched`'s doc says, and the router can't have a `/` route of its own.
