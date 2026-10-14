@@ -198,6 +198,9 @@ func TestDocumentedPathsExist(t *testing.T) {
 			if strings.ContainsAny(p, "<>*") {
 				continue // a pattern, such as cmd/<name>/, not a path
 			}
+			if p == "bin" || strings.HasPrefix(p, "bin/") {
+				continue // build output, made by make, never checked in
+			}
 			first, _, nested := strings.Cut(p, "/")
 			// A path in this repository: under one of its top-level entries,
 			// or a file at its root.
