@@ -91,8 +91,7 @@ func ServerError(logger *slog.Logger, w http.ResponseWriter, r *http.Request, er
 		append(requestAttrs(r), logx.ErrorAttrs(err)...)...,
 	)
 	status, msg := http.StatusInternalServerError, "internal server error"
-	var se StatusError
-	if errors.As(err, &se) {
+	if se, ok := errors.AsType[StatusError](err); ok {
 		status = se.HTTPStatus()
 		msg = strings.ToLower(http.StatusText(status))
 	}

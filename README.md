@@ -20,7 +20,7 @@ contract, change that variable; no code changes are needed.
 
 ## Prerequisites
 
-- Go 1.27 or later. If your installed `go` is older, `GOTOOLCHAIN=auto` (the default) switches to
+- Go 1.27.2 or later. If your installed `go` is older, `GOTOOLCHAIN=auto` (the default) switches to
   the version pinned in `go.mod`.
 - Docker with Compose, to run the local stack and the integration tests. The unit tests don't
   need it.

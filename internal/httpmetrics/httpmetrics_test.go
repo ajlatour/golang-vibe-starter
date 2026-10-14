@@ -96,15 +96,13 @@ func TestConcurrent(t *testing.T) {
 	rec := httpmetrics.New()
 	var wg sync.WaitGroup
 	for g := range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 1000 {
 				rec.Start()
 				rec.Observe(fmt.Sprintf("GET /r%d", g%2), "GET", 200, time.Millisecond)
 				_ = scrape(rec)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	contains(t, scrape(rec), `http_requests_total{route="GET /r0",method="GET",status="200"} 4000`, "http_requests_in_flight 0\n")

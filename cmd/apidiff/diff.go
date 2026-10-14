@@ -38,13 +38,13 @@ type spec struct{ doc map[string]any }
 // resolve follows v's $ref, if it has one, within s.
 func (s spec) resolve(v any) map[string]any {
 	m, _ := v.(map[string]any)
-	for i := 0; i < 20; i++ { // a cycle of refs is a broken spec; stop
+	for range 20 { // a cycle of refs is a broken spec; stop
 		ref, ok := m["$ref"].(string)
 		if !ok {
 			return m
 		}
 		var cur any = s.doc
-		for _, part := range strings.Split(strings.TrimPrefix(ref, "#/"), "/") {
+		for part := range strings.SplitSeq(strings.TrimPrefix(ref, "#/"), "/") {
 			cm, _ := cur.(map[string]any)
 			cur = cm[strings.ReplaceAll(strings.ReplaceAll(part, "~1", "/"), "~0", "~")]
 		}
