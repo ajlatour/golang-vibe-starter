@@ -220,8 +220,9 @@ Not planned, but considered:
   bodies against `docs/openapi.json`. The in-process OpenAPI test already checks every documented
   response, so this adds little, and it would mean sharing that test's schema validator with the
   integration module.
-- **OpenTelemetry tracing** (`trace_id`/`span_id`): needs third-party dependencies. The
-  correlation ID covers this service; trace context can be added later through the same
-  context-aware log handler.
+- **OpenTelemetry spans**: W3C trace context is already carried, and logged as `trace_id`
+  ([ADR-0034](adr/0034-w3c-trace-context-is-carried-through-without-a-tracing-sdk.md)), so
+  spans would join the traces already flowing; recording them needs the OpenTelemetry SDK, a
+  third-party dependency (DEP-1).
 - **Changing the log level at runtime** (`slog.LevelVar` and an admin endpoint).
 - **Log sampling.**

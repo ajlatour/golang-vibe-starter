@@ -249,4 +249,7 @@ What a production deployment would still want, and isn't here yet:
 - **No user identities:** clients are API keys, not people or OIDC tokens.
 - **Images aren't signed:** releases carry provenance, but no signature
   ([Releasing](releasing.md#not-yet)).
-- **No distributed tracing:** the correlation ID covers this service only.
+- **No spans recorded:** W3C trace context is carried through every call and each log line has
+  its `trace_id` ([ADR-0034](adr/0034-w3c-trace-context-is-carried-through-without-a-tracing-sdk.md)),
+  but nothing records spans or their timings; that needs an OpenTelemetry SDK, a third-party
+  dependency (DEP-1).
