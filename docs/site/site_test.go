@@ -78,7 +78,7 @@ func recordPages(t *testing.T) []string {
 // wrong quietly, for example by writing every source to the same page.
 func TestSitePages(t *testing.T) {
 	dir := siteDir(t)
-	for _, page := range append(append(expectedPages(t), recordPages(t)...), "changes.html") {
+	for _, page := range append(append(expectedPages(t), recordPages(t)...), "changes.html", "contributing.html", "security.html") {
 		b, err := os.ReadFile(filepath.Join(dir, page))
 		if err != nil {
 			t.Errorf("missing page %s: %v", page, err)
