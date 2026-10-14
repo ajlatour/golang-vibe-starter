@@ -89,22 +89,34 @@ func TestWatchFile(t *testing.T) {
 		}
 		t.Fatalf("keys in force = %q, want %q", names(), want)
 	}
-	// Long enough for a change to be seen on two checks and acted on.
-	settle := func() { time.Sleep(150 * time.Millisecond) }
+	// failures waits until the watcher has logged n refusals: each bad state
+	// below must be seen and logged, however slow the runner, before the
+	// next replaces it.
+	failures := func(n int) {
+		t.Helper()
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+			if strings.Count(logs.String(), "API keys not reloaded") >= n {
+				return
+			}
+		}
+		t.Fatalf("want %d \"API keys not reloaded\" lines; logged:\n%s", n, logs.String())
+	}
 
 	write(entry("first", "gvs_one") + entry("second", "gvs_two"))
 	waitFor("first (write), second (write)")
 
 	write("first:admin:nope\n")
-	settle()
+	failures(1)
 	write("first:admin:nope\n") // the same bad file again: logged once
-	settle()
+	// Time for the watcher to see it, so the count below shows it wasn't
+	// logged again; a slow runner that misses it fails nothing.
+	time.Sleep(100 * time.Millisecond)
 	write("# nothing\n")
-	settle()
+	failures(2)
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	settle()
+	failures(3)
 	if names() != "first (write), second (write)" {
 		t.Fatalf("a bad, empty or missing file changed the keys in force: %q", names())
 	}
