@@ -2,12 +2,42 @@
 
 How the code is put together, how to change it safely, and how it's tested.
 
+- [Starting a new service](#starting-a-new-service)
 - [Ground rules](#ground-rules)
 - [Making a change](#making-a-change)
 - [Tests](#tests)
 - [Integration tests](#integration-tests)
 - [Continuous integration](#continuous-integration)
 - [Open ideas](#open-ideas)
+
+## Starting a new service
+
+This repository is a template: a new service starts as a copy of it, with GitHub's "Use this
+template" or a plain clone, and then one command makes the copy its own:
+
+```sh
+make init NAME=orders MODULE=github.com/acme/orders
+```
+
+`NAME` is the service's name, in lower-case letters, digits and dashes: it names the images, the
+compose project and the API in its spec. `MODULE` is its Go module path. `make init`
+(`cmd/initservice`) rewrites every file under version control:
+
+- the module path becomes `MODULE`, in every `go.mod` and import;
+- the template's GitHub repository becomes `MODULE`'s, when that's on github.com, so the
+  workflows that check which repository they run in still run;
+- the template's name becomes `NAME`;
+- `.github/CODEOWNERS` names `MODULE`'s GitHub owner, or, off GitHub, is left for you to fill in.
+
+And it starts the service's own history: `CHANGELOG.md` holds one release, 0.0.0, saying which
+version of the template it came from; `changes/` is emptied; the spec's version is 0.0.0; and the
+template's audit page goes. The example `/items` resource, the decision records and the license
+stay. It prints what's left to do by hand: the license's holder, the repository's settings, the
+README's opening, and when to remove `/items`.
+
+Run it once, on a fresh copy, then `make check`, `make lint` and `make docs-check`, and commit.
+`make init-check`, which CI runs, does all that on a copy of the template, so it keeps working
+as the template changes.
 
 ## Ground rules
 
@@ -170,7 +200,7 @@ value with a double quote in it can't go inside a step's quoted argument; give i
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push to `main` and every pull request, in six jobs, each
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request, in seven jobs, each
 step a `make` target:
 
 - **test**: `make fmt-check`, `make vet`, and `make cover`: the unit tests with the race detector,
@@ -183,6 +213,9 @@ step a `make` target:
   the API's log lines say which build they came from.
 - **docs**: `make docs-check`, which builds the documentation website and checks every page and
   link in it (`docs/site/site_test.go`).
+- **template**: `make init-check`: [`make init`](#starting-a-new-service) on a copy of the
+  repository, then every module of the result vetted and its tests run, so starting a new service
+  from the template keeps working as the template changes.
 - **lint**: `make lint`, on all three modules, with the Go tools built from `tools/go.mod` (`make tools`; ADR-0045): staticcheck with every check, style included (bugs,
   suspicious code, and doc comments, which every package and exported name has); modernize (code
   a newer Go says more simply); gosec (security mistakes); `go mod tidy -diff` (`go.mod` and

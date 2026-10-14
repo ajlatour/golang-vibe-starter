@@ -52,7 +52,9 @@ make fault FAULT=unavailable               # make the upstream fail; make fault-
 make down
 ```
 
-`make help` lists every shortcut. [Calling the API](docs/curl.md) has a tested example of every
+To start a new service from this template, copy it and run `make init NAME=orders
+MODULE=github.com/acme/orders`: [Starting a new service](docs/development.md#starting-a-new-service)
+says what it changes. `make help` lists every shortcut. [Calling the API](docs/curl.md) has a tested example of every
 call, with `scripts/api` and with plain curl. [The local stack](docs/local-stack.md) covers running the API
 outside Docker, WireMock's stubs, upstream faults, and load testing.
 

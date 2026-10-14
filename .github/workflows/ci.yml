@@ -113,6 +113,27 @@ jobs:
           git fetch -q --tags --unshallow origin 2>/dev/null || git fetch -q --tags origin
           sh scripts/api-compat.sh pr
 
+  # make init on a copy of the repository, then every module of the result
+  # vetted and the service's tests run: so starting a new service from the
+  # template keeps working as the template changes.
+  template:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.mod
+            integration/go.sum
+            perf/report/go.sum
+            tools/go.sum
+
+      - name: Start a service from the template
+        run: make init-check
+
   # Known vulnerabilities in the code's dependencies and the Go standard
   # library, for all three modules. govulncheck reports only those the code
   # can actually reach.

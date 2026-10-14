@@ -51,7 +51,7 @@ DOCS_OUT := bin/docs
 REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/spec" -w /spec $(shell sh scripts/image.sh redocly)
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs dev run test fmt fmt-check vet test-race cover check \
+.PHONY: help init init-check up down logs dev run test fmt fmt-check vet test-race cover check \
 	integration integration-up integration-test integration-logs integration-down \
 	lint tools api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check docs-release godoc spec spec-lint \
 	api-compat smoke release-prepare release-tag perf perf-profile perf-soak bench bench-compare load-compare perf-compare perf-data perf-trends monitor
@@ -65,6 +65,16 @@ help: ## List the targets
 	@echo
 	@echo "  Variables: FAULT=<name> for make fault; TAGS=@smoke or ARGS=... for the integration tests;"
 	@echo "  PROFILE=<name> for make perf: $$(sed -n 's/^  "\([a-z-]*\)": {/\1/p' perf/profiles.json | tr '\n' ' ')"
+
+##@ Start a service
+
+init: ## Make this copy a service of its own: make init NAME=orders MODULE=github.com/acme/orders
+	@if [ -z "$(NAME)" ] || [ -z "$(MODULE)" ]; then \
+		echo "usage: make init NAME=<service name> MODULE=<Go module path>"; exit 2; fi
+	go run ./cmd/initservice -name $(NAME) -module $(MODULE)
+
+init-check: ## Run make init on a copy of this repository, then vet and test the result (about a minute)
+	TEMPLATE_CHECK=1 go test -count=1 -timeout 15m -run TestInitOnACopy ./cmd/initservice
 
 ##@ Local stack
 
