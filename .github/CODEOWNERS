@@ -1,0 +1,3 @@
+# Who reviews what: everything, for now. Add owners for paths as the team grows,
+# e.g. /internal/apikey/ @security-reviewers
+* @ajlatour

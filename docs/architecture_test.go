@@ -178,8 +178,9 @@ func TestPackageDependencies(t *testing.T) {
 	}
 }
 
-// TestDocumentedPathsExist checks every repository path the two documents
-// name, as a requirement's verification or otherwise, exists.
+// TestDocumentedPathsExist checks every repository path the architecture,
+// the decisions, the standards and the development guide name, as a
+// requirement's verification or otherwise, exists.
 func TestDocumentedPathsExist(t *testing.T) {
 	entries, err := os.ReadDir("..")
 	if err != nil {
@@ -191,9 +192,12 @@ func TestDocumentedPathsExist(t *testing.T) {
 	}
 	code := regexp.MustCompile("`([^`\\s]+)`")
 	checked := 0
-	for _, doc := range append([]string{"architecture.md", "decisions.md"}, recordFiles(t)...) {
+	for _, doc := range append([]string{"architecture.md", "decisions.md", "standards.md", "development.md"}, recordFiles(t)...) {
 		for _, m := range code.FindAllStringSubmatch(read(t, doc), -1) {
 			p := m[1]
+			if strings.ContainsAny(p, "<>*") {
+				continue // a pattern, such as cmd/<name>/, not a path
+			}
 			first, _, nested := strings.Cut(p, "/")
 			// A path in this repository: under one of its top-level entries,
 			// or a file at its root.
