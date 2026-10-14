@@ -11,6 +11,7 @@ import (
 
 	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
 	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
+	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/limit"
 	"github.com/ajlatour/golang-vibe-starter/internal/validator"
@@ -47,7 +48,7 @@ func TestMiddlewareOrder(t *testing.T) {
 	t.Run("the header guard before authentication", func(t *testing.T) {
 		// Two Authorization headers, neither a valid key: the guard refuses
 		// the doubling before either copy is read.
-		h := newHandler(logger, handlerConfig{Guard: guard, Auth: testAuth(t)}, itemtest.NewMemStore())
+		h := newHandler(logger, handlerConfig{Guard: guard, Auth: testAuth(t)}, itemRoutes(itemtest.NewMemStore()))
 		r := httptest.NewRequest("GET", "/items", nil)
 		r.Header.Add("Authorization", "Bearer one")
 		r.Header.Add("Authorization", "Bearer two")
@@ -57,7 +58,7 @@ func TestMiddlewareOrder(t *testing.T) {
 	})
 
 	t.Run("the API version before authentication", func(t *testing.T) {
-		h := newHandler(logger, handlerConfig{Guard: guard, Auth: testAuth(t)}, itemtest.NewMemStore())
+		h := newHandler(logger, handlerConfig{Guard: guard, Auth: testAuth(t)}, itemRoutes(itemtest.NewMemStore()))
 		r := httptest.NewRequest("GET", "/items", nil)
 		r.Header.Set("API-Version", "9")
 		if status, c := code(t, h, r); c != "unsupported_api_version" {
@@ -68,7 +69,7 @@ func TestMiddlewareOrder(t *testing.T) {
 	t.Run("the in-flight cap before the header guard, and a bad target before both", func(t *testing.T) {
 		// The one request the service takes at once is stuck in the store.
 		store := blockingStore{entered: make(chan struct{}), release: make(chan struct{})}
-		h := newHandler(logger, handlerConfig{Guard: guard, Auth: testAuth(t), Limits: limit.Policy{MaxInFlight: 1}}, store)
+		h := newHandler(logger, handlerConfig{Guard: guard, Auth: testAuth(t), Limits: limit.Policy{MaxInFlight: 1}}, itemRoutes(store))
 		done := make(chan struct{})
 		go func() { h.ServeHTTP(httptest.NewRecorder(), orderRequest("GET", "/items")); close(done) }()
 		<-store.entered
@@ -91,7 +92,7 @@ func TestMiddlewareOrder(t *testing.T) {
 		// One request per address, ever. A request with a key that isn't
 		// valid is refused by authentication each time; were the limit
 		// first, the second would be refused as over it.
-		h := newHandler(logger, handlerConfig{Guard: guard, Auth: testAuth(t), Limits: limit.Policy{Rate: 1e-6, Burst: 1}}, itemtest.NewMemStore())
+		h := newHandler(logger, handlerConfig{Guard: guard, Auth: testAuth(t), Limits: limit.Policy{Rate: 1e-6, Burst: 1}}, itemRoutes(itemtest.NewMemStore()))
 		for i := range 2 {
 			r := httptest.NewRequest("GET", "/items", nil)
 			r.Header.Set("Authorization", "Bearer gvs_not-a-key")
@@ -104,7 +105,7 @@ func TestMiddlewareOrder(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		h = newHandler(logger, handlerConfig{Guard: guard, Auth: apikey.Policy{Keys: keys}}, itemtest.NewMemStore())
+		h = newHandler(logger, handlerConfig{Guard: guard, Auth: apikey.Policy{Keys: keys}}, itemRoutes(itemtest.NewMemStore()))
 		code(t, h, orderRequest("GET", "/items"))
 		if status, c := code(t, h, orderRequest("GET", "/items")); c != "rate_limited" {
 			t.Errorf("the first key's second request: got %d %s, want 429 rate_limited", status, c)
@@ -123,7 +124,7 @@ func TestMiddlewareOrder(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		h := newHandler(logger, handlerConfig{Guard: guard, Auth: apikey.Policy{Keys: keys}, Validator: checker}, itemtest.NewMemStore())
+		h := newHandler(logger, handlerConfig{Guard: guard, Auth: apikey.Policy{Keys: keys}, Validator: checker}, itemRoutes(itemtest.NewMemStore()))
 		code(t, h, orderRequest("GET", "/items"))
 		if status, c := code(t, h, orderRequest("GET", "/items")); c != "rate_limited" {
 			t.Errorf("over the limit: got %d %s, want 429 rate_limited", status, c)
@@ -142,3 +143,31 @@ func (c *countingChecker) Check(context.Context, validator.Request) (validator.D
 	c.calls.Add(1)
 	return validator.Decision{Allow: true}, nil
 }
+
+// blockingStore holds every call until release is closed, after saying on
+// entered that one has arrived.
+type blockingStore struct{ entered, release chan struct{} }
+
+func (s blockingStore) wait() { s.entered <- struct{}{}; <-s.release }
+
+func (s blockingStore) List(context.Context, item.Page) (item.Listing, error) {
+	s.wait()
+	return item.Listing{Items: []item.Item{}}, nil
+}
+
+func (s blockingStore) Get(context.Context, item.ID) (item.Item, error) {
+	s.wait()
+	return item.Item{}, item.ErrNotFound
+}
+
+func (s blockingStore) Create(context.Context, item.Draft) (item.Item, error) {
+	s.wait()
+	return item.Item{}, nil
+}
+
+func (s blockingStore) Update(context.Context, item.ID, item.Draft) (item.Item, error) {
+	s.wait()
+	return item.Item{}, nil
+}
+
+func (s blockingStore) Delete(context.Context, item.ID) error { s.wait(); return nil }

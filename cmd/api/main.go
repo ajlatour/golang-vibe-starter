@@ -20,9 +20,6 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpmetrics"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
-	"github.com/ajlatour/golang-vibe-starter/internal/item"
-	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
-	"github.com/ajlatour/golang-vibe-starter/internal/item/memstore"
 	"github.com/ajlatour/golang-vibe-starter/internal/limit"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 	"github.com/ajlatour/golang-vibe-starter/internal/profiling"
@@ -95,10 +92,18 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	if cfg.Auth.Ring != nil {
 		logx.Go(logger, "API keys reload", func() { apikey.WatchFile(ctx, logger, cfg.KeysFile, cfg.Auth.Ring, cfg.KeysReload) })
 	}
-	store, storeChecks := newStore(logger, cfg)
 	evaluator, err := newFlags(logger, cfg)
 	if err != nil {
 		return err
+	}
+	var (
+		allRoutes   []routes
+		storeChecks []httpx.Check
+	)
+	for _, r := range resources {
+		rt, checks := r.build(logger, cfg, evaluator)
+		allRoutes = append(allRoutes, rt)
+		storeChecks = append(storeChecks, checks...)
 	}
 
 	// Request metrics: recorded always, served with the runtime's on
@@ -123,7 +128,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness, Metrics: metrics, ClientIP: cfg.LogClientIP, RequestTimeout: cfg.RequestTimeout,
 		Validator: v.checker, ValidatorFailOpen: cfg.ValidatorFailOpen, ValidatorEnforce: v.enforce,
 		ValidatorObserve: func(o validator.Outcome, d time.Duration) { validatorCalls.Observe(string(o), d) }},
-		store, item.WithFlags(evaluator))
+		allRoutes...)
 	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, handler,
 		httpx.MaxHeaderBytes(serverHeaderLimit(cfg.HeaderGuard)),
 		httpx.WriteTimeout(cfg.RequestTimeout+writeTimeoutMargin),
@@ -168,17 +173,22 @@ func logSettings(logger *slog.Logger, cfg config) {
 		logx.KeyRateLimit, cfg.Limits.Rate, logx.KeyRateBurst, cfg.Limits.Burst)
 }
 
-// newStore returns the item store, and what readiness checks of it: the
-// upstream, over HTTP, with its own timeout, connection pool and retries,
-// ready while it's reachable; or memory (STORE=memory), always ready.
-func newStore(logger *slog.Logger, cfg config) (item.Store, []httpx.Check) {
-	if cfg.Store == storeMemory {
-		return memstore.New(), nil
-	}
-	s := httpstore.New(cfg.UpstreamURL.String(),
-		&http.Client{Timeout: cfg.UpstreamTimeout, Transport: newTransport(cfg.Limits.MaxInFlight)},
-		httpstore.WithLogger(logger), httpstore.WithRetries(cfg.UpstreamRetries))
-	return s, []httpx.Check{{Name: "upstream", Fn: s.Reachable}}
+// resource is one resource the API serves, as main wires it: the feature
+// flags its handlers read, which must be defined (newFlags), and build, which
+// makes its store, the one STORE chooses, and returns its routes on it and
+// the readiness checks of the store. resources lists them all.
+type resource struct {
+	flagKeys []string
+	build    func(logger *slog.Logger, cfg config, f flags) (routes, []httpx.Check)
+}
+
+// routes adds a resource's routes to mux.
+type routes func(mux *http.ServeMux, logger *slog.Logger)
+
+// flags evaluates boolean feature flags, falling back to their defaults: what
+// every resource's handlers, and request validation, read flags with.
+type flags interface {
+	Bool(ctx context.Context, key string) bool
 }
 
 // serveProfiling starts the profiling server, with metrics from extra, when
@@ -208,8 +218,8 @@ type validation struct {
 // act on the service's answers, or only log them (shadow mode), is a flag,
 // so it's turned on, and back off, at runtime. Failing closed, the service
 // can't serve without it, so readiness tracks it, while enforcing.
-func newValidation(logger *slog.Logger, cfg config, flags item.Flags) validation {
-	v := validation{enforce: func(ctx context.Context) bool { return flags.Bool(ctx, validator.FlagEnforce) }}
+func newValidation(logger *slog.Logger, cfg config, f flags) validation {
+	v := validation{enforce: func(ctx context.Context) bool { return f.Bool(ctx, validator.FlagEnforce) }}
 	if cfg.ValidatorURL == nil {
 		logger.Warn("request validation is off: no VALIDATOR_URL; every request goes unchecked")
 		return v
@@ -232,14 +242,19 @@ func newValidation(logger *slog.Logger, cfg config, flags item.Flags) validation
 
 // newFlags returns the feature flag evaluator: flagd when FLAGS_URL is set,
 // otherwise the flag definitions' default values alone. Either way every flag
-// the application reads (item.FlagKeys) must be defined there, because those
-// defaults are what evaluation falls back to when flagd can't answer.
-func newFlags(logger *slog.Logger, cfg config) (item.Flags, error) {
+// the application reads (each resource's, and validator.FlagKeys) must be
+// defined there, because those defaults are what evaluation falls back to
+// when flagd can't answer.
+func newFlags(logger *slog.Logger, cfg config) (flags, error) {
 	defaults, err := featureflag.LoadDefaults(cfg.FlagsFallbackFile)
 	if err != nil {
 		return nil, err
 	}
-	if err := defaults.Require(append(item.FlagKeys(), validator.FlagKeys()...)...); err != nil {
+	keys := validator.FlagKeys()
+	for _, r := range resources {
+		keys = append(keys, r.flagKeys...)
+	}
+	if err := defaults.Require(keys...); err != nil {
 		return nil, err
 	}
 
@@ -310,7 +325,7 @@ type handlerConfig struct {
 // client is its key. All sit inside the middleware, so a request they refuse
 // still gets a correlation ID and its log lines. The probes, /healthz and
 // /readyz, are exempt from authentication and the limits.
-func newHandler(logger *slog.Logger, cfg handlerConfig, items item.Store, opts ...item.Option) http.Handler {
+func newHandler(logger *slog.Logger, cfg handlerConfig, rs ...routes) http.Handler {
 	readiness := cfg.Readiness
 	if readiness == nil {
 		readiness = httpx.NewReadiness(logger, time.Second, time.Second)
@@ -318,7 +333,9 @@ func newHandler(logger *slog.Logger, cfg handlerConfig, items item.Store, opts .
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+httpx.HealthzPath, httpx.Healthz)
 	mux.Handle("GET "+httpx.ReadyzPath, readiness)
-	item.RegisterRoutes(mux, logger, items, opts...)
+	for _, add := range rs {
+		add(mux, logger)
+	}
 	httpx.HandleUnmatched(mux) // JSON 404s and 405s; last, as the catch-all
 
 	probes := []string{httpx.HealthzPath, httpx.ReadyzPath}

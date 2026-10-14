@@ -202,7 +202,10 @@ change something.
 - **A new resource** builds on what `internal/httpx` gives every one, rather than writing its own:
   `ParsePage` and `List` for its list, `ETag`, `SetETag`, `NotModified`, `IfMatch` and
   `Precondition` for its versions, `DecodeValid` for its bodies, and `WithStatus` for its store's
-  failures. `internal/item` is the example to follow.
+  failures. `internal/item` is the example to follow. In `cmd/api`, a resource is a file of its
+  own, `cmd/api/items.go`, wiring its store and routes, listed in `cmd/api/resources.go`; and its
+  tests are another, `cmd/api/items_test.go`, giving the spec tests its stores and its scenarios,
+  listed in `cmd/api/resources_test.go`. The shared tests then hold it to the spec like every other.
 
 ## Logs, metrics and traces
 
