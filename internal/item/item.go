@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 )
 
 // ErrNotFound is returned by a Store when no item has the given ID.
@@ -205,13 +207,13 @@ func Restore(id, name, description string, createdAt, updatedAt time.Time) Item 
 
 // The list's pages: how many items a page holds without a limit, and at most.
 const (
-	DefaultPageSize = 50
-	MaxPageSize     = 200
+	DefaultPageSize = httpx.DefaultPageSize
+	MaxPageSize     = httpx.MaxPageSize
 )
 
 // MaxCursorLen bounds a cursor: a Store's are short, and a client's is
 // checked before it reaches one.
-const MaxCursorLen = 256
+const MaxCursorLen = httpx.MaxCursorLen
 
 // Cursor marks a place in the list, after the last item of a page: made by a
 // Store, opaque to everyone else, and given back to list on from there. The
@@ -226,15 +228,8 @@ var ErrInvalidCursor = errors.New("the cursor isn't valid")
 
 // ParseCursor returns s as a Cursor, or ErrInvalidCursor; "" is the start.
 func ParseCursor(s string) (Cursor, error) {
-	if len(s) > MaxCursorLen {
+	if !httpx.ValidCursor(s) {
 		return Cursor{}, ErrInvalidCursor
-	}
-	for _, c := range []byte(s) {
-		switch {
-		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9', c == '-', c == '_':
-		default:
-			return Cursor{}, ErrInvalidCursor
-		}
 	}
 	return Cursor{s}, nil
 }

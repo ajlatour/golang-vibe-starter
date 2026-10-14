@@ -81,7 +81,7 @@ updates this table, and so the architecture, in the same pull request.
 | `internal/apikey` | protection | Authenticates API keys | `internal/httpx`, `internal/logx` |
 | `internal/validator` | protection | Checks every request against the request-validation service, and fails closed or open when it can't answer (ADR-0032) | `internal/httpx`, `internal/jsoncall`, `internal/logx`, `internal/outage` |
 | `internal/limit` | protection | In-flight cap and per-client rate limit; told who a client is (ADR-0031) | `internal/httpx` |
-| `internal/httpx` | plumbing | Serving, middleware, JSON helpers, readiness | `internal/logx`, `internal/tracectx` |
+| `internal/httpx` | plumbing | Serving, middleware, JSON helpers, readiness, and what every resource repeats: paged lists, entity tags and conditional requests, decoding and validating a body | `internal/logx`, `internal/tracectx` |
 | `internal/jsoncall` | plumbing | One JSON-over-HTTP call, for every outbound client | `internal/logx`, `internal/tracectx` |
 | `internal/envconfig` | plumbing | Environment variables and the settings every service shares | `internal/logx` |
 | `internal/profiling` | plumbing | pprof and runtime metrics on a private listener | `internal/logx` |
