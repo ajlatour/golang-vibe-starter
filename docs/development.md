@@ -198,7 +198,11 @@ packages a change touches recompile. Pull requests start from the cache `main`'s
 builds are unaffected: BuildKit keeps its own cache there.
 
 Every action is pinned to a commit SHA (the version is in a comment beside it) and every container
-image to a digest, so a moved tag can't change what CI runs. Dependabot (`.github/dependabot.yml`)
+image to a digest, so a moved tag can't change what CI runs. The runner image is pinned too
+(`ubuntu-24.04`, not `ubuntu-latest`, which GitHub moves to each new release): a new one is
+taken on purpose, by changing every `runs-on` in one pull request, before the pinned one is
+retired. The API's image builds from an allow-list of what it needs (`.dockerignore`), so
+nothing else reaches the build. Dependabot (`.github/dependabot.yml`)
 opens a weekly pull request for each kind of update: Go modules, actions, and images: the
 Dockerfile's, compose's, and the tools the Makefile and workflows run, listed in
 `tools/images/Dockerfile` for it (`docs/pins_test.go` keeps them there).

@@ -16,7 +16,7 @@ concurrency:
 jobs:
   # Formatting, vet and the unit tests: fast, and no Docker.
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -47,7 +47,7 @@ jobs:
   # The Godog feature tests against the whole stack, started with docker
   # compose here. The tests themselves only talk HTTP to it.
   integration:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       # Stamped into the API's log lines as its version.
@@ -93,7 +93,7 @@ jobs:
   # Builds the documentation website (pandoc and Redocly, in Docker) and
   # checks that every page exists and every link in it resolves.
   docs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -117,7 +117,7 @@ jobs:
   # library, for all three modules. govulncheck reports only those the code
   # can actually reach.
   vuln:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -136,7 +136,7 @@ jobs:
   # Each target's seeds already run as tests in the test job; this explores
   # beyond them. A failing input is uploaded, to reproduce with go test.
   fuzz:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -160,7 +160,7 @@ jobs:
   # suspicious code, gosec for security mistakes. CodeQL would need GitHub
   # Advanced Security on a private repository (docs/decisions.md, ADR-0026).
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
