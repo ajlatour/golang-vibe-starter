@@ -199,6 +199,10 @@ change something.
   *Checked by:* `cmd/api/config_test.go`, `cmd/api/deadline_test.go`.
 - **A new route** touches the spec, the handlers, `docs/curl.md`, the WireMock stubs, the load
   test's traffic mix and an integration scenario. The tests name whichever is missing.
+- **A new resource** builds on what `internal/httpx` gives every one, rather than writing its own:
+  `ParsePage` and `List` for its list, `ETag`, `SetETag`, `NotModified`, `IfMatch` and
+  `Precondition` for its versions, `DecodeValid` for its bodies, and `WithStatus` for its store's
+  failures. `internal/item` is the example to follow.
 
 ## Logs, metrics and traces
 
