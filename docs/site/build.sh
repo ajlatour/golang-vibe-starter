@@ -24,6 +24,7 @@ mkdir -p "$out"
 cp docs/site/site.css "$out/site.css"
 # Linked from the README; .txt so a browser shows it rather than downloading it.
 cp .env.example "$out/env.example.txt"
+cp LICENSE "$out/license.txt"
 
 # The navigation, by theme: one "theme|source|output" line per page, in
 # order. "-" as the source is a page built elsewhere (Redocly's API spec), and
@@ -39,6 +40,7 @@ Run it|docs/local-stack.md|local-stack.html
 Run it|docs/feature-flags.md|feature-flags.html
 Run it|docs/request-validation.md|request-validation.html
 Run it|docs/logging.md|logging.html
+Build and ship|docs/standards.md|standards.html
 Build and ship|docs/development.md|development.html
 Build and ship|docs/performance.md|performance.html
 Build and ship|+history|history.html
@@ -60,8 +62,9 @@ pages=$(echo "$navigation" | awk -F'|' '$2 != "-" { printf "%s:%s ", $2, $3 }')
 for record in docs/adr/*.md; do
 	pages="$pages$record:$(basename "$record" .md).html "
 done
-# How to write a change file, reached from the releasing guide.
-pages="${pages}changes/README.md:changes.html "
+# How to write a change file, reached from the releasing guide; how to
+# contribute, and to report a vulnerability, from the README.
+pages="${pages}changes/README.md:changes.html CONTRIBUTING.md:contributing.html SECURITY.md:security.html "
 
 # The decisions page's source: docs/decisions.md, and an index of the
 # records, made from their files: each one's title and status. The index
@@ -139,6 +142,7 @@ for page in $pages; do
 	case $src in
 	docs/adr/*) nav decisions.html ;; # a record is part of the decisions
 	changes/*) nav releasing.html ;;
+	CONTRIBUTING.md | SECURITY.md) nav index.html ;;
 	*) nav "$dest" ;;
 	esac > "$out/.nav.html"
 	# --wrap=none keeps each element on one line, so the sed rewrites below
@@ -155,6 +159,9 @@ for page in $pages; do
 			-e 's#href="(\.\./)?ROADMAP\.md#href="roadmap.html#g' \
 			-e 's#href="adr/"#href="decisions.html\#the-records"#g' \
 			-e 's#href="(\.\./)?changes/README\.md#href="changes.html#g' \
+			-e 's#href="(\.\./)?CONTRIBUTING\.md#href="contributing.html#g' \
+			-e 's#href="(\.\./)?SECURITY\.md#href="security.html#g' \
+			-e 's#href="(\.\./)?LICENSE"#href="license.txt"#g' \
 			-e 's#href="(docs/)?adr/([^"/]+)\.md#href="\2.html#g' \
 			-e 's#href="\.\./([^":/]+)\.md#href="\1.html#g' \
 			-e 's#href="docs/([^"/]+)\.md#href="\1.html#g' \

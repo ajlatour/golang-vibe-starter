@@ -10,7 +10,6 @@
 package tracectx
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 )
@@ -88,16 +87,3 @@ func (p Parent) String() string {
 
 // TraceIDString is p's trace ID in hex, as logged.
 func (p Parent) TraceIDString() string { return hex.EncodeToString(p.TraceID[:]) }
-
-type ctxKey struct{}
-
-// With returns ctx carrying p.
-func With(ctx context.Context, p Parent) context.Context {
-	return context.WithValue(ctx, ctxKey{}, p)
-}
-
-// From returns the trace context ctx carries, if any.
-func From(ctx context.Context) (Parent, bool) {
-	p, ok := ctx.Value(ctxKey{}).(Parent)
-	return p, ok
-}

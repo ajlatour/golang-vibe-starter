@@ -73,6 +73,17 @@ type Response struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// ListResponse is a page of items as the API sends it.
+type ListResponse struct {
+	Items []Response `json:"items"`
+	// NextCursor is where the next page starts; empty, and left out, on the
+	// last.
+	NextCursor string `json:"next_cursor,omitempty"`
+	// Total is the number of items on the page, sent only with the
+	// items-list-total flag on.
+	Total *int `json:"total,omitempty"`
+}
+
 // NewResponse is it as the API sends it.
 func NewResponse(it Item) Response {
 	return Response{ID: it.ID.String(), Name: it.Name.String(), Description: it.Description.String(), CreatedAt: it.CreatedAt, UpdatedAt: it.UpdatedAt}
@@ -88,16 +99,16 @@ func handleList(store Store, flags Flags) httpx.HandlerFunc {
 		if err != nil {
 			return storeErr(err)
 		}
-		out := make([]Response, len(l.Items))
+		resp := ListResponse{Items: make([]Response, len(l.Items))}
 		for i, it := range l.Items {
-			out[i] = NewResponse(it)
+			resp.Items[i] = NewResponse(it)
 		}
-		resp := map[string]any{"items": out}
 		if !l.Next.IsZero() {
-			resp["next_cursor"] = l.Next.String()
+			resp.NextCursor = l.Next.String()
 		}
 		if flags != nil && flags.Bool(r.Context(), FlagListTotal) {
-			resp["total"] = len(l.Items)
+			n := len(l.Items)
+			resp.Total = &n
 		}
 		httpx.WriteJSON(w, http.StatusOK, resp)
 		return nil
@@ -360,7 +371,7 @@ func checkIfMatch(r *http.Request, store Store, id ID) error {
 // compares strongly, so a weak tag (W/"...") never matches; If-None-Match
 // weakly, ignoring the W/ (RFC 9110, 13.1).
 func etagMatches(header, tag string, weak bool) bool {
-	for _, t := range strings.Split(header, ",") {
+	for t := range strings.SplitSeq(header, ",") {
 		t = strings.TrimSpace(t)
 		if t == "*" {
 			return true

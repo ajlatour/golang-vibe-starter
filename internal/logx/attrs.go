@@ -59,8 +59,7 @@ type AttrsError interface {
 // the first AttrsError in its chain, if any.
 func ErrorAttrs(err error) []slog.Attr {
 	attrs := []slog.Attr{slog.Any(KeyError, err)}
-	var la AttrsError
-	if errors.As(err, &la) {
+	if la, ok := errors.AsType[AttrsError](err); ok {
 		attrs = append(attrs, la.LogAttrs()...)
 	}
 	return attrs

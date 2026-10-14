@@ -88,7 +88,7 @@ func readmeDefaults(t *testing.T) map[string]string {
 	}
 	row := regexp.MustCompile("^\\|\\s*`([A-Z][A-Z0-9_]*)`\\s*\\|([^|]*)\\|")
 	defaults := map[string]string{}
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		if m := row.FindStringSubmatch(line); m != nil {
 			d := strings.Trim(strings.TrimSpace(m[2]), "`")
 			if d == "(required)" {

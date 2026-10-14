@@ -64,7 +64,7 @@ func (b *Buffer) Logger(level slog.Level) *slog.Logger {
 // Lines returns the non-empty lines logged so far, raw.
 func (b *Buffer) Lines() []string {
 	var out []string
-	for _, line := range strings.Split(b.String(), "\n") {
+	for line := range strings.SplitSeq(b.String(), "\n") {
 		if line != "" {
 			out = append(out, line)
 		}

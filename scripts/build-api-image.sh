@@ -39,6 +39,8 @@ if [ -n "${GOCACHE_DIR:-}" ] && [ "${GOCACHE_KEEP:-}" != no ]; then
 	# The export stage reuses the build above, so this only copies the cache
 	# out. A base without the stage (older code) just has nothing to keep.
 	out=$(mktemp -d)
+	# $seed is an option and its value, or nothing: split, not quoted.
+	# shellcheck disable=SC2086
 	if docker build --quiet $seed --build-arg VERSION="$version" -f "$src/cmd/api/Dockerfile" \
 		--target gocache-export --output "type=local,dest=$out" "$src" >/dev/null 2>&1; then
 		rm -rf "$GOCACHE_DIR" && mv "$out" "$GOCACHE_DIR"

@@ -97,8 +97,7 @@ func TestInFlight(t *testing.T) {
 
 	var done sync.WaitGroup
 	for range 2 {
-		done.Add(1)
-		go func() { defer done.Done(); get(h, "/slow", "10.0.0.1:1") }()
+		done.Go(func() { get(h, "/slow", "10.0.0.1:1") })
 	}
 	started.Wait()
 

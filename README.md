@@ -20,7 +20,7 @@ contract, change that variable; no code changes are needed.
 
 ## Prerequisites
 
-- Go 1.27 or later. If your installed `go` is older, `GOTOOLCHAIN=auto` (the default) switches to
+- Go 1.27.2 or later. If your installed `go` is older, `GOTOOLCHAIN=auto` (the default) switches to
   the version pinned in `go.mod`.
 - Docker with Compose, to run the local stack and the integration tests. The unit tests don't
   need it.
@@ -285,6 +285,8 @@ documentation (the code's doc comments) at http://localhost:6060.
 
 **Build and ship**
 
+- [Standards](docs/standards.md): the rules every change follows, from Go style and errors to
+  API design, security and testing, and what checks each.
 - [Development](docs/development.md): the ground rules, what to update when you change something,
   and the unit, integration and CI tests.
 - [Performance](docs/performance.md): Go benchmarks, k6 load, stress, spike and soak tests,
@@ -301,47 +303,35 @@ documentation (the code's doc comments) at http://localhost:6060.
 ## Layout
 
 ```
-cmd/api/                 API service: config, wiring, Dockerfile
-cmd/apikey/              Generates an API key and its API_KEYS entry (make api-key)
-internal/item/           Item model, Store interface, /items handlers
-internal/item/httpstore/ The production Store: items on the upstream over HTTP,
-                         and UpstreamError (502/504) when the upstream fails
-internal/httpx/          HTTP plumbing: graceful Serve, middleware (correlation IDs,
-                         request logging), JSON helpers, the health and readiness probes
-internal/headerguard/    Screens every request's headers: limits, duplicates, JSON
-                         bodies, and stripping proxy and override headers
-internal/apikey/         API key authentication: hashed keys, read and write scopes
-internal/limit/          The cap on requests in flight, and each client's rate limit
-internal/httpmetrics/    Request metrics per route, in Prometheus's text format
-internal/envconfig/      Reading configuration from environment variables, and the
-                         settings every service shares (address, logging, shutdown)
-internal/logx/           Logging toolkit: logger, the Key field names, request-ID
-                         context, redaction and truncation helpers. Imports nothing
-                         from this module.
-internal/featureflag/    OFREP client for the flagd sidecar, flag declarations,
-                         and fallback defaults derived from flagd/flags.json
-internal/jsoncall/       One JSON-over-HTTP call: encode, send, redact, cap, decode, and
-                         classify failures. Used by httpstore and featureflag.
-internal/item/itemtest/  MemStore (an in-memory Store) and StoreContract, for tests
-internal/profiling/      Serves pprof and runtime metrics on their own listener (PPROF_ADDR)
-internal/logtest/        Capture and parse JSON logs in tests; the log contract
-internal/nettest/        Dead, hanging, dropping and failing upstream stubs for tests
-scripts/api              Calls the API with curl; see docs/curl.md
-scripts/build-api-image.sh  Builds the API's image, keeping Go's build cache (CI)
-scripts/changelog.sh     Cuts a release's changelog section, and prints its notes
-perf/                    k6 load profiles, the scripts that run them, and the PR report
-monitoring/              Prometheus and Grafana config for make monitor
-flagd/                   Feature flag definitions: served by flagd, and embedded
-                         in the API as its fallback values
-wiremock/mappings/       WireMock stubs (mounted)
-wiremock/faults/         Opt-in fault stubs (loaded via the admin API)
-docs/                    The documents above, the OpenAPI spec, and site/, which
-                         renders them as a local website (make docs)
-Makefile                 Shortcuts for running, testing and checking (make help)
-integration/             Godog end-to-end tests against the composed stack (own Go module)
-compose.yaml             Local stack: api + WireMock + flagd
-compose.integration.yaml Compose overrides for the integration tests (ignores .env)
-.env.example             Every setting the API reads, with its default
-.github/workflows/       CI, the pull request performance report, main's performance record,
-                         and releases
+cmd/api/             The service: configuration and wiring (main.go, config.go)
+cmd/apikey/          Generates an API key and its API_KEYS entry (make api-key)
+cmd/apidiff/         Compares two versions of the API spec for breaking changes
+internal/            Every package the service is made of: features (item), adapters
+                     (item/httpstore), protections (apikey, limit, headerguard,
+                     validator) and plumbing (httpx, logx, envconfig, ...)
+docs/                The guides, the API spec (openapi.json), decision records (adr/),
+                     and site/, which renders them as a website (make docs)
+changes/             The next release's changelog entries, one file per change
+integration/         Godog end-to-end tests against the composed stack (own module)
+perf/                k6 load profiles, their scripts, and the pull request report
+monitoring/          Prometheus and Grafana for make monitor
+wiremock/            The mock upstream's stubs (mappings/) and opt-in faults (faults/)
+flagd/               Feature flag definitions: served by flagd, embedded as fallbacks
+scripts/             The shell scripts the Makefile and CI run
+tools/images/        The tool images the build runs, pinned, for Dependabot
+compose*.yaml        The local stack, and its integration and smoke-test variants
+.github/             CI, performance, release and nightly soak workflows; Dependabot
 ```
+
+[Architecture](docs/architecture.md#building-blocks) has every package, what it's for and what it
+may import, kept exact by a test.
+
+## Contributing
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) is how to set up and make a change; the
+[standards](docs/standards.md) are the rules every change follows. Report security problems
+privately, as [`SECURITY.md`](SECURITY.md) explains.
+
+## License
+
+[MIT](LICENSE).

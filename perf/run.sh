@@ -53,6 +53,8 @@ status=0
 # As your user, so the summary in bin/perf isn't owned by root or k6's user.
 # --no-deps: against the stack as it is. Otherwise compose would recreate the
 # API to match compose.yaml's defaults, replacing the image load-ab.sh chose.
+# $quiet and $output are each an option or nothing, so they're split, not quoted.
+# shellcheck disable=SC2086
 docker compose --profile perf run --rm --no-deps --user "$(id -u):$(id -g)" \
 	-e PROFILE="$profile" \
 	-e K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write \
