@@ -211,8 +211,17 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) item.Store) {
 			p.Cursor = l.Next
 		}
 		// Nothing listed twice, nothing not yet listed skipped: the rest is
-		// the items after the first page, and the one added since.
-		want := append(slices.Clone(ids[2:]), added.ID)
+		// every item the first page didn't list, and the one added since.
+		// Which items the first page holds is the store's order, not
+		// necessarily the order they were made in: two made in one tick of
+		// the clock may come either way round.
+		var want []item.ID
+		for _, id := range ids {
+			if !slices.ContainsFunc(first.Items, func(it item.Item) bool { return it.ID == id }) {
+				want = append(want, id)
+			}
+		}
+		want = append(want, added.ID)
 		if !slices.Equal(sortedIDs(rest), sortedIDs(want)) {
 			t.Errorf("after the first page, listed %v; want %v", rest, want)
 		}
