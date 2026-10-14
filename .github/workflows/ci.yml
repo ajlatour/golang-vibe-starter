@@ -38,8 +38,11 @@ jobs:
       - name: go vet
         run: make vet
 
-      - name: Unit tests
-        run: make test-race
+      # The unit tests, with the race detector, and the coverage they give
+      # across packages: a table of it in the job summary, failing under
+      # the floor (COVER_MIN in the Makefile).
+      - name: Unit tests and coverage
+        run: make cover
 
   # The Godog feature tests against the whole stack, started with docker
   # compose here. The tests themselves only talk HTTP to it.

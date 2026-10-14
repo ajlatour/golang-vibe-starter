@@ -141,7 +141,7 @@ func ParseKeys(s string) ([]Key, error) {
 	var keys []Key
 	names := map[string]bool{}
 	var entries []string
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "#") {
 			continue
 		}

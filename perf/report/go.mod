@@ -1,6 +1,6 @@
 module github.com/ajlatour/golang-vibe-starter/perf/report
 
-go 1.27
+go 1.27.2
 
 require golang.org/x/perf v0.0.0-20260929162123-406019bb8b68
 

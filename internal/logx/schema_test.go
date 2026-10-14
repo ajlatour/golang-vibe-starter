@@ -277,7 +277,7 @@ func tableRows(t *testing.T, section, header string) [][]string {
 	t.Helper()
 	var rows [][]string
 	in := false
-	for _, line := range strings.Split(section, "\n") {
+	for line := range strings.SplitSeq(section, "\n") {
 		switch {
 		case !in && strings.HasPrefix(line, header):
 			in = true
