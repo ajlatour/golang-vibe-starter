@@ -21,6 +21,8 @@ type testResource struct {
 	path string
 	// okBody is a request body its writes accept.
 	okBody string
+	// stubIDs are the IDs its WireMock stubs know.
+	stubIDs []string
 	// routes is its routes on a store for a scenario environment
 	// (handlerFor), and that store's readiness checks: for "ok" and
 	// "flagOn", holding one entity, whose ID is seededID, with its feature
