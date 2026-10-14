@@ -173,8 +173,11 @@ value with a double quote in it can't go inside a step's quoted argument; give i
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request, in six jobs, each
 step a `make` target:
 
-- **test**: `make fmt-check`, `make vet` and `make test-race` (together, `make check`). Fast, no
-  Docker.
+- **test**: `make fmt-check`, `make vet`, and `make cover`: the unit tests with the race detector,
+  and the coverage they give across the service's packages (a package's code counts as covered
+  when any package's tests run it), with a table of it per package in the job summary. It fails
+  if the total is under the floor, `COVER_MIN` in the Makefile (90%); raise the floor as coverage
+  rises, never lower it. Fast, no Docker.
 - **integration**: `make integration-up`, `make integration-test`, `make integration-logs` if
   anything failed, and always `make integration-down`. The commit SHA is passed as `VERSION`, so
   the API's log lines say which build they came from.

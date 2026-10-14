@@ -45,7 +45,7 @@ DOCS_OUT := bin/docs
 REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/spec" -w /spec $(shell sh scripts/image.sh redocly)
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs run test fmt fmt-check vet test-race check \
+.PHONY: help up down logs run test fmt fmt-check vet test-race cover check \
 	integration integration-up integration-test integration-logs integration-down \
 	lint api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check docs-release godoc spec spec-lint \
 	api-compat smoke release-prepare release-tag perf perf-profile perf-soak bench bench-compare load-compare perf-compare perf-data perf-trends monitor
@@ -111,6 +111,15 @@ vet: ## go vet, for the service and the integration and perf report modules
 test-race: ## Unit tests with the race detector
 	go test -race ./...
 	go test -C perf/report -race ./...
+
+# The coverage floor, across the service's packages: a change that lowers the
+# total below it fails CI. Raise it as coverage rises; don't lower it.
+COVER_MIN ?= 90
+
+cover: ## The unit tests with the race detector, and coverage across packages (bin/cover.out), failing under COVER_MIN% in total
+	@mkdir -p bin
+	go test -race -covermode=atomic -coverpkg=./cmd/...,./internal/... -coverprofile=bin/cover.out ./...
+	@sh scripts/coverage.sh bin/cover.out $(COVER_MIN)
 
 check: fmt-check vet test-race ## Everything CI's fast job runs
 
