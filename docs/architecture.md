@@ -76,6 +76,7 @@ updates this table, and so the architecture, in the same pull request.
 | `cmd/apidiff` | tool | Compares two versions of the OpenAPI spec: what's breaking for clients, what's additive, and the version bump that needs | none |
 | `internal/item` | feature | The item model (value objects that enforce its rules), the `Store` interface, the `/items` handlers and the API's JSON shapes (ADR-0030) | `internal/httpx` |
 | `internal/item/httpstore` | adapter | The `Store` on the upstream, over HTTP, translating the upstream's JSON and classifying its failures (ADR-0031) | `internal/item`, `internal/jsoncall`, `internal/logx` |
+| `internal/item/memstore` | adapter | The `Store` in memory, bounded: `STORE=memory` (`make dev`), and tests' stand-in store and upstream | `internal/item` |
 | `internal/featureflag` | adapter | OFREP client for flagd, flag declarations, embedded defaults | `flagd`, `internal/jsoncall`, `internal/logx`, `internal/outage` |
 | `internal/headerguard` | protection | Screens request headers | `internal/httpx`, `internal/logx` |
 | `internal/apikey` | protection | Authenticates API keys | `internal/httpx`, `internal/logx` |
@@ -90,7 +91,7 @@ updates this table, and so the architecture, in the same pull request.
 | `internal/httpmetrics` | foundation | Request metrics in Prometheus's text format | nothing |
 | `internal/logx` | foundation | The logger, field names, per-request log state, redaction | `internal/tracectx` |
 | `flagd` | foundation | The flag definitions, embedded as the fallback defaults | nothing |
-| `internal/item/itemtest` | test support | In-memory `Store` and the contract every `Store` must pass | `internal/item` |
+| `internal/item/itemtest` | test support | The contract every `Store` must pass, and the in-memory store by the name tests use | `internal/item`, `internal/item/memstore` |
 | `internal/logtest` | test support | Capturing and parsing logs; the log contract | nothing |
 | `internal/nettest` | test support | Dead, hanging and failing upstream stubs | nothing |
 

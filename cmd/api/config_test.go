@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"maps"
+	"net/http"
 	"reflect"
 	"strings"
 	"testing"
@@ -313,5 +315,59 @@ func TestLoadConfigRequestTimeout(t *testing.T) {
 	// A timeout for a service that isn't configured doesn't matter.
 	if _, err := loadConfig(getenvFrom(with("VALIDATOR_TIMEOUT", "12s", "FLAGS_TIMEOUT", "12s"))); err != nil {
 		t.Errorf("timeouts of unconfigured services were checked: %v", err)
+	}
+}
+
+func TestLoadConfigStore(t *testing.T) {
+	cfg, err := loadConfig(getenvFrom(map[string]string{"UPSTREAM_URL": "http://mock"}))
+	if err != nil || cfg.Store != storeUpstream {
+		t.Fatalf("default: %q, %v; want the upstream", cfg.Store, err)
+	}
+	cfg, err = loadConfig(getenvFrom(map[string]string{"STORE": "memory"}))
+	if err != nil || cfg.Store != storeMemory || cfg.UpstreamURL != nil {
+		t.Errorf("STORE=memory without UPSTREAM_URL: %+v, %v; want it to need no upstream", cfg.Store, err)
+	}
+	// The upstream's timeout doesn't bind a store that has none.
+	if _, err := loadConfig(getenvFrom(map[string]string{"STORE": "memory", "UPSTREAM_TIMEOUT": "30s"})); err != nil {
+		t.Errorf("STORE=memory with a long UPSTREAM_TIMEOUT: %v", err)
+	}
+	for name, env := range map[string]map[string]string{
+		"upstream without a URL":      {"STORE": "upstream"},
+		"memory with a URL":           {"STORE": "memory", "UPSTREAM_URL": "http://mock"},
+		"neither upstream nor memory": {"STORE": "disk", "UPSTREAM_URL": "http://mock"},
+	} {
+		if _, err := loadConfig(getenvFrom(env)); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+}
+
+// TestRunInMemory runs the whole service with STORE=memory, as make dev does:
+// no upstream at all, yet ready, and serving items it keeps itself.
+func TestRunInMemory(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	addr, logs, errc := startApp(t, ctx, map[string]string{"ADDR": "127.0.0.1:0", "STORE": "memory", "API_AUTH": "off"})
+	defer waitForShutdown(t, errc)
+	defer cancel()
+
+	base := "http://" + addr
+	resp, err := http.Get(base + "/readyz")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("readyz: %v %v, want ready with no upstream", resp, err)
+	}
+	resp.Body.Close()
+	resp, err = http.Post(base+"/items", "application/json", strings.NewReader(`{"name":"Sprocket"}`))
+	if err != nil || resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create: %v %v", resp, err)
+	}
+	loc := resp.Header.Get("Location")
+	resp.Body.Close()
+	resp, err = http.Get(base + loc)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("get %s: %v %v", loc, resp, err)
+	}
+	resp.Body.Close()
+	if !strings.Contains(logs.String(), `"using the in-memory store`) {
+		t.Errorf("no startup warning that the store is in memory:\n%s", logs)
 	}
 }

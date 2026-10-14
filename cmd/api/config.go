@@ -22,6 +22,11 @@ type config struct {
 	// longer by writeTimeoutMargin, so the answer always gets out.
 	RequestTimeout time.Duration
 
+	// Store is where items are kept: storeUpstream (the default), the
+	// upstream service at UpstreamURL; or storeMemory, the process's memory,
+	// for development and tests (STORE).
+	Store string
+
 	UpstreamURL     *url.URL
 	UpstreamTimeout time.Duration
 	// UpstreamRetries is how often a GET to the upstream is tried again
@@ -83,9 +88,28 @@ type config struct {
 	ShutdownDelay time.Duration
 }
 
+// Where items can be kept (STORE).
+const (
+	storeUpstream = "upstream"
+	storeMemory   = "memory"
+)
+
 func loadConfig(getenv func(string) string) (config, error) {
 	srv, srvErr := envconfig.LoadService(getenv)
 	env := envconfig.NewEnv(getenv)
+	store := envconfig.Optional(env, "STORE", storeUpstream, parseStore)
+	// Required with the upstream store: there is no sensible default
+	// upstream, and silently talking to the wrong one is worse than failing
+	// at startup. Refused with the memory store, which would ignore it.
+	var upstreamURL *url.URL
+	switch {
+	case store == storeUpstream:
+		upstreamURL = envconfig.Required(env, "UPSTREAM_URL", parseHTTPURL)
+	case env.String("UPSTREAM_URL") != "":
+		upstreamURL = envconfig.Optional(env, "UPSTREAM_URL", nil, func(string) (*url.URL, error) {
+			return nil, errors.New("set with STORE=memory, which doesn't use it: unset it, or use STORE=upstream")
+		})
+	}
 	cfg := config{
 		Service: srv,
 
@@ -95,9 +119,8 @@ func loadConfig(getenv func(string) string) (config, error) {
 		// shutdown can finish.
 		RequestTimeout: envconfig.Optional(env, "REQUEST_TIMEOUT", 10*time.Second, envconfig.ParsePositiveDuration),
 
-		// Required: there is no sensible default upstream, and silently
-		// talking to the wrong one is worse than failing at startup.
-		UpstreamURL:     envconfig.Required(env, "UPSTREAM_URL", parseHTTPURL),
+		Store:           store,
+		UpstreamURL:     upstreamURL,
 		UpstreamTimeout: envconfig.Optional(env, "UPSTREAM_TIMEOUT", 5*time.Second, envconfig.ParsePositiveDuration),
 		// One retry: enough to ride out a dropped connection or a restart
 		// behind a load balancer, and the budget keeps it from adding load
@@ -196,7 +219,7 @@ func (cfg config) checkTimeouts() []error {
 		d    time.Duration
 		set  bool
 	}{
-		{"UPSTREAM_TIMEOUT", cfg.UpstreamTimeout, true},
+		{"UPSTREAM_TIMEOUT", cfg.UpstreamTimeout, cfg.Store == storeUpstream},
 		{"VALIDATOR_TIMEOUT", cfg.ValidatorTimeout, cfg.ValidatorURL != nil},
 		{"FLAGS_TIMEOUT", cfg.FlagsTimeout, cfg.FlagsURL != nil},
 	} {
@@ -214,6 +237,14 @@ func (cfg config) checkTimeouts() []error {
 // gives a response to be written: time for the handler to answer once the
 // deadline passes, and for the answer to reach the client.
 const writeTimeoutMargin = 5 * time.Second
+
+// parseStore reads STORE: upstream or memory.
+func parseStore(v string) (string, error) {
+	if v != storeUpstream && v != storeMemory {
+		return "", fmt.Errorf("want upstream or memory, got %q", v)
+	}
+	return v, nil
+}
 
 // parseHTTPURL parses v as an absolute http(s) base URL, without a query
 // string or fragment.

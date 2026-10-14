@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
 
@@ -45,6 +46,11 @@ func startApp(t *testing.T, ctx context.Context, env map[string]string) (addr st
 // seconds. Cancel the context passed to startApp first.
 func waitForShutdown(t *testing.T, errc <-chan error) {
 	t.Helper()
+	// The test's client may hold a connection it dialled but never used
+	// (net/http dials a spare while it waits for one to free up). The server
+	// can't tell that from a request on its way, so its shutdown waits up to
+	// 5 seconds for it; closing the client's idle connections ends that.
+	http.DefaultClient.CloseIdleConnections()
 	select {
 	case err := <-errc:
 		if err != nil {

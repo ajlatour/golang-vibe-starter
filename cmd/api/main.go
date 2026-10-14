@@ -22,6 +22,7 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/httpstore"
+	"github.com/ajlatour/golang-vibe-starter/internal/item/memstore"
 	"github.com/ajlatour/golang-vibe-starter/internal/limit"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 	"github.com/ajlatour/golang-vibe-starter/internal/profiling"
@@ -94,7 +95,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	if cfg.Auth.Ring != nil {
 		logx.Go(logger, "API keys reload", func() { apikey.WatchFile(ctx, logger, cfg.KeysFile, cfg.Auth.Ring, cfg.KeysReload) })
 	}
-	store := newStore(logger, cfg)
+	store, storeChecks := newStore(logger, cfg)
 	evaluator, err := newFlags(logger, cfg)
 	if err != nil {
 		return err
@@ -118,7 +119,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	// service if it can't serve without it, until shutdown.
 	v := newValidation(logger, cfg, evaluator)
 	readiness := httpx.NewReadiness(logger, time.Second, time.Second,
-		append([]httpx.Check{{Name: "upstream", Fn: store.Reachable}}, v.checks...)...)
+		append(storeChecks, v.checks...)...)
 	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness, Metrics: metrics, ClientIP: cfg.LogClientIP, RequestTimeout: cfg.RequestTimeout,
 		Validator: v.checker, ValidatorFailOpen: cfg.ValidatorFailOpen, ValidatorEnforce: v.enforce,
 		ValidatorObserve: func(o validator.Outcome, d time.Duration) { validatorCalls.Observe(string(o), d) }},
@@ -151,8 +152,12 @@ func loadKeys(cfg *config) error {
 // header guard, authentication and the limits: what a log reader needs to
 // know what this instance does.
 func logSettings(logger *slog.Logger, cfg config) {
-	logger.Info("using upstream", logx.KeyURL, cfg.UpstreamURL.Redacted(), logx.KeyTimeout, cfg.UpstreamTimeout.String(),
-		logx.KeyRetries, cfg.UpstreamRetries)
+	if cfg.Store == storeMemory {
+		logger.Warn("using the in-memory store: for development only; items are lost when the service stops")
+	} else {
+		logger.Info("using upstream", logx.KeyURL, cfg.UpstreamURL.Redacted(), logx.KeyTimeout, cfg.UpstreamTimeout.String(),
+			logx.KeyRetries, cfg.UpstreamRetries)
+	}
 	logger.Info("using header guard",
 		logx.KeyMode, cfg.HeaderGuard.Mode.String(),
 		logx.KeyMaxHeaders, cfg.HeaderGuard.MaxHeaders,
@@ -163,12 +168,17 @@ func logSettings(logger *slog.Logger, cfg config) {
 		logx.KeyRateLimit, cfg.Limits.Rate, logx.KeyRateBurst, cfg.Limits.Burst)
 }
 
-// newStore returns the item store: the upstream, over HTTP, with its own
-// timeout, connection pool and retries.
-func newStore(logger *slog.Logger, cfg config) *httpstore.Store {
-	return httpstore.New(cfg.UpstreamURL.String(),
+// newStore returns the item store, and what readiness checks of it: the
+// upstream, over HTTP, with its own timeout, connection pool and retries,
+// ready while it's reachable; or memory (STORE=memory), always ready.
+func newStore(logger *slog.Logger, cfg config) (item.Store, []httpx.Check) {
+	if cfg.Store == storeMemory {
+		return memstore.New(), nil
+	}
+	s := httpstore.New(cfg.UpstreamURL.String(),
 		&http.Client{Timeout: cfg.UpstreamTimeout, Transport: newTransport(cfg.Limits.MaxInFlight)},
 		httpstore.WithLogger(logger), httpstore.WithRetries(cfg.UpstreamRetries))
+	return s, []httpx.Check{{Name: "upstream", Fn: s.Reachable}}
 }
 
 // serveProfiling starts the profiling server, with metrics from extra, when
