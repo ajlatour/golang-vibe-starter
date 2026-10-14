@@ -284,8 +284,10 @@ change something.
   by:* `docs/architecture_test.go`.
 - Code that needs a dependency to test or build the service lives in a module of its own
   (`integration/`, `perf/report/`).
-- Tools run at pinned versions: Go tools through `go run tool@version` in the Makefile, the rest
-  as Docker images pinned by digest in `tools/images/Dockerfile`. Nothing needs installing
-  beyond Go, Docker and `make`.
+- Tools run at pinned versions. Go tools are `tool` directives in `tools/go.mod`, with their
+  dependencies' checksums, built into `bin/tools` by `make tools`
+  ([ADR-0045](adr/0045-go-tools-are-pinned-in-a-tools-module.md)); the rest are Docker images
+  pinned by digest in `tools/images/Dockerfile`. Nothing needs installing beyond Go, Docker and
+  `make`.
 - Every command a contributor runs is a `make` target, and CI runs the same targets
   ([ADR-0011](adr/0011-tooling-runs-in-docker-or-through-go-run.md)).

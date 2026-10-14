@@ -183,7 +183,7 @@ step a `make` target:
   the API's log lines say which build they came from.
 - **docs**: `make docs-check`, which builds the documentation website and checks every page and
   link in it (`docs/site/site_test.go`).
-- **lint**: `make lint`, on all three modules: staticcheck with every check, style included (bugs,
+- **lint**: `make lint`, on all three modules, with the Go tools built from `tools/go.mod` (`make tools`; ADR-0045): staticcheck with every check, style included (bugs,
   suspicious code, and doc comments, which every package and exported name has); modernize (code
   a newer Go says more simply); gosec (security mistakes); `go mod tidy -diff` (`go.mod` and
   `go.sum` say exactly what the code needs); and, in Docker, shellcheck on the shell scripts and
