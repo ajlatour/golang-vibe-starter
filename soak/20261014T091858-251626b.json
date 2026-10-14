@@ -1,0 +1,19 @@
+{
+  "sha": "251626b4c05a21bd6978bb4a7ae61bce810ac369",
+  "time": "2026-10-14T09:18:57Z",
+  "subject": "Merge pull request #66 from ajlatour/release-smoke-per-platform",
+  "minutes": 25.016666666666666,
+  "heap_live_bytes": {
+    "start": 905360,
+    "end": 896032
+  },
+  "goroutines": {
+    "start": 47,
+    "end": 47
+  },
+  "mapped_bytes": {
+    "start": 18209032,
+    "end": 18209032
+  },
+  "grew": []
+}
