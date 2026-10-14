@@ -23,7 +23,7 @@ jobs:
   soak:
     # Forks inherit the schedule; only this repository's main is soaked.
     if: github.event_name != 'schedule' || github.repository == 'ajlatour/golang-vibe-starter'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 50
     permissions:
       # To push to perf-data. Only main's own code runs here.
