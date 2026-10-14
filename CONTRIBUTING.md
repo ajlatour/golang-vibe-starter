@@ -6,7 +6,7 @@ and [Development](docs/development.md) explains how the code is put together and
 ## Set up
 
 You need Go (the version in `go.mod`, which `GOTOOLCHAIN=auto` fetches for you), Docker with
-Compose, and `make`. Nothing else: every other tool runs through `go run` or in Docker.
+Compose, and `make`. Nothing else: every other tool is built from the pinned `tools/go.mod` or runs in Docker.
 
 ```sh
 make check          # format, vet, and the unit tests with the race detector: seconds, no Docker

@@ -24,7 +24,7 @@ load, containers and the Go runtime on one live dashboard: see
 | `make perf-trends` | Charts `main`'s performance over time, from the records CI keeps: `bin/perf/trends.html` |
 | `make monitor` | Starts the stack with Prometheus, Grafana and cAdvisor: a live dashboard at http://localhost:3000 |
 
-Nothing to install beyond Go and Docker: k6 runs from its image, and benchstat through `go run`.
+Nothing to install beyond Go and Docker: k6 runs from its image, and benchstat is built from `tools/go.mod`.
 
 ## Go benchmarks
 

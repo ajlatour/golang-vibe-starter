@@ -64,7 +64,7 @@ func TestServiceHasNoDependencies(t *testing.T) {
 // TestToolingModulesAreSeparate holds DEP-2: what needs a dependency is a
 // module of its own.
 func TestToolingModulesAreSeparate(t *testing.T) {
-	for _, dir := range []string{"../integration", "../perf/report"} {
+	for _, dir := range []string{"../integration", "../perf/report", "../tools"} {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
 			t.Errorf("%s has no go.mod of its own: its dependencies would become the service's (DEP-2)", dir)
 		}

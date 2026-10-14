@@ -25,12 +25,18 @@ PPROF_URL    ?= http://localhost:6061
 # make perf and perf-profile, which have their own defaults. The comparisons
 # measure the working tree against BENCH_BASE, interleaving BENCH_COUNT
 # benchmark rounds (benchstat wants at least 6) and LOAD_ROUNDS k6 runs.
+# The Go tools: static analysis (ADR-0026), govulncheck and benchstat, pinned
+# with their dependencies' checksums in tools/go.mod (ADR-0045), and built
+# from it into bin/tools. Building them is cached like any build, so nothing
+# is fetched once it's done; Dependabot proposes their updates.
+TOOLS := $(CURDIR)/bin/tools
+
 BENCH_COUNT ?= 6
 LOAD_ROUNDS ?= 2
 BENCH_BASE  ?= main
 BENCH_OUT   := bin/bench
 LOAD_OUT    := bin/perf/compare
-BENCHSTAT   := go run golang.org/x/perf/cmd/benchstat@v0.0.0-20260929162123-406019bb8b68
+BENCHSTAT   := $(TOOLS)/benchstat
 
 # The fault stubs that `make fault` can switch on.
 FAULTS := $(notdir $(basename $(wildcard wiremock/faults/*.json)))
@@ -47,7 +53,7 @@ REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/s
 .DEFAULT_GOAL := help
 .PHONY: help up down logs run test fmt fmt-check vet test-race cover check \
 	integration integration-up integration-test integration-logs integration-down \
-	lint api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check docs-release godoc spec spec-lint \
+	lint tools api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check docs-release godoc spec spec-lint \
 	api-compat smoke release-prepare release-tag perf perf-profile perf-soak bench bench-compare load-compare perf-compare perf-data perf-trends monitor
 
 ##@ Help
@@ -123,31 +129,31 @@ cover: ## The unit tests with the race detector, and coverage across packages (b
 
 check: fmt-check vet test-race ## Everything CI's fast job runs
 
-# Static analysis, at pinned versions (docs/decisions.md, ADR-0026).
-STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.2
-GOSEC       := github.com/securego/gosec/v2/cmd/gosec@v2.29.0
-MODERNIZE   := golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@v0.52.0
+tools: ## Build the Go tools pinned in tools/go.mod into bin/tools
+	go -C tools build -o $(TOOLS)/ tool
+
 # A tool in Docker, as your user, removed after.
 DOCKER_RUN  := docker run --rm --user $(shell id -u):$(shell id -g)
 
-lint: ## staticcheck (every check), modernize, gosec, go mod tidy, shellcheck and actionlint, on all three modules
+lint: tools ## staticcheck (every check), modernize, gosec, go mod tidy, shellcheck and actionlint, on every module
 	@# staticcheck with every check, style included: the code is clean of them,
 	@# and stays so. modernize flags code a newer Go says more simply.
-	go run $(STATICCHECK) -checks all ./...
-	go run -C integration $(STATICCHECK) -checks all ./...
-	go run -C perf/report $(STATICCHECK) -checks all ./...
-	go run $(MODERNIZE) -test ./...
-	go run -C integration $(MODERNIZE) -test ./...
-	go run -C perf/report $(MODERNIZE) -test ./...
-	go run $(GOSEC) -quiet ./...
-	go run -C integration $(GOSEC) -quiet ./...
+	$(TOOLS)/staticcheck -checks all ./...
+	cd integration && $(TOOLS)/staticcheck -checks all ./...
+	cd perf/report && $(TOOLS)/staticcheck -checks all ./...
+	$(TOOLS)/modernize -test ./...
+	cd integration && $(TOOLS)/modernize -test ./...
+	cd perf/report && $(TOOLS)/modernize -test ./...
+	$(TOOLS)/gosec -quiet ./...
+	cd integration && $(TOOLS)/gosec -quiet ./...
 	@# The report tool's job is reading the files named on its command line,
 	@# which is all G304 (file inclusion via a variable) would flag there.
-	go run -C perf/report $(GOSEC) -quiet -exclude=G304 ./...
+	cd perf/report && $(TOOLS)/gosec -quiet -exclude=G304 ./...
 	@# go.mod and go.sum say exactly what the code needs.
 	go mod tidy -diff
 	go -C integration mod tidy -diff
 	go -C perf/report mod tidy -diff
+	go -C tools mod tidy -diff
 	@# The shell scripts, and the workflows (with the shell in their steps).
 	$(DOCKER_RUN) -v "$(CURDIR):/mnt" -w /mnt $(shell sh scripts/image.sh shellcheck) $$(git ls-files '*.sh') scripts/api
 	$(DOCKER_RUN) -v "$(CURDIR):/repo" -w /repo $(shell sh scripts/image.sh actionlint) -color=false
@@ -156,10 +162,10 @@ api-key: ## Generate an API key and its API_KEYS entry: make api-key NAME=ci SCO
 	@if [ -z "$(NAME)" ] || [ -z "$(SCOPE)" ]; then echo "usage: make api-key NAME=<who> SCOPE=read|write"; exit 2; fi
 	@go run ./cmd/apikey $(NAME) $(SCOPE)
 
-vuln: ## Check all three modules for known vulnerabilities the code can reach
-	go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
-	go run -C integration golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
-	go run -C perf/report golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+vuln: tools ## Check all three modules for known vulnerabilities the code can reach
+	$(TOOLS)/govulncheck ./...
+	cd integration && $(TOOLS)/govulncheck ./...
+	cd perf/report && $(TOOLS)/govulncheck ./...
 
 # The fuzz tests, as package:Function. go test fuzzes one at a time.
 FUZZ_TARGETS := internal/httpx:FuzzDecodeJSON internal/httpx:FuzzCorrelationID internal/tracectx:FuzzParse \
@@ -241,7 +247,7 @@ perf-trends: perf-data ## Chart main's performance and CI times over time from t
 	bin/perf-report trends $(TRENDS_ARGS) > bin/perf/trends.html
 	@echo "open bin/perf/trends.html"
 
-bench-compare: ## Run the benchmarks here and at BENCH_BASE (default main), interleaved, and compare them
+bench-compare: tools ## Run the benchmarks here and at BENCH_BASE (default main), interleaved, and compare them
 	sh perf/bench-ab.sh $(BENCH_BASE) $(BENCH_COUNT) $(BENCH_OUT)
 	$(BENCHSTAT) base=$(BENCH_OUT)/base.txt head=$(BENCH_OUT)/head.txt | tee $(BENCH_OUT)/compare.txt
 

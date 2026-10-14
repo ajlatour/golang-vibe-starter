@@ -8,7 +8,7 @@
 version: 2
 updates:
   - package-ecosystem: gomod
-    directories: ["/", "/integration", "/perf/report"]
+    directories: ["/", "/integration", "/perf/report", "/tools"]
     schedule:
       interval: weekly
     groups:

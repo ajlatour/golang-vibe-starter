@@ -128,6 +128,7 @@ jobs:
           cache-dependency-path: |
             integration/go.sum
             perf/report/go.sum
+            tools/go.sum
 
       - name: govulncheck
         run: make vuln
@@ -171,6 +172,7 @@ jobs:
           cache-dependency-path: |
             integration/go.sum
             perf/report/go.sum
+            tools/go.sum
 
-      - name: staticcheck and gosec
+      - name: Static analysis
         run: make lint
