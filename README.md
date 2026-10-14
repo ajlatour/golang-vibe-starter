@@ -54,7 +54,8 @@ make down
 
 To start a new service from this template, copy it and run `make init NAME=orders
 MODULE=github.com/acme/orders`: [Starting a new service](docs/development.md#starting-a-new-service)
-says what it changes. `make help` lists every shortcut. [Calling the API](docs/curl.md) has a tested example of every
+says what it changes. `make resource NAME=order` then adds a resource beside `/items`, copied
+from it: [Adding a resource](docs/development.md#adding-a-resource). `make help` lists every shortcut. [Calling the API](docs/curl.md) has a tested example of every
 call, with `scripts/api` and with plain curl. [The local stack](docs/local-stack.md) covers running the API
 outside Docker, WireMock's stubs, upstream faults, and load testing.
 

@@ -138,7 +138,21 @@ func TestNewFlags(t *testing.T) {
 	})
 	t.Run("flagd down falls back to the definitions file", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "flags.json")
-		if err := os.WriteFile(path, []byte(`{"flags":{"`+item.FlagListTotal+`":{"variants":{"on":true,"off":false},"defaultVariant":"on"},"`+validator.FlagEnforce+`":{"variants":{"on":true,"off":false},"defaultVariant":"off"}}}`), 0o600); err != nil {
+		// Every flag defined, each on but enforcing request validation.
+		defs := map[string]any{}
+		keys := []string{validator.FlagEnforce}
+		for _, r := range resources {
+			keys = append(keys, r.flagKeys...)
+		}
+		for _, key := range keys {
+			defs[key] = map[string]any{"variants": map[string]bool{"on": true, "off": false}, "defaultVariant": "on"}
+		}
+		defs[validator.FlagEnforce].(map[string]any)["defaultVariant"] = "off"
+		b, err := json.Marshal(map[string]any{"flags": defs})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, b, 0o600); err != nil {
 			t.Fatal(err)
 		}
 		u, _ := url.Parse(nettest.DeadURL())

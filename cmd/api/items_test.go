@@ -25,6 +25,7 @@ import (
 var itemsTest = testResource{
 	path:      "/items",
 	okBody:    itemOKBody,
+	stubIDs:   []string{"widget", "gadget", "gizmo", "new-item"},
 	routes:    itemTestRoutes,
 	guide:     itemGuideRoutes,
 	scenarios: itemScenarios,

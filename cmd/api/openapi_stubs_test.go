@@ -83,12 +83,17 @@ func loadStubs(t *testing.T) []stubMapping {
 
 // stubSamplePaths are concrete paths for each of the contract's paths, for
 // trying a stub's URL pattern on: a pattern is only known by what it matches.
-// An item's are any ID, and those the stubs know, which a pattern may list.
-var stubSamplePaths = map[string][]string{
-	"/items":      {"/items"},
-	"/items/{id}": {"/items/sample-id", "/items/widget", "/items/gadget", "/items/gizmo", "/items/new-item"},
-	"/healthz":    {"/healthz"},
-	"/readyz":     {"/readyz"},
+// An entity's are any ID, and those its stubs know (testResource.stubIDs),
+// which a pattern may list.
+func stubSamplePaths() map[string][]string {
+	paths := map[string][]string{"/healthz": {"/healthz"}, "/readyz": {"/readyz"}}
+	for _, r := range testResources {
+		paths[r.path] = []string{r.path}
+		for _, id := range append([]string{"sample-id"}, r.stubIDs...) {
+			paths[r.path+"/{id}"] = append(paths[r.path+"/{id}"], r.path+"/"+id)
+		}
+	}
+	return paths
 }
 
 // notTheItemsUpstream are paths stubbed for other services on the same
@@ -110,7 +115,7 @@ func (m stubMapping) paths(t *testing.T) []string {
 		}
 	}
 	var out []string
-	for path, samples := range stubSamplePaths {
+	for path, samples := range stubSamplePaths() {
 		template := regexp.MustCompile("^" + regexp.MustCompile(`\{[^/]+\}`).ReplaceAllString(path, "[^/]+") + "$")
 		if (exact != "" && template.MatchString(exact)) || (pattern != nil && slices.ContainsFunc(samples, pattern.MatchString)) {
 			out = append(out, path)
@@ -184,7 +189,7 @@ func TestWireMockStubsMatchTheContract(t *testing.T) {
 		t.Run(m.file+"/"+m.Name, func(t *testing.T) {
 			paths := m.paths(t)
 			if len(paths) == 0 {
-				t.Fatalf("matches no path of the contract (%s); a typo, or a service to add to notTheItemsUpstream", strings.Join(slices.Sorted(maps.Keys(stubSamplePaths)), ", "))
+				t.Fatalf("matches no path of the contract (%s); a typo, or a service to add to notTheItemsUpstream", strings.Join(slices.Sorted(maps.Keys(stubSamplePaths())), ", "))
 			}
 			// The operations the stub can answer: its method on its paths,
 			// or for ANY, every method there is on them.

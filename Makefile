@@ -51,7 +51,7 @@ DOCS_OUT := bin/docs
 REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/spec" -w /spec $(shell sh scripts/image.sh redocly)
 
 .DEFAULT_GOAL := help
-.PHONY: help init init-check up down logs dev run test fmt fmt-check vet test-race cover check \
+.PHONY: help init init-check resource resource-check up down logs dev run test fmt fmt-check vet test-race cover check \
 	integration integration-up integration-test integration-logs integration-down \
 	lint tools api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check docs-release godoc spec spec-lint \
 	api-compat smoke release-prepare release-tag perf perf-profile perf-soak bench bench-compare load-compare perf-compare perf-data perf-trends monitor
@@ -75,6 +75,13 @@ init: ## Make this copy a service of its own: make init NAME=orders MODULE=githu
 
 init-check: ## Run make init on a copy of this repository, then vet and test the result (about a minute)
 	TEMPLATE_CHECK=1 go test -count=1 -timeout 15m -run TestInitOnACopy ./cmd/initservice
+
+resource: ## Add a resource, copied from /items: make resource NAME=order (PLURAL=... if not NAME with an s)
+	@if [ -z "$(NAME)" ]; then echo "usage: make resource NAME=<singular> [PLURAL=<plural>]"; exit 2; fi
+	go run ./cmd/newresource -name $(NAME) $(if $(PLURAL),-plural $(PLURAL))
+
+resource-check: ## Run make resource on a copy of this repository, then vet and test the result (about a minute)
+	TEMPLATE_CHECK=1 go test -count=1 -timeout 15m -run TestResourceOnACopy ./cmd/newresource
 
 ##@ Local stack
 

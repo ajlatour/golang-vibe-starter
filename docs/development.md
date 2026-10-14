@@ -3,6 +3,7 @@
 How the code is put together, how to change it safely, and how it's tested.
 
 - [Starting a new service](#starting-a-new-service)
+- [Adding a resource](#adding-a-resource)
 - [Ground rules](#ground-rules)
 - [Making a change](#making-a-change)
 - [Tests](#tests)
@@ -38,6 +39,33 @@ README's opening, and when to remove `/items`.
 Run it once, on a fresh copy, then `make check`, `make lint` and `make docs-check`, and commit.
 `make init-check`, which CI runs, does all that on a copy of the template, so it keeps working
 as the template changes.
+
+## Adding a resource
+
+```sh
+make resource NAME=order                         # /orders
+make resource NAME=category PLURAL=categories    # when the plural isn't NAME with an s
+```
+
+`make resource` (`cmd/newresource`) copies everything the example resource, `/items`, owns, with
+its names changed (for `NAME=order`, `item` to `order`, `Items` to `Orders`, `ITEM` to `ORDER`):
+
+- its package, `internal/<name>`: the model, the `Store` interface, the handlers, the stores in
+  memory and on the upstream, and the contract every store passes;
+- its wiring, `cmd/api/<plural>.go`, and what the spec tests need of it,
+  `cmd/api/<plural>_test.go`: its stores for each scenario and its own scenarios;
+- its WireMock stubs, `wiremock/mappings/<plural>-*.json`, and its integration feature.
+
+And it adds the new resource to each list of them: `cmd/api/resources.go` and
+`cmd/api/resources_test.go`, the spec's paths and schemas, the feature flags (`flagd/flags.json`, the
+integration stack's, and the table in [Feature flags](feature-flags.md)), the load test's traffic
+mix, an example of each call in [Calling the API](curl.md), and the architecture's package table.
+
+So the new resource builds and passes every check as generated, serving what `/items` does under
+its own name. Then make it the resource you mean, as `make resource` lists: its fields (the model,
+`Request` and `Response`, and the spec's schemas, which the tests hold to each other), its store,
+its flag, and its examples. `make resource-check`, which CI runs, adds one to a copy of the
+template and runs the tests, so it keeps working as `/items` changes.
 
 ## Ground rules
 
@@ -213,9 +241,9 @@ step a `make` target:
   the API's log lines say which build they came from.
 - **docs**: `make docs-check`, which builds the documentation website and checks every page and
   link in it (`docs/site/site_test.go`).
-- **template**: `make init-check`: [`make init`](#starting-a-new-service) on a copy of the
-  repository, then every module of the result vetted and its tests run, so starting a new service
-  from the template keeps working as the template changes.
+- **template**: `make init-check` and `make resource-check`: [`make init`](#starting-a-new-service),
+  and [`make resource`](#adding-a-resource), each on a copy of the repository, then the result
+  vetted and its tests run, so both keep working as the template changes.
 - **lint**: `make lint`, on all three modules, with the Go tools built from `tools/go.mod` (`make tools`; ADR-0045): staticcheck with every check, style included (bugs,
   suspicious code, and doc comments, which every package and exported name has); modernize (code
   a newer Go says more simply); gosec (security mistakes); `go mod tidy -diff` (`go.mod` and
