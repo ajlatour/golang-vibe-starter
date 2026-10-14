@@ -371,7 +371,7 @@ func checkIfMatch(r *http.Request, store Store, id ID) error {
 // compares strongly, so a weak tag (W/"...") never matches; If-None-Match
 // weakly, ignoring the W/ (RFC 9110, 13.1).
 func etagMatches(header, tag string, weak bool) bool {
-	for _, t := range strings.Split(header, ",") {
+	for t := range strings.SplitSeq(header, ",") {
 		t = strings.TrimSpace(t)
 		if t == "*" {
 			return true

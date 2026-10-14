@@ -183,7 +183,7 @@ says so.
 | SEC-6 | pprof and `/metrics` are opt-in and never on the API's port; a profile runs at most 60s. | They reveal internals and cost CPU (ADR-0022) | `cmd/api/main_test.go`, `internal/profiling/profiling_test.go` |
 | SEC-7 | The local stack listens on loopback only. | Nobody on a shared network reaches WireMock's admin API | Review: `compose.yaml` |
 | SEC-8 | Actions and images are pinned, updated by Dependabot and scanned by govulncheck; pull request code never runs with a token that can write. | Supply chain (ADR-0020) | `.github/workflows/ci.yml` (the vuln job), `.github/dependabot.yml`, review: `.github/workflows/perf.yml` |
-| SEC-9 | Every change is checked by static analysis for security mistakes (gosec) and bugs (staticcheck); a finding is fixed, or accepted on its line with the reason. | Catches what tests don't cover (ADR-0026) | `.github/workflows/ci.yml` (the lint job), review: `Makefile` |
+| SEC-9 | Every change is checked by static analysis for security mistakes (gosec), bugs and style (staticcheck, every check), outdated idioms (modernize), untidy modules, and shell and workflow mistakes (shellcheck, actionlint); a finding is fixed, or accepted on its line with the reason. | Catches what tests don't cover (ADR-0026) | `.github/workflows/ci.yml` (the lint job), review: `Makefile` |
 | SEC-10 | Keys can be added, removed or rotated without a restart (`API_KEYS_FILE`); a keys file that can't be read or parsed, or holds no keys, never replaces the keys in force. A key may carry its own rate limit. | Rotation without downtime, and no lockout from a bad edit (ADR-0028) | `internal/apikey/rotation_test.go`, `cmd/api/auth_test.go`, `internal/limit/limit_test.go` |
 
 ### Reliability

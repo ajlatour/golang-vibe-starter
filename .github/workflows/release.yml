@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: write # the GitHub release (and reading the perf-data branch)
@@ -125,8 +125,10 @@ jobs:
             for arch in amd64 arm64; do
               docker buildx build "$@" --platform "linux/$arch" --load -t "release-candidate:$arch" .
             done
-            echo "IMAGE_AMD64=release-candidate:amd64" >> "$GITHUB_ENV"
-            echo "IMAGE_ARM64=release-candidate:arm64" >> "$GITHUB_ENV"
+            {
+              echo "IMAGE_AMD64=release-candidate:amd64"
+              echo "IMAGE_ARM64=release-candidate:arm64"
+            } >> "$GITHUB_ENV"
             echo "Built $(du -h "$RUNNER_TEMP/image.tar" | cut -f1) for linux/amd64 and linux/arm64, with SBOM and provenance; pushed nothing." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -137,9 +139,11 @@ jobs:
             --output "type=image,name=$image,push-by-digest=true,name-canonical=true,push=true" \
             --metadata-file "$RUNNER_TEMP/build.json" .
           digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/build.json")
-          echo "IMAGE_DIGEST=$digest" >> "$GITHUB_ENV"
-          echo "IMAGE_AMD64=$image@$digest" >> "$GITHUB_ENV"
-          echo "IMAGE_ARM64=$image@$digest" >> "$GITHUB_ENV"
+          {
+            echo "IMAGE_DIGEST=$digest"
+            echo "IMAGE_AMD64=$image@$digest"
+            echo "IMAGE_ARM64=$image@$digest"
+          } >> "$GITHUB_ENV"
 
       # The image as it will ship, run on each platform against WireMock and
       # flagd: it starts, says it's this version, serves the basics, and

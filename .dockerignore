@@ -1,16 +1,14 @@
-# Only go.mod, flagd/ (embedded flag definitions), internal/ and cmd/api/ are
-# needed to build the image.
-.git
-.gitignore
-.dockerignore
-.env*
-*.md
-compose.yaml
-**/Dockerfile
+# An allow-list: the API's image builds from these alone (cmd/api/Dockerfile),
+# so everything else (docs, tests, tooling, other services' files, local env
+# files) stays out of the build context, and a new top-level directory doesn't
+# end up in it unnoticed.
+*
+!go.mod
+!go.sum
+!flagd/
+!internal/
+!cmd/api/
+
+# Tests and their data aren't part of the binary.
 **/*_test.go
-bin/
-wiremock/
-docs/
-integration/
-compose.integration.yaml
-Makefile
+**/testdata/

@@ -25,7 +25,7 @@ func FuzzObserve(f *testing.F) {
 		rec.Observe(route, method, status, time.Millisecond)
 		var b strings.Builder
 		rec.WritePrometheus(&b)
-		for _, line := range strings.Split(strings.TrimSuffix(b.String(), "\n"), "\n") {
+		for line := range strings.SplitSeq(strings.TrimSuffix(b.String(), "\n"), "\n") {
 			if strings.HasPrefix(line, "# ") {
 				continue
 			}

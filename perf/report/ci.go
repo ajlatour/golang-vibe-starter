@@ -189,7 +189,7 @@ func newCIRecord(run apiRun, jobs []apiJob) (ciRecord, error) {
 	}
 	slices.SortFunc(r.Jobs, func(a, b ciJob) int { return strings.Compare(a.Name, b.Name) })
 	if run.RunAttempt <= 1 {
-		r.WallSeconds = ptr(seconds(end.Sub(start)))
+		r.WallSeconds = new(seconds(end.Sub(start)))
 	}
 	return r, nil
 }

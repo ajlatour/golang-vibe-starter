@@ -160,12 +160,8 @@ func TestLoadConfigHeaderLimits(t *testing.T) {
 	base := map[string]string{"UPSTREAM_URL": "http://mock"}
 	load := func(extra map[string]string) (config, error) {
 		env := map[string]string{}
-		for k, v := range base {
-			env[k] = v
-		}
-		for k, v := range extra {
-			env[k] = v
-		}
+		maps.Copy(env, base)
+		maps.Copy(env, extra)
 		return loadConfig(func(k string) string { return env[k] })
 	}
 
