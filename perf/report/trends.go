@@ -86,17 +86,17 @@ func runRecord(args []string, out io.Writer) error {
 		}
 		l := &loadRecord{MedianMS: side.median, P99MS: side.p99, ErrorRate: side.errorRate, Requests: side.requests}
 		if side.metricRuns > 0 {
-			l.CPUPerRequestUS = ptr(side.cpuPerRequest() * 1e6)
-			l.AllocPerRequestBytes = ptr(side.allocsPerRequest())
-			l.GCPer1000 = ptr(side.gcPer1000())
+			l.CPUPerRequestUS = new(side.cpuPerRequest() * 1e6)
+			l.AllocPerRequestBytes = new(side.allocsPerRequest())
+			l.GCPer1000 = new(side.gcPer1000())
 		}
 		if side.statsRuns > 0 {
-			l.MemoryPeakMiB = ptr(side.memoryPeakMiB)
+			l.MemoryPeakMiB = new(side.memoryPeakMiB)
 		}
 		if side.validatorRuns > 0 {
-			l.ValidatorMedianMS = ptr(side.validatorQuantile(0.5) * 1000)
-			l.ValidatorP99MS = ptr(side.validatorQuantile(0.99) * 1000)
-			l.ValidatorCallsPerRequest = ptr(side.validatorPerRequest())
+			l.ValidatorMedianMS = new(side.validatorQuantile(0.5) * 1000)
+			l.ValidatorP99MS = new(side.validatorQuantile(0.99) * 1000)
+			l.ValidatorCallsPerRequest = new(side.validatorPerRequest())
 		}
 		r.Load = l
 	}
@@ -105,7 +105,8 @@ func runRecord(args []string, out io.Writer) error {
 	return enc.Encode(r)
 }
 
-func ptr(v float64) *float64 { return &v }
+//go:fix inline
+func ptr(v float64) *float64 { return new(v) }
 
 // readRecords reads every record in dir, oldest first by file name, which the
 // workflow starts with the time.
@@ -229,7 +230,7 @@ func runTrends(args []string, out io.Writer) error {
 				if l.AllocPerRequestBytes == nil {
 					return nil
 				}
-				return ptr(*l.AllocPerRequestBytes / 1024)
+				return new(*l.AllocPerRequestBytes / 1024)
 			})}},
 		{title: "Memory, container peak", unit: "MiB", note: "The API container's peak during the load test.",
 			series: []series{load("memory", func(l *loadRecord) *float64 { return l.MemoryPeakMiB })}},
