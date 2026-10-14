@@ -58,7 +58,7 @@ don't, and its message says what to fix.
 | A package's imports (a new package, or one importing another it didn't) | The package table in `docs/architecture.md` | `docs/architecture_test.go` |
 | An architectural choice: a new dependency, protocol, protection or pattern | A record, a new file in `docs/adr/` ([how](decisions.md)), superseding any it replaces | `docs/architecture_test.go` checks records are complete, named for their number and title, and numbered with no gaps or repeats |
 | Anything worth telling users of a release | A change file in `changes/` ([how](../changes/README.md)), not `CHANGELOG.md` | `docs/changelog_test.go` checks every change file gathers, and that the changelog's Unreleased stays empty |
-| Code that `make lint` flags, where the finding is wrong or accepted on purpose | A comment on the line, with the rule and why: `// #nosec G304 -- the path is the operator's own configuration`, or `//lint:ignore SA4000 why` for staticcheck | `make lint`, in CI's lint job |
+| Code that `make lint` flags, where the finding is wrong or accepted on purpose | A comment on the line, with the rule and why: `// #nosec G304 -- the path is the operator's own configuration`, `//lint:ignore SA4000 why` for staticcheck, or `# shellcheck disable=SC2086` under a comment saying why, in a script | `make lint`, in CI's lint job |
 | An environment variable (or its default) | `.env.example` and the Configuration table in the README | `cmd/api/envexample_test.go`: the variables the code reads, the two lists and their defaults must all agree |
 
 Recipes: [adding a log line](logging.md#rules-for-log-lines),
@@ -173,15 +173,21 @@ value with a double quote in it can't go inside a step's quoted argument; give i
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request, in six jobs, each
 step a `make` target:
 
-- **test**: `make fmt-check`, `make vet` and `make test-race` (together, `make check`). Fast, no
-  Docker.
+- **test**: `make fmt-check`, `make vet`, and `make cover`: the unit tests with the race detector,
+  and the coverage they give across the service's packages (a package's code counts as covered
+  when any package's tests run it), with a table of it per package in the job summary. It fails
+  if the total is under the floor, `COVER_MIN` in the Makefile (90%); raise the floor as coverage
+  rises, never lower it. Fast, no Docker.
 - **integration**: `make integration-up`, `make integration-test`, `make integration-logs` if
   anything failed, and always `make integration-down`. The commit SHA is passed as `VERSION`, so
   the API's log lines say which build they came from.
 - **docs**: `make docs-check`, which builds the documentation website and checks every page and
   link in it (`docs/site/site_test.go`).
-- **lint**: `make lint`, staticcheck (bugs and suspicious code) and gosec (security mistakes) on
-  all three modules.
+- **lint**: `make lint`, on all three modules: staticcheck with every check, style included (bugs,
+  suspicious code, and doc comments, which every package and exported name has); modernize (code
+  a newer Go says more simply); gosec (security mistakes); `go mod tidy -diff` (`go.mod` and
+  `go.sum` say exactly what the code needs); and, in Docker, shellcheck on the shell scripts and
+  actionlint on the workflows.
 - **fuzz**: `make fuzz FUZZTIME=10s`, a short run of every fuzz test (see [Tests](#tests)).
 - **vuln**: `make vuln`, govulncheck over all three modules: known vulnerabilities in the
   dependencies and the Go standard library that the code can actually reach.
@@ -192,10 +198,14 @@ packages a change touches recompile. Pull requests start from the cache `main`'s
 builds are unaffected: BuildKit keeps its own cache there.
 
 Every action is pinned to a commit SHA (the version is in a comment beside it) and every container
-image to a digest, so a moved tag can't change what CI runs. Dependabot (`.github/dependabot.yml`)
-opens a weekly pull request for each kind of update: Go modules, actions, the Dockerfile's images
-and compose's. The pandoc and Redocly images in the Makefile are outside what Dependabot reads, so
-their digests are updated by hand.
+image to a digest, so a moved tag can't change what CI runs. The runner image is pinned too
+(`ubuntu-24.04`, not `ubuntu-latest`, which GitHub moves to each new release): a new one is
+taken on purpose, by changing every `runs-on` in one pull request, before the pinned one is
+retired. The API's image builds from an allow-list of what it needs (`.dockerignore`), so
+nothing else reaches the build. Dependabot (`.github/dependabot.yml`)
+opens a weekly pull request for each kind of update: Go modules, actions, and images: the
+Dockerfile's, compose's, and the tools the Makefile and workflows run, listed in
+`tools/images/Dockerfile` for it (`docs/pins_test.go` keeps them there).
 
 A newer push to the same branch cancels the run in progress.
 
@@ -220,8 +230,9 @@ Not planned, but considered:
   bodies against `docs/openapi.json`. The in-process OpenAPI test already checks every documented
   response, so this adds little, and it would mean sharing that test's schema validator with the
   integration module.
-- **OpenTelemetry tracing** (`trace_id`/`span_id`): needs third-party dependencies. The
-  correlation ID covers this service; trace context can be added later through the same
-  context-aware log handler.
+- **OpenTelemetry spans**: W3C trace context is already carried, and logged as `trace_id`
+  ([ADR-0034](adr/0034-w3c-trace-context-is-carried-through-without-a-tracing-sdk.md)), so
+  spans would join the traces already flowing; recording them needs the OpenTelemetry SDK, a
+  third-party dependency (DEP-1).
 - **Changing the log level at runtime** (`slog.LevelVar` and an admin endpoint).
 - **Log sampling.**

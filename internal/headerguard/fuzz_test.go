@@ -34,7 +34,7 @@ func FuzzMiddleware(f *testing.F) {
 		}
 		req := httptest.NewRequest("GET", "/items", strings.NewReader(body))
 		req.Method = method
-		for _, line := range strings.Split(headers, "\n") {
+		for line := range strings.SplitSeq(headers, "\n") {
 			name, value, _ := strings.Cut(line, ":")
 			if name = strings.TrimSpace(name); name != "" {
 				req.Header[http.CanonicalHeaderKey(name)] = append(req.Header[http.CanonicalHeaderKey(name)], strings.TrimSpace(value))

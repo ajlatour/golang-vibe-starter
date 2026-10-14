@@ -45,7 +45,7 @@ DOCS_OUT := bin/docs
 REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/spec" -w /spec $(shell sh scripts/image.sh redocly)
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs run test fmt fmt-check vet test-race check \
+.PHONY: help up down logs run test fmt fmt-check vet test-race cover check \
 	integration integration-up integration-test integration-logs integration-down \
 	lint api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check docs-release godoc spec spec-lint \
 	api-compat smoke release-prepare release-tag perf perf-profile perf-soak bench bench-compare load-compare perf-compare perf-data perf-trends monitor
@@ -112,21 +112,45 @@ test-race: ## Unit tests with the race detector
 	go test -race ./...
 	go test -C perf/report -race ./...
 
+# The coverage floor, across the service's packages: a change that lowers the
+# total below it fails CI. Raise it as coverage rises; don't lower it.
+COVER_MIN ?= 90
+
+cover: ## The unit tests with the race detector, and coverage across packages (bin/cover.out), failing under COVER_MIN% in total
+	@mkdir -p bin
+	go test -race -covermode=atomic -coverpkg=./cmd/...,./internal/... -coverprofile=bin/cover.out ./...
+	@sh scripts/coverage.sh bin/cover.out $(COVER_MIN)
+
 check: fmt-check vet test-race ## Everything CI's fast job runs
 
 # Static analysis, at pinned versions (docs/decisions.md, ADR-0026).
-STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.1
+STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.2
 GOSEC       := github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+MODERNIZE   := golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@v0.52.0
+# A tool in Docker, as your user, removed after.
+DOCKER_RUN  := docker run --rm --user $(shell id -u):$(shell id -g)
 
-lint: ## staticcheck (bugs) and gosec (security mistakes) on all three modules
-	go run $(STATICCHECK) ./...
-	go run -C integration $(STATICCHECK) ./...
-	go run -C perf/report $(STATICCHECK) ./...
+lint: ## staticcheck (every check), modernize, gosec, go mod tidy, shellcheck and actionlint, on all three modules
+	@# staticcheck with every check, style included: the code is clean of them,
+	@# and stays so. modernize flags code a newer Go says more simply.
+	go run $(STATICCHECK) -checks all ./...
+	go run -C integration $(STATICCHECK) -checks all ./...
+	go run -C perf/report $(STATICCHECK) -checks all ./...
+	go run $(MODERNIZE) -test ./...
+	go run -C integration $(MODERNIZE) -test ./...
+	go run -C perf/report $(MODERNIZE) -test ./...
 	go run $(GOSEC) -quiet ./...
 	go run -C integration $(GOSEC) -quiet ./...
 	@# The report tool's job is reading the files named on its command line,
 	@# which is all G304 (file inclusion via a variable) would flag there.
 	go run -C perf/report $(GOSEC) -quiet -exclude=G304 ./...
+	@# go.mod and go.sum say exactly what the code needs.
+	go mod tidy -diff
+	go -C integration mod tidy -diff
+	go -C perf/report mod tidy -diff
+	@# The shell scripts, and the workflows (with the shell in their steps).
+	$(DOCKER_RUN) -v "$(CURDIR):/mnt" -w /mnt $(shell sh scripts/image.sh shellcheck) $$(git ls-files '*.sh') scripts/api
+	$(DOCKER_RUN) -v "$(CURDIR):/repo" -w /repo $(shell sh scripts/image.sh actionlint) -color=false
 
 api-key: ## Generate an API key and its API_KEYS entry: make api-key NAME=ci SCOPE=write
 	@if [ -z "$(NAME)" ] || [ -z "$(SCOPE)" ]; then echo "usage: make api-key NAME=<who> SCOPE=read|write"; exit 2; fi

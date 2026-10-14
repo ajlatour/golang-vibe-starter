@@ -57,6 +57,33 @@ For context: what the items below build on.
 Nothing queued. What earlier batches built is above, and in the
 [changelog](CHANGELOG.md) and the [decision records](docs/decisions.md).
 
+## A starter for new services
+
+What would make this a template a team starts each new Go service from, and has it serving its
+first real endpoint the same day. Today, starting one means renaming the template by hand (its
+name is in about 230 places), copying `internal/item` (about 3,000 lines with its tests) and
+editing the six other places a new route touches, all of which the drift tests check; and the
+service can't run without Docker, since its only store is the upstream.
+
+In the order they build on each other: the building blocks first, then what uses them.
+
+| | Item | Why | Cost |
+| - | ---- | --- | ---- |
+| 💡 | **Shared building blocks for resources.** Move what every resource repeats out of `internal/item` into `httpx`: conditional requests (`ETag`, `If-Match`, `If-None-Match`), cursor paging (`limit`, `cursor`, `next_cursor`), mapping a store's errors to statuses, and decode-then-validate. | A new resource is then its model and its handlers, a few hundred lines, not a copy of `item`'s plumbing. Prerequisite for the generator below. | stdlib |
+| 💡 | **Run with no infrastructure.** Promote the in-memory store from `itemtest` to a real adapter, chosen with `STORE=memory`, and a `make dev` that runs the service with it, rebuilding on change. | `go run ./cmd/api` serves requests on a fresh clone, with no Docker, upstream or flagd. The first five minutes decide whether a template gets used. | stdlib; a file watcher via `go run` |
+| 💡 | **`make init NAME=orders MODULE=github.com/acme/orders`.** Renames the module, the service, its image and its compose project; empties the changelog and `changes/`; and, optionally, removes the example resource. Plus GitHub's "template repository" setting, and a page saying what to change first. | Renaming by hand misses some of the 230 places. A test would run it on a copy and run the suite, so it can't rot. | stdlib (a Go program in `cmd/`) |
+| 💡 | **A resource generator: `make resource NAME=order`.** Writes the package (model, store interface, handlers, in-memory store, contract tests), its paths and schemas in the spec, WireMock stubs, a `docs/curl.md` section, its share of the load test, and an integration feature, all passing the drift tests as generated. | Adding a resource is the most common change, and touches the most places. A test generates one in a copy and runs every check on it. | stdlib (`text/template`) |
+| 💡 | **An ADR for dependencies in adapters.** Keep the core (handlers, models, protections) standard library only, and allow vetted dependencies in adapter packages behind interfaces, from a list the architecture test enforces. | A microservice needs a database driver and a telemetry SDK. DEP-1 rules both out, and the rows below need them. | an ADR superseding [ADR-0002](docs/adr/0002-the-service-uses-the-standard-library-only.md) |
+| 💡 | **A SQL store**, Postgres, with migrations embedded and run at startup (or as a job), transactions, and the store contract run against a real database in the integration stack. | Most services own their data; the upstream store fits only those that front another service. | [`pgx`](https://github.com/jackc/pgx), in an adapter |
+| 💡 | **OpenTelemetry spans and OTLP export**, with a Collector and a trace viewer (Jaeger or Tempo) in the compose stack. | Trace context is already carried and logged; spans show where a request's time went, across services. | the OTel Go SDK, in an adapter |
+| 💡 | **Events and a worker.** A transactional outbox, a publisher, and a `cmd/worker` that consumes, built on the same plumbing: configuration, logging, `logx.Go`, graceful shutdown, readiness. | Services talk by events as well as requests; a worker template saves building that plumbing a second time. | a broker client (NATS or Kafka), in an adapter |
+| 💡 | **Service-to-service authentication:** verifying JWTs from an OIDC issuer (JWKS fetched and cached), beside API keys. | API keys suit external clients; services usually authenticate with the platform's tokens. | stdlib (`crypto`) |
+| 💡 | **A typed Go client for the API**, tested against the spec, published with each release. | Other services call this one; a client that can't drift from the spec saves each of them writing one. | stdlib |
+| 💡 | **Extract a versioned platform module** of the generic packages (`httpx`, `logx`, `envconfig`, the protections, `jsoncall`, `tracectx`), once a second service exists. | Fixes, security fixes above all, reach every service from one place; a new service is then its features and its wiring. | a module of its own |
+| 💡 | **A Kubernetes deployment**: Kustomize base and overlays with the probes, resources, a restricted security context (non-root, read-only root filesystem, no capabilities), a disruption budget, autoscaling, scraping `/metrics`, and a termination grace period longer than `SHUTDOWN_DELAY` plus `SHUTDOWN_TIMEOUT`. Checked with kubeconform, and smoke-tested in a kind cluster in CI. | Every service needs one, and getting shutdown and probes right is subtle; the settings already exist here to match. | containers in CI |
+| 💡 | **Dashboards and alerts per service**: SLOs from the request metrics, and Prometheus alert rules, generated with the service. | A service is operable on its first day. | `monitoring/` |
+| 💡 | **One spec file per resource**, bundled into `docs/openapi.json` by the build. | With several resources, one large spec file conflicts as the changelog did. | Redocly's `bundle`, already in the toolchain |
+
 ## Resilience
 
 How the service behaves when what it depends on doesn't.
@@ -144,5 +171,4 @@ matters, but consistent matters more: a flaky check costs more than a slow one.
 | | Item | Why | Cost |
 | - | ---- | --- | ---- |
 | 💡 | **Domain, application and infrastructure layers** ([ADR-0015](docs/adr/0015-the-domain-driven-restructure-is-deferred.md), [ADR-0030](docs/adr/0030-the-item-model-enforces-its-rules-and-wire-formats-stay-at-the-edges.md)). | Rules beyond CRUD need a place to live. | stdlib |
-| 💡 | **Extract a versioned `kit` module** of the generic packages (`httpx`, `logx`, the protections) once a second service exists. | Fixes, security fixes above all, reach every service from one place. | a module of its own |
 | 💡 | **A deprecation policy for API versions**, with `Deprecation` and `Sunset` headers. | Clients learn a version is going before it's gone. | stdlib |

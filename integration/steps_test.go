@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -157,9 +158,7 @@ func (w *world) do(method, path string, body io.Reader) error {
 	if !w.noKey {
 		req.Header.Set("Authorization", "Bearer "+devKey)
 	}
-	for k, v := range w.reqHeader {
-		req.Header[k] = v
-	}
+	maps.Copy(req.Header, w.reqHeader)
 	start := time.Now()
 	resp, err := w.client.Do(req)
 	if err != nil {
@@ -323,7 +322,7 @@ func (w *world) field(path string) (any, error) {
 	if err := json.Unmarshal(w.body, &cur); err != nil {
 		return nil, fmt.Errorf("body is not JSON (%v): %s", err, w.bodyForError())
 	}
-	for _, part := range strings.Split(path, ".") {
+	for part := range strings.SplitSeq(path, ".") {
 		switch node := cur.(type) {
 		case map[string]any:
 			v, ok := node[part]

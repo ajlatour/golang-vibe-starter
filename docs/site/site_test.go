@@ -245,7 +245,7 @@ func TestReadmeGroupsLikeTheSite(t *testing.T) {
 	doc = doc[strings.Index(doc, "\n## Documentation"):]
 	doc = doc[:strings.Index(doc[1:], "\n## ")+1]
 	var got []theme
-	for _, line := range strings.Split(doc, "\n") {
+	for line := range strings.SplitSeq(doc, "\n") {
 		if m := regexp.MustCompile(`^\*\*(.+)\*\*$`).FindStringSubmatch(line); m != nil {
 			got = append(got, theme{name: m[1]})
 		} else if m := regexp.MustCompile(`^- \[[^\]]+\]\(([^)]+)\)`).FindStringSubmatch(line); m != nil && len(got) > 0 {
