@@ -32,6 +32,17 @@ integration tests' dependencies download on first use.
 
 ## Run
 
+The quickest start needs nothing but Go: the API with an in-memory store, which keeps items
+until it stops.
+
+```sh
+make dev                                   # the API on :8080, with go run; Ctrl-C to stop
+scripts/api POST /items '{"name": "Sprocket"}'
+scripts/api GET /items
+```
+
+With its real dependencies (an upstream, flagd, the validation service), stubbed in containers:
+
 ```sh
 make up                                    # API, WireMock and flagd, in the background
 scripts/api GET /items                     # through the API (curl, with the headers filled in)
@@ -207,7 +218,8 @@ The API reads these environment variables:
 
 | Variable              | Default    | Description                                                |
 | --------------------- | ---------- | ---------------------------------------------------------- |
-| `UPSTREAM_URL`        | (required) | Base URL of the items upstream. May include a path prefix, but no query string or fragment. |
+| `STORE`               | `upstream` | Where items are kept: `upstream`, the service at `UPSTREAM_URL`; or `memory`, the process's memory, which needs nothing else (`make dev`) but loses its items when the service stops and holds at most 10,000: for development and tests only. |
+| `UPSTREAM_URL`        | (required) | Base URL of the items upstream. May include a path prefix, but no query string or fragment. Required with `STORE=upstream`, refused with `memory`. |
 | `UPSTREAM_TIMEOUT`    | `5s`       | Timeout for each upstream request. Must be shorter than `REQUEST_TIMEOUT`. |
 | `UPSTREAM_RETRIES`    | `1`        | How often a GET to the upstream is tried again after a fast failure (refused, reset, or a 5xx, within a second; never a timeout, never a write), 0 to 3, and only while a whole attempt still fits before the request's deadline. Retries share a budget of about one per ten requests, so a down upstream isn't hit harder. |
 | `REQUEST_TIMEOUT`     | `10s`      | How long a request has to be answered, whatever it waits on: past it, the calls it's making give up and it gets its answer, usually 504. The server cuts off a response only 5s after this, so every request is answered and logged. `UPSTREAM_TIMEOUT`, and `VALIDATOR_TIMEOUT` and `FLAGS_TIMEOUT` when those are used, must be shorter. |

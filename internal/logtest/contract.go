@@ -26,7 +26,8 @@ type Message struct {
 // DEBUG for the healthcheck, and "response sent" is ERROR for a 5xx.
 var Contract = map[string]Message{
 	// Lifecycle: logged outside any request, so no request_id.
-	"using upstream":      {[]string{"INFO"}, []string{"url", "timeout", "retries"}},
+	"using upstream": {[]string{"INFO"}, []string{"url", "timeout", "retries"}},
+	"using the in-memory store: for development only; items are lost when the service stops": {[]string{"WARN"}, nil},
 	"using feature flags": {[]string{"INFO"}, []string{"url", "timeout", "cache_ttl"}},
 	"using header guard":  {[]string{"INFO"}, []string{"mode", "max_headers", "max_header_bytes", "max_total_bytes"}},
 	"using API keys":      {[]string{"INFO"}, []string{"api_keys", "reads"}},
@@ -93,7 +94,7 @@ var Contract = map[string]Message{
 // OutsideRequests lists the messages that are logged outside any request, and
 // so legitimately have no request_id. Every other message has one.
 var OutsideRequests = []string{
-	"using upstream", "using feature flags", "using header guard", "using API keys", "using limits", "API keys reloaded", "API keys not reloaded",
+	"using upstream", "using the in-memory store: for development only; items are lost when the service stops", "using feature flags", "using header guard", "using API keys", "using limits", "API keys reloaded", "API keys not reloaded",
 	"authentication is off: every request is allowed", "feature flags: no FLAGS_URL, using default values only",
 	"server started", "shutting down", "server stopped", "not ready", "ready again", "profiling server started", "profiling server failed",
 	"profiling server is reachable beyond this machine; keep its port private",

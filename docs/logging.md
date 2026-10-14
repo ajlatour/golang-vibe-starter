@@ -123,6 +123,7 @@ upstream, comes back, and leaves the API.
 | `flag evaluation failed, using default` | WARN the first time a flag has a problem, then DEBUG | `flag`, `default`, `error` | A flag couldn't be evaluated and its default was used. Also DEBUG for each failed evaluation during an outage. |
 | `flag has no configured default, using false` | ERROR | `flag` | A flag the code reads has no default in the definitions. Logged once per flag. |
 | `using upstream` | INFO | `url`, `timeout`, `retries` | Startup. |
+| `using the in-memory store: for development only; items are lost when the service stops` | WARN | | Startup, with `STORE=memory`: a warning, so a deployment that's set it by mistake shows it. |
 | `using feature flags` | INFO | `url`, `timeout`, `cache_ttl` | Startup, with `FLAGS_URL` set. |
 | `using API keys` | INFO | `api_keys`, `reads` | Startup: the names and scopes of the configured keys (never the keys), and whether reads need one. |
 | `authentication is off: every request is allowed` | WARN | none | Startup, with `API_AUTH=off`. For local development only. |

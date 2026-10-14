@@ -59,8 +59,10 @@ func startWith(t *testing.T, env map[string]string) {
 	if _, err := loadConfig(getenvFrom(env)); err != nil {
 		t.Fatalf("refused: %v", err)
 	}
-	// Valid as given; now don't wait for a load balancer that isn't there.
+	// Valid as given; now don't wait for a load balancer that isn't there,
+	// and log JSON, which startApp reads the address from.
 	delete(env, "SHUTDOWN_DELAY")
+	env["LOG_FORMAT"] = "json"
 	ctx, cancel := context.WithCancel(t.Context())
 	_, _, errc := startApp(t, ctx, env)
 	cancel()

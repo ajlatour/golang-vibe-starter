@@ -51,7 +51,7 @@ DOCS_OUT := bin/docs
 REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/spec" -w /spec $(shell sh scripts/image.sh redocly)
 
 .DEFAULT_GOAL := help
-.PHONY: help up down logs run test fmt fmt-check vet test-race cover check \
+.PHONY: help up down logs dev run test fmt fmt-check vet test-race cover check \
 	integration integration-up integration-test integration-logs integration-down \
 	lint tools api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check docs-release godoc spec spec-lint \
 	api-compat smoke release-prepare release-tag perf perf-profile perf-soak bench bench-compare load-compare perf-compare perf-data perf-trends monitor
@@ -78,6 +78,14 @@ down: ## Stop the local stack, monitoring included
 
 logs: ## Follow the stack's logs (Ctrl-C to stop)
 	$(COMPOSE) logs -f
+
+# The local stack's development keys (compose.yaml), so scripts/api and
+# docs/curl.md work against make dev too.
+DEV_API_KEYS := dev:write:1f0d1e72ef1251a015cbec8ae3ad6880002ffe8ad4de82f4f496db34dc3e91dc,dev-reader:read:1cf20667ccf4aa0982ca024c319ee0cf77cadf20e85bd2fc51264075af57b2d4
+
+dev: ## Run the API with go run and an in-memory store, on :8080: nothing else to start, no Docker
+	STORE=memory API_KEYS=$(DEV_API_KEYS) LOG_FORMAT=text \
+		go run -ldflags "-X main.version=$(VERSION)" ./cmd/api
 
 run: ## Run the API with go run, against the WireMock and flagd containers
 	$(COMPOSE) up -d --wait mock flagd
