@@ -139,10 +139,19 @@ jobs:
             --output "type=image,name=$image,push-by-digest=true,name-canonical=true,push=true" \
             --metadata-file "$RUNNER_TEMP/build.json" .
           digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/build.json")
+          # Each platform is tested by its own manifest's digest, within the
+          # image's: Docker can't hold one multi-platform digest for two
+          # platforms at once ("cannot overwrite digest").
+          raw=$(docker buildx imagetools inspect --raw "$image@$digest")
+          platform() {
+            echo "$raw" | jq -er --arg arch "$1" '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest'
+          }
+          amd64=$(platform amd64)
+          arm64=$(platform arm64)
           {
             echo "IMAGE_DIGEST=$digest"
-            echo "IMAGE_AMD64=$image@$digest"
-            echo "IMAGE_ARM64=$image@$digest"
+            echo "IMAGE_AMD64=$image@$amd64"
+            echo "IMAGE_ARM64=$image@$arm64"
           } >> "$GITHUB_ENV"
 
       # The image as it will ship, run on each platform against WireMock and

@@ -63,7 +63,8 @@ The workflow checks the tag is on a commit that's on `main`, that the changelog 
 version's section, and that `docs/openapi.json` is that version, runs `make check` once more on
 the tagged commit, and builds and checks the documentation (`make docs-release`). Then it builds
 the image, for both platforms, and pushes it by digest alone, with no tag. It runs that exact
-image on each platform, arm64 under emulation, against WireMock and flagd
+image on each platform, by the digest of that platform's own manifest within it, arm64 under
+emulation, against WireMock and flagd
 (`scripts/smoke-image.sh`, below), and only if both pass points the version's tags at that digest:
 nothing is rebuilt between the test and the release, and the workflow checks the tags name the
 tested digest, with its SBOM and provenance. A failed smoke test leaves an untagged image in the
