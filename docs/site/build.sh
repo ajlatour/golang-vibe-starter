@@ -46,7 +46,8 @@ Build and ship|docs/performance.md|performance.html
 Build and ship|+history|history.html
 Build and ship|docs/releasing.md|releasing.html
 Architecture|docs/architecture.md|architecture.html
-Architecture|docs/decisions.md|decisions.html'
+Architecture|docs/decisions.md|decisions.html
+Architecture|docs/audit-2026-10.md|audit-2026-10.html'
 
 for guide in docs/*.md; do
 	if ! echo "$navigation" | grep -q "|$guide|"; then
