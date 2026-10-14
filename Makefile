@@ -115,7 +115,7 @@ test-race: ## Unit tests with the race detector
 check: fmt-check vet test-race ## Everything CI's fast job runs
 
 # Static analysis, at pinned versions (docs/decisions.md, ADR-0026).
-STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.1
+STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.2
 GOSEC       := github.com/securego/gosec/v2/cmd/gosec@v2.29.0
 MODERNIZE   := golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize@v0.52.0
 # A tool in Docker, as your user, removed after.
