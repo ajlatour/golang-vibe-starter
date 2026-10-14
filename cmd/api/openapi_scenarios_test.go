@@ -1,14 +1,11 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 )
 
 // scenario is one request, with the status the spec says it gets.
@@ -31,76 +28,13 @@ type scenario struct {
 	exempt string
 }
 
-// scenarios covers every documented response of every operation. The failure
-// statuses are generated from the spec's own list of item operations.
+// scenarios covers every documented response of every operation: each
+// resource's own (testResources), and for every operation, the failures
+// every route shares, generated from the spec's own list of operations.
 func scenarios(t *testing.T, s *spec) []scenario {
 	t.Helper()
-	input := s.lookupSchema(t, "ItemInput")
-	maxName := int(input["properties"].(map[string]any)["name"].(map[string]any)["maxLength"].(float64))
-	maxDesc := int(input["properties"].(map[string]any)["description"].(map[string]any)["maxLength"].(float64))
-	name := func(n int) string { return strings.Repeat("a", n) }
-	okBody := `{"name":"widget","description":"d"}`
-
 	list := []scenario{
 		{name: "healthz", env: "ok", method: "GET", path: "/healthz", op: "GET /healthz", want: 200},
-
-		{name: "list", env: "ok", method: "GET", path: "/items", op: "GET /items", want: 200,
-			check: func(t *testing.T, body []byte) {
-				var got map[string]any
-				json.Unmarshal(body, &got)
-				if _, present := got["total"]; present {
-					t.Errorf("total is present with the flag off, but the spec says it appears only when the flag is on: %s", body)
-				}
-			}},
-		{name: "list with the flag on", env: "flagOn", method: "GET", path: "/items", op: "GET /items", want: 200,
-			check: func(t *testing.T, body []byte) {
-				var got struct {
-					Items []any
-					Total *int
-				}
-				json.Unmarshal(body, &got)
-				if got.Total == nil || *got.Total != len(got.Items) {
-					t.Errorf("total = %v with %d items, want the count: %s", got.Total, len(got.Items), body)
-				}
-			}},
-
-		{name: "create", env: "ok", method: "POST", path: "/items", op: "POST /items", body: okBody, want: 201},
-		{name: "create at the name length limit", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"name":"` + name(maxName) + `"}`, want: 201},
-		{name: "create over the name length limit", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"name":"` + name(maxName+1) + `"}`, want: 422},
-		{name: "create at the description length limit", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"name":"x","description":"` + name(maxDesc) + `"}`, want: 201},
-		{name: "create over the description length limit", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"name":"x","description":"` + name(maxDesc+1) + `"}`, want: 422},
-		{name: "create with a blank name", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"name":"   "}`, want: 422},
-		{name: "create without a name", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"description":"x"}`, want: 422},
-		{name: "create with malformed JSON", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"name":`, want: 400},
-		{name: "create with an empty body", env: "ok", method: "POST", path: "/items", op: "POST /items", body: ``, want: 400},
-		{name: "create with an unknown field", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"name":"x","colour":"red"}`, want: 400},
-		{name: "create with the wrong type", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"name":1}`, want: 400},
-		{name: "create over the body limit", env: "ok", method: "POST", path: "/items", op: "POST /items",
-			body: `{"name":"x","description":"` + strings.Repeat("a", httpx.MaxBodyBytes) + `"}`, want: 400,
-			exempt: "the 1 MiB body limit is stated in the description; JSON Schema can't express it"},
-
-		{name: "list a page with more after it", env: "paged", method: "GET", path: "/items?limit=2", op: "GET /items", want: 200},
-		{name: "list with a limit out of range", env: "ok", method: "GET", path: "/items?limit=201", op: "GET /items", want: 400},
-		{name: "list with a malformed cursor", env: "ok", method: "GET", path: "/items?cursor=no%2Fslashes", op: "GET /items", want: 400},
-		{name: "list with a cursor it didn't give out", env: "ok", method: "GET", path: "/items?cursor=bm90LWEtY3Vyc29y", op: "GET /items", want: 400},
-
-		{name: "get", env: "ok", method: "GET", path: "/items/" + seededPlaceholder, op: "GET /items/{id}", want: 200},
-		{name: "get unknown", env: "ok", method: "GET", path: "/items/nope", op: "GET /items/{id}", want: 404},
-		{name: "get, unchanged since a tag", env: "ok", method: "GET", path: "/items/" + seededPlaceholder, op: "GET /items/{id}",
-			header: http.Header{"If-None-Match": {"*"}}, want: 304},
-
-		{name: "update", env: "ok", method: "PUT", path: "/items/" + seededPlaceholder, op: "PUT /items/{id}", body: `{"name":"renamed"}`, want: 200},
-		{name: "update with malformed JSON", env: "ok", method: "PUT", path: "/items/" + seededPlaceholder, op: "PUT /items/{id}", body: `{`, want: 400},
-		{name: "update unknown", env: "ok", method: "PUT", path: "/items/nope", op: "PUT /items/{id}", body: okBody, want: 404},
-		{name: "update with a stale tag", env: "ok", method: "PUT", path: "/items/" + seededPlaceholder, op: "PUT /items/{id}", body: okBody,
-			header: http.Header{"If-Match": {`"stale"`}}, want: 412},
-		{name: "update with a blank name", env: "ok", method: "PUT", path: "/items/" + seededPlaceholder, op: "PUT /items/{id}", body: `{"name":""}`, want: 422},
-
-		{name: "delete", env: "ok", method: "DELETE", path: "/items/" + seededPlaceholder, op: "DELETE /items/{id}", want: 204},
-		{name: "delete unknown", env: "ok", method: "DELETE", path: "/items/nope", op: "DELETE /items/{id}", want: 404},
-		{name: "delete with a stale tag", env: "ok", method: "DELETE", path: "/items/" + seededPlaceholder, op: "DELETE /items/{id}",
-			header: http.Header{"If-Match": {`"stale"`}}, want: 412},
-
 		{name: "ready", env: "ok", method: "GET", path: "/readyz", op: "GET /readyz", want: 200},
 		{name: "not ready: the upstream can't be reached", env: "badgw", method: "GET", path: "/readyz", op: "GET /readyz", want: 503},
 	}
@@ -117,7 +51,7 @@ func scenarios(t *testing.T, s *spec) []scenario {
 		method := strings.ToUpper(o.Method)
 		body := ""
 		if _, has := o.Op["requestBody"]; has {
-			body = okBody
+			body = okBody(t, o)
 		}
 		list = append(list,
 			scenario{
@@ -183,7 +117,7 @@ func scenarios(t *testing.T, s *spec) []scenario {
 		path := strings.ReplaceAll(o.Path, "{id}", "x")
 		body := ""
 		if _, has := o.Op["requestBody"]; has {
-			body = okBody
+			body = okBody(t, o)
 		}
 		for env, want := range map[string]int{
 			"ratelimited": http.StatusTooManyRequests, "overloaded": http.StatusServiceUnavailable,
@@ -208,7 +142,7 @@ func scenarios(t *testing.T, s *spec) []scenario {
 		path := strings.ReplaceAll(o.Path, "{id}", "x")
 		body := ""
 		if _, has := o.Op["requestBody"]; has {
-			body = okBody
+			body = okBody(t, o)
 		}
 		for env, want := range failures {
 			list = append(list, scenario{
@@ -217,5 +151,20 @@ func scenarios(t *testing.T, s *spec) []scenario {
 			})
 		}
 	}
+	for _, r := range testResources {
+		list = append(list, r.scenarios(t, s)...)
+	}
 	return list
+}
+
+// okBody is a request body o accepts: its resource's.
+func okBody(t *testing.T, o operation) string {
+	t.Helper()
+	for _, r := range testResources {
+		if o.Path == r.path || strings.HasPrefix(o.Path, r.path+"/") {
+			return r.okBody
+		}
+	}
+	t.Fatalf("%s: no resource in testResources serves it", o.Key())
+	return ""
 }

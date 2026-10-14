@@ -211,8 +211,8 @@ func TestOpenAPIMatchesBehavior(t *testing.T) {
 			if sc.want == 201 {
 				var created struct{ ID string }
 				json.Unmarshal(rec.Body.Bytes(), &created)
-				if loc := rec.Header().Get("Location"); loc != "/items/"+created.ID {
-					t.Errorf("Location = %q, want /items/%s", loc, created.ID)
+				if loc, want := rec.Header().Get("Location"), path+"/"+created.ID; loc != want {
+					t.Errorf("Location = %q, want %s", loc, want)
 				}
 			}
 			if sc.check != nil {

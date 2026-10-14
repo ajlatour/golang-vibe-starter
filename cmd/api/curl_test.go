@@ -15,13 +15,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
 	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
-	"github.com/ajlatour/golang-vibe-starter/internal/item"
-	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 )
 
 // docs/curl.md shows engineers how to call the API with scripts/api and with
@@ -85,25 +82,22 @@ func (w *statusWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
-// guideServer serves the API over an in-process store holding the items the
-// WireMock stubs serve, so the guide's examples behave as they do against the
-// local stack.
+// guideServer serves the API over in-process stores holding what the WireMock
+// stubs serve (testResource.guide), so the guide's examples behave as they do
+// against the local stack.
 func guideServer(t *testing.T) (*httptest.Server, *recorder) {
 	t.Helper()
-	store := itemtest.NewMemStore()
-	at := func(sec int) time.Time { return time.Date(2026, 1, 1, 0, 0, sec, 0, time.UTC) }
-	store.Seed(
-		item.Restore("widget", "Widget", "A standard widget.", at(0), at(0)),
-		item.Restore("gadget", "Gadget", "A gadget with extra features.", at(1), at(1)),
-		item.Restore("gizmo", "Gizmo", "", at(2), at(2)),
-	)
-	routes := http.NewServeMux()
+	var guide []routes
+	for _, r := range testResources {
+		guide = append(guide, r.guide(t))
+	}
+	patterns := http.NewServeMux()
 	for pattern := range codeRoutes(t) {
-		routes.HandleFunc(pattern, func(http.ResponseWriter, *http.Request) {})
+		patterns.HandleFunc(pattern, func(http.ResponseWriter, *http.Request) {})
 	}
 	rec := &recorder{
-		next:   newHandler(slog.New(slog.DiscardHandler), handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: composeAuth(t)}, store),
-		routes: routes,
+		next:   newHandler(slog.New(slog.DiscardHandler), handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: composeAuth(t)}, guide...),
+		routes: patterns,
 	}
 	srv := httptest.NewServer(rec)
 	t.Cleanup(srv.Close)

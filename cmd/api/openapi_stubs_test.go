@@ -250,8 +250,8 @@ func TestWireMockStubsMatchTheContract(t *testing.T) {
 	}
 }
 
-// Every operation of the items contract has its success stubbed among the
-// happy-path stubs (wiremock/mappings), and each one on an item its 404.
+// Every operation of each resource's contract has its success stubbed among
+// the happy-path stubs (wiremock/mappings), and each one on an entity its 404.
 func TestWireMockStubsCoverTheContract(t *testing.T) {
 	s := loadSpec(t)
 	answered := map[string]bool{} // "GET /items/{id} 200"
@@ -268,7 +268,7 @@ func TestWireMockStubsCoverTheContract(t *testing.T) {
 		}
 	}
 	for _, o := range s.operations(t) {
-		if !strings.HasPrefix(o.Path, "/items") {
+		if o.Path == "/healthz" || o.Path == "/readyz" {
 			continue // the API's own probes; the upstream's aren't stubbed
 		}
 		want := []int{successStatus(t, s, o)}

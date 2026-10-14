@@ -169,8 +169,11 @@ func TestKeysAreRateLimitedClients(t *testing.T) {
 	handler := newHandler(slog.New(slog.DiscardHandler), handlerConfig{
 		Guard:  headerguard.DefaultPolicy(),
 		Auth:   apikey.Policy{Keys: keys},
-		Limits: limit.Policy{}, // no policy limit: only a key's own
-	}, itemtest.NewMemStore())
+		Limits: limit.Policy{},
+	}, itemRoutes(
+
+		itemtest.NewMemStore()))
+
 	get := func(key string, port int) int {
 		req := httptest.NewRequest(http.MethodGet, "/items", nil)
 		req.RemoteAddr = fmt.Sprintf("192.0.2.1:%d", port)
