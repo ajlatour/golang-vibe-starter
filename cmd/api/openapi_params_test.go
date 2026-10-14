@@ -28,10 +28,10 @@ func TestOpenAPIItemSchemaMatchesStruct(t *testing.T) {
 	for _, r := range schema["required"].([]any) {
 		required[r.(string)] = true
 	}
-	typ := reflect.TypeOf(item.Response{})
+	typ := reflect.TypeFor[item.Response]()
 	fields := map[string]bool{}
-	for i := range typ.NumField() {
-		name, opts, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
+	for field := range typ.Fields() {
+		name, opts, _ := strings.Cut(field.Tag.Get("json"), ",")
 		fields[name] = true
 		if _, ok := props[name]; !ok {
 			t.Errorf("item.Response has JSON field %q, which the Item schema doesn't describe", name)
