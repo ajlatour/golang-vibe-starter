@@ -299,6 +299,8 @@ documentation (the code's doc comments) at http://localhost:6060.
 - [Architecture](docs/architecture.md): how the service is built, from its context to its
   packages, and its requirements, each with the test that verifies it.
 - [Architecture decisions](docs/decisions.md): why it's built that way, one record per decision.
+- [Audit, October 2026](docs/audit-2026-10.md): a review of the whole codebase, what it found,
+  and what was done about it.
 
 ## Layout
 
