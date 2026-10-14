@@ -41,7 +41,7 @@ func (s *spec) lookup(ref string) (map[string]any, bool) {
 		return nil, false
 	}
 	var cur any = s.doc
-	for _, part := range strings.Split(path, "/") {
+	for part := range strings.SplitSeq(path, "/") {
 		m, ok := cur.(map[string]any)
 		if !ok {
 			return nil, false

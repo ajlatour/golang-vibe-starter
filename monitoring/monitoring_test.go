@@ -123,7 +123,7 @@ func TestDashboardK6Percentiles(t *testing.T) {
 		t.Fatal("perf/run.sh doesn't set K6_PROMETHEUS_RW_TREND_STATS")
 	}
 	sent := map[string]bool{}
-	for _, stat := range strings.Split(m[1], ",") {
+	for stat := range strings.SplitSeq(m[1], ",") {
 		// k6 names p(99) as _p99.
 		sent[strings.NewReplacer("(", "", ")", "", ".", "").Replace(stat)] = true
 	}

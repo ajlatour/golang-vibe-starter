@@ -143,7 +143,7 @@ func readProm(path string) (map[string]float64, bool) {
 		return nil, false
 	}
 	out := map[string]float64{}
-	for _, line := range strings.Split(string(b), "\n") {
+	for line := range strings.SplitSeq(string(b), "\n") {
 		// A labelled series is kept under its whole name, labels and all.
 		name, value, ok := strings.Cut(line, " ")
 		if !ok || strings.HasPrefix(line, "#") {

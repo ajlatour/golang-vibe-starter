@@ -32,8 +32,7 @@ import (
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
-		var failed checkFailed
-		if errors.As(err, &failed) {
+		if _, ok := errors.AsType[checkFailed](err); ok {
 			fmt.Fprintln(os.Stderr, "apidiff:", err)
 			os.Exit(1)
 		}
@@ -101,7 +100,8 @@ func run(args []string, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		pending := unreleased(string(b))
+		var pending strings.Builder
+		pending.WriteString(unreleased(string(b)))
 		if *changesDir != "" {
 			files, err := filepath.Glob(filepath.Join(*changesDir, "*.md"))
 			if err != nil {
@@ -112,10 +112,10 @@ func run(args []string, out io.Writer) error {
 				if err != nil {
 					return err
 				}
-				pending += string(c)
+				pending.WriteString(string(c))
 			}
 		}
-		if !strings.Contains(pending, "**Breaking**") {
+		if !strings.Contains(pending.String(), "**Breaking**") {
 			where := *changelog + "'s Unreleased section"
 			if *changesDir != "" {
 				where = "no file in " + *changesDir
