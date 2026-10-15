@@ -1,0 +1,19 @@
+{
+  "sha": "eb90f220cfc7576d7a9e2ef95649a9cf906c7001",
+  "time": "2026-10-15T08:54:40Z",
+  "subject": "Merge pull request #73 from ajlatour/make-resource",
+  "minutes": 25,
+  "heap_live_bytes": {
+    "start": 947136,
+    "end": 907904
+  },
+  "goroutines": {
+    "start": 47,
+    "end": 47
+  },
+  "mapped_bytes": {
+    "start": 18209032,
+    "end": 18471176
+  },
+  "grew": []
+}
