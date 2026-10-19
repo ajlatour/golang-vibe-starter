@@ -47,7 +47,7 @@ exported is dropped, and logged as `tracing failed`; a request never waits on th
   continues the trace.
 
 The probes, `/healthz` and `/readyz`, record none, since they're asked every few seconds; nor do
-readiness checks and flagd's background refreshes, which are outside any request.
+readiness checks and other background calls, which are outside any request.
 
 ## Seeing traces locally
 
@@ -59,7 +59,7 @@ make down
 ```
 
 Each request is a trace: the API's span for it, and inside it a span for each call, here to
-the services the stack stubs (WireMock, and flagd). `make tracing` is `make up`
+the services the stack stubs. `make tracing` is `make up`
 with Jaeger, and `OTEL_EXPORTER_OTLP_ENDPOINT` set for the API; Jaeger keeps traces in memory
 until it stops. For an API run with `go run` (`make dev`, `make run`), start Jaeger alone and point
 the API at it:

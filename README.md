@@ -42,10 +42,10 @@ scripts/api POST /items '{"name": "Sprocket"}'
 scripts/api GET /items
 ```
 
-With its real dependencies (an upstream, flagd, the validation service), stubbed in containers:
+With its real dependencies, stubbed in containers:
 
 ```sh
-make up                                    # API, WireMock and flagd, in the background
+make up                                    # the API and its dependencies, in the background
 scripts/api GET /items                     # through the API (curl, with the headers filled in)
 scripts/api POST /items '{"name": "Sprocket"}'
 curl localhost:8081/items                  # WireMock directly
@@ -261,7 +261,7 @@ The API reads these environment variables:
 
 [`.env.example`](.env.example) lists every variable with its default. To change settings when
 running with docker compose, copy it to `.env` (git-ignored) and uncomment the lines you want;
-compose always sets `UPSTREAM_URL` and `FLAGS_URL` itself, to wire the API to its containers.
+compose always sets the URLs of the services it runs itself, to wire the API to its containers.
 A setting can also come from the shell, e.g. `HEADER_GUARD_MODE=report make up`. A test keeps the
 code, `.env.example` and this table in step. The header limits must be whole numbers from 1 to
 1048576, with `HEADER_MAX_BYTES` no larger than `HEADER_MAX_TOTAL_BYTES`; the service refuses to

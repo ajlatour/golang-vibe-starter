@@ -66,11 +66,13 @@ const (
 	KeyMaxHeaderBytes = "max_header_bytes"
 	KeyMaxTotalBytes  = "max_total_bytes"
 
+	// feature:flags
 	// Feature flags.
 	KeyFlag      = "flag"
 	KeyDefault   = "default"
 	KeyFallbacks = "fallbacks"
 	KeyCacheTTL  = "cache_ttl"
+	// end feature:flags
 
 	// feature:validation
 	// Request validation (internal/validator).

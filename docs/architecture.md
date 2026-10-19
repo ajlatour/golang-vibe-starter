@@ -119,10 +119,13 @@ decode, a redirect, an item that breaks the model's rules) a 502. Every item fro
 upstream's message is logged, never returned. `/readyz` stays ready while the upstream answers at
 all, an error included (ADR-0021).
 
+<!-- feature:flags -->
 **When flagd fails.** Flag evaluation never fails a request: an unreachable, slow
 (`FLAGS_TIMEOUT`, 500ms) or confused flagd means the flag's default from `flagd/flags.json`, logged
 once per outage (ADR-0005). Values are cached for `FLAGS_CACHE_TTL` (1s), and during an outage
 flagd is retried once per that, so an outage costs a request nothing but the default (ADR-0029).
+
+<!-- end feature:flags -->
 
 **Under load.** At most `MAX_IN_FLIGHT` requests (512) are served at once, and each client may
 make `RATE_LIMIT` requests a second (100) in bursts of `RATE_BURST` (200). Beyond that the service
@@ -146,7 +149,7 @@ runs it read-only, with `cap_drop: [ALL]` and `no-new-privileges`).
 Configuration is environment variables only, with defaults in code (ADR-0010). The service refuses
 to start on an invalid value, or with authentication on and no keys.
 
-Locally, `compose.yaml` runs the API with WireMock as the upstream and flagd, all published on
+Locally, `compose.yaml` runs the API with its stubbed dependencies, WireMock as the upstream, all published on
 `127.0.0.1` only. Opt-in profiles add k6 (`perf`) and cAdvisor, Prometheus and Grafana
 (`monitoring`).
 
@@ -183,7 +186,7 @@ says so.
 | SEC-2 | Only hashes of keys are configured, compared in constant time, and no key is ever logged. | A leaked config or log reveals no usable key | `internal/apikey/apikey_test.go`, `cmd/api/logcontract_test.go` |
 | SEC-3 | The service refuses to start with authentication on and no keys. | Secure by default | `cmd/api/main_test.go` |
 | SEC-4 | Request headers are screened before the handlers: size limits, single-use headers, JSON bodies only; proxy and method-override headers are removed and never trusted. | Smuggling, spoofing and resource abuse through headers (ADR-0012) | `internal/headerguard/headerguard_test.go`, `internal/headerguard/fuzz_test.go`, `integration/features/headers.feature` |
-| SEC-5 | Calls to the upstream and flagd never follow redirects, and credentials in their URLs never reach a log or error. | No SSRF through a compromised upstream (ADR-0019) | `internal/jsoncall/jsoncall_test.go`, `internal/item/httpstore/httpstore_test.go` |
+| SEC-5 | Calls to other services, the upstream and the rest, never follow redirects, and credentials in their URLs never reach a log or error. | No SSRF through a compromised upstream (ADR-0019) | `internal/jsoncall/jsoncall_test.go`, `internal/item/httpstore/httpstore_test.go` |
 | SEC-6 | pprof and `/metrics` are opt-in and never on the API's port; a profile runs at most 60s. | They reveal internals and cost CPU (ADR-0022) | `cmd/api/main_test.go`, `internal/profiling/profiling_test.go` |
 | SEC-7 | The local stack listens on loopback only. | Nobody on a shared network reaches WireMock's admin API | Review: `compose.yaml` |
 | SEC-8 | Actions and images are pinned, updated by Dependabot and scanned by govulncheck; pull request code never runs with a token that can write. | Supply chain (ADR-0020) | `.github/workflows/ci.yml` (the vuln job), `.github/dependabot.yml`, review: `.github/workflows/perf.yml` |
@@ -240,7 +243,7 @@ says so.
 ## Constraints and assumptions
 
 - **TLS is terminated in front of the service.** It speaks plain HTTP; so do its calls to the
-  upstream and flagd unless their URLs say `https`.
+  other services unless their URLs say `https`.
 - **Limits are per instance.** With N replicas, a client may make N times `RATE_LIMIT` requests a
   second in total.
 - **Behind a proxy, keyless clients share one address.** Proxy headers are never trusted

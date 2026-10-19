@@ -17,7 +17,9 @@ ENV CGO_ENABLED=0 GOTOOLCHAIN=local
 COPY go.mod go.sum* ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
+# feature:flags
 COPY flagd/ flagd/
+# end feature:flags
 COPY internal/ internal/
 COPY cmd/api/ cmd/api/
 # Stamped into every log line. .git isn't in the build context, so pass the

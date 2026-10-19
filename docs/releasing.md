@@ -51,7 +51,7 @@ request so a problem shows before it's tagged:
 
 <!-- feature:release -->
 - **The image that ships is run before it's published.** `scripts/smoke-image.sh` runs an image
-  for one platform against WireMock and flagd and checks: it is that platform's image, it says
+  for one platform against the stack's stubs and checks: it is that platform's image, it says
   it's the version being released, it runs as a non-root user, the probes answer, a request
   without a key is refused, the items list, an item has an `ETag`, a create works, an unknown
   path gets a JSON 404, and SIGTERM stops it cleanly (exit 0, `server stopped`). The Release
@@ -67,7 +67,7 @@ version's section, and that `docs/openapi.json` is that version, runs `make chec
 the tagged commit, and builds and checks the documentation (`make docs-release`). Then it builds
 the image, for both platforms, and pushes it by digest alone, with no tag. It runs that exact
 image on each platform, by the digest of that platform's own manifest within it, arm64 under
-emulation, against WireMock and flagd
+emulation, against the stack's stubs
 (`scripts/smoke-image.sh`, below), and only if both pass points the version's tags at that digest:
 nothing is rebuilt between the test and the release, and the workflow checks the tags name the
 tested digest, with its SBOM and provenance. A failed smoke test leaves an untagged image in the

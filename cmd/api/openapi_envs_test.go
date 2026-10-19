@@ -19,10 +19,13 @@ import (
 	// end feature:validation
 )
 
+// feature:flags
 // fixedFlags is a resource's Flags with one answer for every flag.
 type fixedFlags bool
 
 func (f fixedFlags) Bool(context.Context, string) bool { return bool(f) }
+
+// end feature:flags
 
 // errBoom is the plain error each resource's "internal" store fails with.
 var errBoom = errors.New("boom")
@@ -31,7 +34,7 @@ var errBoom = errors.New("boom")
 // resource's routes on a store for it (testResource.routes):
 //
 //	ok          each resource holds one entity, seededID; flags off
-//	flagOn      the same, with every flag on
+//	flagOn      the same, with every flag on, where there are flags
 //	paged       three of each, so a page of two has a next
 //	ratelimited the test client (its key) has spent its rate (429)
 //	overloaded  the one request the service takes at once is stuck (503)
@@ -48,7 +51,10 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 	cfg := handlerConfig{Guard: headerguard.DefaultPolicy(), Auth: testAuth(t)}
 	var up upstream
 	switch env {
-	case "ok", "flagOn", "paged", "internal":
+	case "ok", "paged", "internal":
+	// feature:flags
+	case "flagOn":
+	// end feature:flags
 	case "ratelimited":
 		// The test client has its one token, to spend below, and gets
 		// another in about 11 days.
@@ -87,8 +93,12 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 	h := newHandler(logger, cfg, all...)
 
 	switch env {
-	case "ok", "flagOn":
+	case "ok":
 		return h, seededID
+	// feature:flags
+	case "flagOn":
+		return h, seededID
+	// end feature:flags
 	case "ratelimited":
 		spend := httptest.NewRequest("GET", "/", nil)
 		spend.Header.Set("Authorization", "Bearer "+testWriteKey)

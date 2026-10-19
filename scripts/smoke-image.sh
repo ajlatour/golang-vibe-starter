@@ -1,6 +1,6 @@
 #!/bin/sh
 # Smoke-tests an API image as it ships: runs it, for one platform, against
-# WireMock and flagd, and checks the basics work end to end. The Release
+# the stack's stubs, and checks the basics work end to end. The Release
 # workflow runs it on the exact image it's about to publish, for each
 # platform; see docs/releasing.md.
 #
@@ -43,11 +43,19 @@ check() {
 }
 
 echo "Smoke-testing $image ($platform), want version $version"
-$compose up -d --wait mock flagd >/dev/null 2>&1
+# The stubs it runs against, and where the API finds them.
+set -- mock
+# feature:flags
+set -- "$@" flagd
+# end feature:flags
+$compose up -d --wait "$@" >/dev/null 2>&1
+set -- -e UPSTREAM_URL=http://mock:8080
+# feature:flags
+set -- "$@" -e FLAGS_URL=http://flagd:8016
+# end feature:flags
 network=$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$($compose ps -q mock)")
 docker run -d --name "$container" --platform "$platform" --network "$network" \
-	-p "127.0.0.1:$port:8080" \
-	-e UPSTREAM_URL=http://mock:8080 -e FLAGS_URL=http://flagd:8016 \
+	-p "127.0.0.1:$port:8080" "$@" \
 	-e API_KEYS="dev:write:1f0d1e72ef1251a015cbec8ae3ad6880002ffe8ad4de82f4f496db34dc3e91dc" \
 	-e LOG_FORMAT=json -e SHUTDOWN_TIMEOUT=10s \
 	"$image" >/dev/null

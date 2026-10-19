@@ -1,7 +1,9 @@
 package item
 
 import (
+	// feature:flags
 	"context"
+	// end feature:flags
 	"errors"
 	"log/slog"
 	"net/http"
@@ -9,6 +11,8 @@ import (
 
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 )
+
+// feature:flags
 
 // FlagListTotal is the feature flag that adds a "total" count to the list
 // response.
@@ -28,14 +32,20 @@ type Flags interface {
 	Bool(ctx context.Context, key string) bool
 }
 
-// Option customizes RegisterRoutes.
-type Option func(*options)
-
-type options struct{ flags Flags }
-
 // WithFlags enables feature flags. Without it every flag is off.
 func WithFlags(f Flags) Option {
 	return func(o *options) { o.flags = f }
+}
+
+// end feature:flags
+
+// Option customizes RegisterRoutes.
+type Option func(*options)
+
+type options struct {
+	// feature:flags
+	flags Flags
+	// end feature:flags
 }
 
 // RegisterRoutes adds the /items CRUD routes to mux, backed by store.
@@ -46,7 +56,7 @@ func RegisterRoutes(mux *http.ServeMux, logger *slog.Logger, store Store, opts .
 	}
 	// Each handler returns its error, and httpx.Handle answers it: the
 	// client's mistakes as httpx.Errors, everything else as a logged 5xx.
-	mux.Handle("GET /items", httpx.Handle(logger, handleList(store, o.flags)))
+	mux.Handle("GET /items", httpx.Handle(logger, handleList(store, o)))
 	mux.Handle("POST /items", httpx.Handle(logger, handleCreate(store)))
 	mux.Handle("GET /items/{id}", httpx.Handle(logger, handleGet(store)))
 	mux.Handle("PUT /items/{id}", httpx.Handle(logger, handleUpdate(store)))
@@ -78,7 +88,7 @@ func NewResponse(it Item) Response {
 	return Response{ID: it.ID.String(), Name: it.Name.String(), Description: it.Description.String(), CreatedAt: it.CreatedAt, UpdatedAt: it.UpdatedAt}
 }
 
-func handleList(store Store, flags Flags) httpx.HandlerFunc {
+func handleList(store Store, o options) httpx.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		pr, err := httpx.ParsePage(r)
 		if err != nil {
@@ -96,10 +106,12 @@ func handleList(store Store, flags Flags) httpx.HandlerFunc {
 		if !l.Next.IsZero() {
 			resp.NextCursor = l.Next.String()
 		}
-		if flags != nil && flags.Bool(r.Context(), FlagListTotal) {
+		// feature:flags
+		if o.flags != nil && o.flags.Bool(r.Context(), FlagListTotal) {
 			n := len(l.Items)
 			resp.Total = &n
 		}
+		// end feature:flags
 		httpx.WriteJSON(w, http.StatusOK, resp)
 		return nil
 	}

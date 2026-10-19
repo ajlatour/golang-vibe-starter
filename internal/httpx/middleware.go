@@ -72,8 +72,8 @@ func WithClientIP() MiddlewareOption {
 }
 
 // WithRequestTimeout gives every request a deadline, d after it arrives:
-// its context is done then, so the calls it's waiting on (the upstream, the
-// validation service, flagd) give up, and the handler answers in time,
+// its context is done then, so the calls it's waiting on (the upstream, and
+// the other services) give up, and the handler answers in time,
 // usually 504. Serve's write timeout must be longer than d (see
 // WriteTimeout), or a slow request's answer is cut off unsent while its log
 // line says it was sent. Inside the logging and panic recovery, so a request

@@ -38,6 +38,8 @@ type Policy struct {
 	Observe func(o Outcome, call time.Duration)
 }
 
+// feature:flags
+
 // FlagEnforce is the feature flag cmd/api backs Policy.Enforce with: off,
 // its default, is shadow mode. Turning it on enforces the service's answers,
 // at runtime, and off again rolls back.
@@ -46,6 +48,8 @@ const FlagEnforce = "request-validation-enforce"
 // FlagKeys lists the feature flags this package's checks are run by. The
 // service checks at startup that flagd/flags.json defines each.
 func FlagKeys() []string { return []string{FlagEnforce} }
+
+// end feature:flags
 
 // Outcome is what the check came to for a request.
 type Outcome string

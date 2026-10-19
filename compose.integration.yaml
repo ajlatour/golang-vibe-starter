@@ -14,10 +14,13 @@ services:
       UPSTREAM_TIMEOUT: 3s
       # JSON, so tests can read the API's log lines.
       LOG_FORMAT: json
+      # feature:flags
       # Flag steps switch a flag and wait until flagd serves it; with no cache
       # the API sees the change at once too, so scenarios needn't wait it out.
       FLAGS_CACHE_TTL: 0s
+      # end feature:flags
 
+  # feature:flags
   flagd:
     volumes:
       # The tests' own copy of the flag definitions, which flag steps edit
@@ -25,3 +28,4 @@ services:
       # replaces the base file's mount of ./flagd at the same path. The suite
       # resets it from flagd/flags.json at the start of every run.
       - ./integration/flagd:/etc/flagd:ro
+  # end feature:flags

@@ -36,6 +36,7 @@ type config struct {
 	// after a fast failure (httpstore.WithRetries).
 	UpstreamRetries int
 
+	// feature:flags
 	// FlagsURL is the OFREP endpoint of the flagd sidecar. Nil disables
 	// feature flags: every flag then takes its default.
 	FlagsURL     *url.URL
@@ -48,6 +49,7 @@ type config struct {
 	// whose default variants replace those of the copy compiled into the
 	// binary. Empty uses the embedded copy.
 	FlagsFallbackFile string
+	// end feature:flags
 
 	// PprofAddr is where to serve the runtime profiles (internal/profiling).
 	// Empty, the default, serves none.
@@ -140,6 +142,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 		// when the upstream is really down.
 		UpstreamRetries: envconfig.Optional(env, "UPSTREAM_RETRIES", 1, parseRetries),
 
+		// feature:flags
 		// Optional: flags are an add-on, and without a sidecar the service
 		// runs with every flag at its default. The timeout is short by
 		// default because flag evaluation sits on the request path.
@@ -149,6 +152,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 		// each flag about once a second however busy the service is.
 		FlagsCacheTTL:     envconfig.Optional(env, "FLAGS_CACHE_TTL", time.Second, parseNonNegativeDuration),
 		FlagsFallbackFile: env.String("FLAGS_FALLBACK_FILE"),
+		// end feature:flags
 
 		// Off unless asked for: profiles expose the program's internals.
 		PprofAddr: env.String("PPROF_ADDR"),
@@ -245,7 +249,9 @@ func (cfg config) checkTimeouts() []error {
 		// feature:validation
 		{"VALIDATOR_TIMEOUT", cfg.ValidatorTimeout, cfg.ValidatorURL != nil},
 		// end feature:validation
+		// feature:flags
 		{"FLAGS_TIMEOUT", cfg.FlagsTimeout, cfg.FlagsURL != nil},
+		// end feature:flags
 	} {
 		if t.set && t.d >= cfg.RequestTimeout {
 			errs = append(errs, fmt.Errorf("%s (%v) must be shorter than REQUEST_TIMEOUT (%v), the time a whole request has", t.name, t.d, cfg.RequestTimeout))

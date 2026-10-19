@@ -41,6 +41,7 @@ To adapt it to a real service, change `validator.Request` to carry what that ser
 `Client.Check` to speak its API. The middleware, the failure handling and the logging stay as they
 are, and so do their tests.
 
+<!-- feature:flags -->
 ## Deploying it dark
 
 The `request-validation-enforce` feature flag decides whether the service's answers are acted on.
@@ -61,6 +62,8 @@ no deploy, and turning it off rolls back as fast. If flagd itself can't answer, 
 default, off, so a flagd outage can only ever put the check back into shadow mode, never start
 refusing requests. `/readyz` waits on the validation service only while it's enforced and failing
 closed.
+
+<!-- end feature:flags -->
 
 ## What it costs
 
@@ -100,9 +103,14 @@ production deployment missing it shows in its first lines.
 `make up` runs it against WireMock's stub (`wiremock/mappings/validator.json`), which allows every
 request but `/items/refused-by-validator`:
 
+<!-- feature:flags -->
 ```sh
 scripts/api GET /items/refused-by-validator   # 404: shadow mode (the flag's default) lets it through
 # turn it on: in flagd/flags.json set request-validation-enforce's "defaultVariant" to "on"
+```
+
+<!-- end feature:flags -->
+```sh
 scripts/api GET /items/refused-by-validator   # 403
 make fault FAULT=validator-down               # the service fails every call with 503
 scripts/api GET /items                        # 503, Retry-After: 1

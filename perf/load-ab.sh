@@ -9,7 +9,7 @@
 # records main this way).
 # Builds an API image for each version, then for each round runs the profile
 # (default compare) against each, alternating which goes first, with the same
-# WireMock and flagd throughout. A first run against the working tree warms
+# stubs throughout. A first run against the working tree warms
 # up the stack (WireMock's JIT above all) and is thrown away. Each run leaves
 # <output dir>/<side>-<n>.json (k6's summary), .txt (k6's output), and what
 # perf/resources.sh recorded: .stats.tsv and .metrics-{start,end}.prom.
@@ -32,10 +32,15 @@ if [ "$base" != - ]; then
 	git worktree add --quiet --detach "$basesrc" "$base"
 fi
 
-echo "Starting WireMock and flagd, and building the API at $base and in the working tree..."
-# All three at once: the two builds share BuildKit's base images and run
-# their Go builds side by side, while the other containers start.
-docker compose up -d --wait mock flagd >/dev/null 2>&1 &
+echo "Starting the stubs, and building the API at $base and in the working tree..."
+# All at once: the two builds share BuildKit's base images and run their Go
+# builds side by side, while the other containers start.
+stubs=mock
+# feature:flags
+stubs="mock flagd"
+# end feature:flags
+# shellcheck disable=SC2086 # the stubs' names, one word each
+docker compose up -d --wait $stubs >/dev/null 2>&1 &
 stack=$!
 # With GOCACHE_DIR set (CI), both start from the kept Go build cache. Keeping
 # it replaces the directory, so that waits until neither build is reading it.
