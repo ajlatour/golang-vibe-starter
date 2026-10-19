@@ -29,5 +29,6 @@ send them to; with tracing off, nothing of the SDK runs, and the request path is
 module now has eight dependencies, the SDK's, to update (Dependabot) and check (govulncheck), and
 the binary is about 1 MB bigger. A backend that takes OTLP only as protobuf needs a Collector in
 front of it; the Collector, Jaeger and most backends take JSON. Removing tracing is deleting `internal/telemetry` and `cmd/api/telemetry.go`, and what the
-compiler and the drift tests then name ([Tracing](../tracing.md#removing-it)). Another adapter
+compiler and the drift tests then name (the tracing guide, "Removing it"), or `make init
+WITHOUT=tracing` for a new service, which marks this record Deprecated. Another adapter
 with a dependency takes a record of its own, and a line in the test.

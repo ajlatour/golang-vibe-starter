@@ -8,8 +8,8 @@
 // It records nothing itself: no spans, no timings. The trace ID goes into the
 // request's log lines (trace_id), which ties them to the trace. Spans is how
 // something that does record them is told of each span: the request's own,
-// and each call it makes. The service runs without one; internal/telemetry,
-// an OpenTelemetry SDK's, is one.
+// and each call it makes. The service runs without one, recording none; a
+// tracing SDK's adapter is one.
 package tracectx
 
 import (

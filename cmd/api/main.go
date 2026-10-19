@@ -97,11 +97,14 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	if err != nil {
 		return err
 	}
+	var spans tracectx.Spans
+	// feature:tracing
 	spans, stopSpans, err := newSpans(ctx, logger, cfg, 5*time.Second)
 	if err != nil {
 		return err
 	}
 	defer stopSpans()
+	// end feature:tracing
 	var (
 		allRoutes   []routes
 		storeChecks []httpx.Check
@@ -311,7 +314,7 @@ type handlerConfig struct {
 	// RequestTimeout is each request's deadline (REQUEST_TIMEOUT). Zero:
 	// none.
 	RequestTimeout time.Duration
-	// Spans records each request's span, and its calls' (telemetry.go). Nil
+	// Spans records each request's span, and its calls'. Nil
 	// records none.
 	Spans tracectx.Spans
 	// Validator checks every request but the probes (internal/validator).

@@ -11,13 +11,15 @@ How the code is put together, how to change it safely, and how it's tested.
 - [Continuous integration](#continuous-integration)
 - [Open ideas](#open-ideas)
 
+<!-- feature:init -->
 ## Starting a new service
 
 This repository is a template: a new service starts as a copy of it, with GitHub's "Use this
 template" or a plain clone, and then one command makes the copy its own:
 
 ```sh
-make init NAME=orders MODULE=github.com/acme/orders
+make init NAME=orders MODULE=github.com/acme/orders                   # everything
+make init NAME=orders MODULE=github.com/acme/orders WITHOUT=tracing   # leaving tracing out
 ```
 
 `NAME` is the service's name, in lower-case letters, digits and dashes: it names the images, the
@@ -36,9 +38,26 @@ template's audit page goes. The example `/items` resource, the decision records 
 stay. It prints what's left to do by hand: the license's holder, the repository's settings, the
 README's opening, and when to remove `/items`.
 
+Some of the template is optional, and a service can leave it out: `WITHOUT=tracing`, or several,
+comma-separated, or `WITHOUT=all`. `go run ./cmd/initservice -list-features` lists them:
+
+| Feature | What goes |
+| ------- | --------- |
+| `tracing` | OpenTelemetry ([Tracing](tracing.md)): `internal/telemetry`, its settings and log lines, and Jaeger in the local stack. The service then has no third-party dependency at all. |
+
+A feature is marked in the code where it's mixed with the rest (`// feature:tracing` …
+`// end feature:tracing`, or `#` and `<!-- -->` in other files), and listed in
+`cmd/initservice/features.go` where it's files of its own, lines of a table, or text that reads
+differently without it. A service gets neither: `make init` removes the markers, of what it keeps
+as well as what it leaves out, and its own tool, `cmd/initservice`.
+
 Run it once, on a fresh copy, then `make check`, `make lint` and `make docs-check`, and commit.
-`make init-check`, which CI runs, does all that on a copy of the template, so it keeps working
+`make init-check`, which CI runs, does all that on copies of the template, with every feature,
+with each left out, and with all of them left out, and checks nothing still names what was left
+out; `make init-docs-check` builds the docs of a service without any, so `make init` keeps working
 as the template changes.
+
+<!-- end feature:init -->
 
 ## Adding a resource
 

@@ -39,7 +39,7 @@ over HTTP (ADR-0003). Feature flags come from a flagd sidecar, when there is one
 | Developers | A local stack (`make up`) and tests that need no running containers |
 
 **Out of scope:** storing data (the upstream owns it), TLS (terminated in front of the service),
-user identities (clients are API keys; [known gaps](#known-gaps)), and distributed tracing.
+and user identities (clients are API keys; [known gaps](#known-gaps)).
 
 ## Building blocks
 

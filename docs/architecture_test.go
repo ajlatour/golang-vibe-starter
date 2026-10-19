@@ -57,7 +57,9 @@ func section(t *testing.T, doc, heading string) string {
 // adapters are the packages that may import a third-party module, and the
 // modules each may (DEP-1, ADR-0046): an import path within one of them.
 var adapters = map[string][]string{
+	// feature:tracing
 	"internal/telemetry": {"go.opentelemetry.io/otel"},
+	// end feature:tracing
 }
 
 // TestDependenciesStayInAdapters holds DEP-1: the service imports
@@ -243,7 +245,12 @@ func TestDocumentedPathsExist(t *testing.T) {
 	}
 	code := regexp.MustCompile("`([^`\\s]+)`")
 	checked := 0
-	for _, doc := range append([]string{"architecture.md", "decisions.md", "standards.md", "development.md"}, recordFiles(t)...) {
+	// A deprecated record is history: what it names may be gone (make
+	// init deprecates the records of the features it leaves out).
+	records := slices.DeleteFunc(recordFiles(t), func(f string) bool {
+		return strings.Contains(read(t, f), "\n- **Status:** Deprecated")
+	})
+	for _, doc := range append([]string{"architecture.md", "decisions.md", "standards.md", "development.md"}, records...) {
 		for _, m := range code.FindAllStringSubmatch(read(t, doc), -1) {
 			p := m[1]
 			if strings.ContainsAny(p, "<>*") {
@@ -271,7 +278,7 @@ func TestDocumentedPathsExist(t *testing.T) {
 
 var (
 	recordRE = regexp.MustCompile(`^# (ADR-(\d{4})): (.+)\n`)
-	statusRE = regexp.MustCompile(`^(Proposed|Accepted|Superseded by (ADR-\d{4}))$`)
+	statusRE = regexp.MustCompile(`^(Proposed|Accepted|Superseded by (ADR-\d{4})|Deprecated: .+)$`)
 )
 
 // recordFiles lists the decision records, docs/adr/NNNN-*.md, in order, as

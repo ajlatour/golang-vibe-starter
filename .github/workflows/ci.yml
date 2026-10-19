@@ -136,8 +136,15 @@ jobs:
             perf/report/go.sum
             tools/go.sum
 
+      # feature:init
       - name: Start a service from the template
         run: make init-check
+
+      # The docs site of a service with every feature left out: links to
+      # the pages that went with them are what the test above can't see.
+      - name: Its docs, with every feature left out
+        run: make init-docs-check
+      # end feature:init
 
       - name: Add a resource
         run: make resource-check
