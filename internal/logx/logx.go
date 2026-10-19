@@ -42,6 +42,8 @@ type requestState struct {
 	trace    tracectx.Parent
 	traceID  string
 	hasTrace bool
+	// What records the request's spans (SetSpans), if anything does.
+	spans tracectx.Spans
 
 	mu    sync.Mutex
 	route string
@@ -96,8 +98,9 @@ func AddAttrs(ctx context.Context, attrs ...slog.Attr) {
 
 // SetTrace records the request's trace context: every later log line of the
 // request carries its trace ID, and outbound calls (internal/jsoncall) carry
-// it on. Call it once, as the request arrives; a context without
-// WithRequestID ignores it.
+// it on. Call it as the request arrives, and again with its own span's
+// context if one is recorded (SetSpans); a context without WithRequestID
+// ignores it.
 func SetTrace(ctx context.Context, p tracectx.Parent) {
 	if s := state(ctx); s != nil {
 		s.mu.Lock()
@@ -114,6 +117,27 @@ func Trace(ctx context.Context) (tracectx.Parent, bool) {
 		return s.trace, s.hasTrace
 	}
 	return tracectx.Parent{}, false
+}
+
+// SetSpans records what records the request's spans, so the calls it makes
+// (internal/jsoncall) record theirs. A context without WithRequestID ignores
+// it.
+func SetSpans(ctx context.Context, s tracectx.Spans) {
+	if st := state(ctx); st != nil {
+		st.mu.Lock()
+		st.spans = s
+		st.mu.Unlock()
+	}
+}
+
+// Spans returns what SetSpans recorded, or nil.
+func Spans(ctx context.Context) tracectx.Spans {
+	if s := state(ctx); s != nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.spans
+	}
+	return nil
 }
 
 // WithRequestID returns a copy of ctx carrying id as the correlation ID.

@@ -89,7 +89,7 @@ updates this table, and so the architecture, in the same pull request.
 | `internal/envconfig` | plumbing | Environment variables and the settings every service shares | `internal/logx` |
 | `internal/profiling` | plumbing | pprof and runtime metrics on a private listener | `internal/logx` |
 | `internal/outage` | foundation | Whether a dependency on the request path is answering: one log line each way, the cost, and at most one try per retry interval during an outage | nothing |
-| `internal/tracectx` | foundation | W3C trace context: parses `traceparent`, starts traces, makes the header for outbound calls (ADR-0034) | nothing |
+| `internal/tracectx` | foundation | W3C trace context: parses `traceparent`, starts traces, makes the header for outbound calls (ADR-0034); and `Spans`, how a span recorder is told of each span | nothing |
 | `internal/httpmetrics` | foundation | Request metrics in Prometheus's text format | nothing |
 | `internal/logx` | foundation | The logger, field names, per-request log state, redaction | `internal/tracectx` |
 | `flagd` | foundation | The flag definitions, embedded as the fallback defaults | nothing |
@@ -254,5 +254,5 @@ What a production deployment would still want, and isn't here yet:
   ([Releasing](releasing.md#not-yet)).
 - **No spans recorded:** W3C trace context is carried through every call and each log line has
   its `trace_id` ([ADR-0034](adr/0034-w3c-trace-context-is-carried-through-without-a-tracing-sdk.md)),
-  but nothing records spans or their timings; that needs an OpenTelemetry SDK, a third-party
-  dependency (DEP-1).
+  but nothing records spans or their timings. The hooks are there (`tracectx.Spans`, given to
+  `httpx.WithSpans`); recording them needs an OpenTelemetry SDK, a third-party dependency (DEP-1).

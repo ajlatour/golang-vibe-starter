@@ -48,11 +48,14 @@ func TestChild(t *testing.T) {
 
 func TestNew(t *testing.T) {
 	a, b := tracectx.New(), tracectx.New()
-	if a.TraceID == b.TraceID || a.Flags != 0 {
-		t.Errorf("New = %s, %s: want distinct, unsampled traces", a, b)
+	if a.TraceID == b.TraceID || a.Flags != 0 || !a.IsRoot() {
+		t.Errorf("New = %s, %s: want distinct, unsampled traces, with no parent span", a, b)
 	}
-	if _, ok := tracectx.Parse(a.String()); !ok || !strings.HasPrefix(a.String(), "00-") {
-		t.Errorf("New's header %q doesn't parse", a)
+	// Its calls each get a span of their own.
+	if c := a.Child(); c.IsRoot() || c.TraceID != a.TraceID {
+		t.Errorf("New's Child = %s, want a span in its trace", c)
+	} else if _, ok := tracectx.Parse(c.String()); !ok || !strings.HasPrefix(c.String(), "00-") {
+		t.Errorf("New's Child's header %q doesn't parse", c)
 	}
 }
 
