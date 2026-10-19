@@ -162,3 +162,74 @@ func copyRepo(t *testing.T) string {
 	}
 	return dir
 }
+
+// TestRun adds a resource to a small repository shaped like the template:
+// the files it copies, and each list it adds to.
+func TestRun(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"internal/item/item.go":              "// Package item is an item.\npackage item\n\ntype Item struct{ Items []int `json:\"items\"` }\n",
+		"cmd/api/items.go":                   "package main\n\nvar itemsResource = 1\n",
+		"cmd/api/items_test.go":              "package main\n",
+		"wiremock/mappings/items-read.json":  `{"request": {"url": "/items"}}` + "\n",
+		"integration/features/items.feature": "Feature: Items\n",
+		"cmd/api/resources.go":               "package main\n\nvar resources = []resource{\n\titemsResource,\n}\n",
+		"cmd/api/resources_test.go":          "package main\n\nvar testResources = []testResource{\n\titemsTest,\n}\n",
+		"docs/openapi.json":                  "{\n  \"paths\": {\n    \"/items\": {},\n    \"/items/{id}\": {}\n  },\n  \"parameters\": {\n    \"ItemID\": {}\n  },\n  \"schemas\": {\n    \"Item\": {},\n    \"ItemInput\": {},\n    \"ItemList\": {}\n  }\n}\n",
+		"flagd/flags.json":                   "{\n  \"flags\": {\n    \"items-list-total\": {}\n  }\n}\n",
+		"integration/flagd/flags.json":       "{\n  \"flags\": {\n    \"items-list-total\": {}\n  }\n}\n",
+		"docs/feature-flags.md":              "| `items-list-total` | boolean |\n",
+		"perf/k6.js":                         "const mix = [\n  { weight: 40, route: 'GET /items', call: () => 1 },\n];\n",
+		"docs/architecture.md":               "| `internal/item` | feature |\n",
+		"docs/curl.md":                       "# Calling the API\n\n## Plain curl\n",
+	}
+	for path, content := range files {
+		p := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	var out strings.Builder
+	if err := run([]string{"-name", "order"}, dir, &out); err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]string{
+		"internal/order/order.go":             "package order\n\ntype Order struct{ Items []int `json:\"items\"` }",
+		"cmd/api/orders.go":                   "var ordersResource = 1",
+		"wiremock/mappings/orders-read.json":  `"/orders"`,
+		"integration/features/orders.feature": "Feature: Orders",
+		"cmd/api/resources.go":                "\titemsResource,\n\tordersResource,\n}",
+		"cmd/api/resources_test.go":           "\titemsTest,\n\tordersTest,\n}",
+		"docs/openapi.json":                   "\"/items/{id}\": {},\n    \"/orders\": {},\n    \"/orders/{id}\": {}",
+		"flagd/flags.json":                    `"orders-list-total": {}`,
+		"docs/feature-flags.md":               "`orders-list-total`",
+		"perf/k6.js":                          "route: 'GET /orders'",
+		"docs/architecture.md":                "| `internal/order` | feature |",
+		"docs/curl.md":                        "### Orders\n",
+	} {
+		b, err := os.ReadFile(filepath.Join(dir, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(b), want) {
+			t.Errorf("%s:\n%s\nwant it to contain %q", path, b, want)
+		}
+	}
+	if !strings.Contains(out.String(), "Added /orders") {
+		t.Errorf("output: %s", out.String())
+	}
+	if err := run([]string{"-name", "order"}, dir, io.Discard); err == nil {
+		t.Error("adding it twice: no error")
+	}
+}
