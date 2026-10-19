@@ -50,6 +50,7 @@ scripts/api GET /items                     # through the API (curl, with the hea
 scripts/api POST /items '{"name": "Sprocket"}'
 curl localhost:8081/items                  # WireMock directly
 make fault FAULT=unavailable               # make the upstream fail; make fault-reset to undo
+make tracing                               # the same, with Jaeger at localhost:16686 showing each request's trace
 make down
 ```
 

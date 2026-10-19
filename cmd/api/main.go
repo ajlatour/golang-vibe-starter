@@ -362,7 +362,7 @@ func newHandler(logger *slog.Logger, cfg handlerConfig, rs ...routes) http.Handl
 		mwOpts = append(mwOpts, httpx.WithRequestTimeout(cfg.RequestTimeout))
 	}
 	if cfg.Spans != nil {
-		mwOpts = append(mwOpts, httpx.WithSpans(cfg.Spans))
+		mwOpts = append(mwOpts, httpx.WithSpans(cfg.Spans, probes...))
 	}
 	// The order a request meets them, outermost first. It's a security
 	// property, so cmd/api/middleware_order_test.go holds each step to the

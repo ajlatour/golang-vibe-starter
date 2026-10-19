@@ -51,7 +51,7 @@ DOCS_OUT := bin/docs
 REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/spec" -w /spec $(shell sh scripts/image.sh redocly)
 
 .DEFAULT_GOAL := help
-.PHONY: help init init-check resource resource-check up down logs dev run test fmt fmt-check vet test-race cover check \
+.PHONY: help init init-check resource resource-check up down logs tracing dev run test fmt fmt-check vet test-race cover check \
 	integration integration-up integration-test integration-logs integration-down \
 	lint tools api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check docs-release godoc spec spec-lint \
 	api-compat smoke release-prepare release-tag perf perf-profile perf-soak bench bench-compare load-compare perf-compare perf-data perf-trends monitor
@@ -89,9 +89,9 @@ up: ## Start the API, WireMock and flagd in the background (rebuilds the API)
 	$(COMPOSE) up -d --build --wait
 	@echo "API: $(API_URL)   WireMock: $(WIREMOCK_URL)   flagd: $(FLAGD_URL)"
 
-down: ## Stop the local stack, monitoring included
+down: ## Stop the local stack, monitoring and tracing included
 	@# Naming the profiles stops their containers too, which a plain down leaves running.
-	$(COMPOSE) --profile monitoring --profile perf down
+	$(COMPOSE) --profile monitoring --profile perf --profile tracing down
 
 logs: ## Follow the stack's logs (Ctrl-C to stop)
 	$(COMPOSE) logs -f
@@ -103,6 +103,10 @@ DEV_API_KEYS := dev:write:1f0d1e72ef1251a015cbec8ae3ad6880002ffe8ad4de82f4f496db
 dev: ## Run the API with go run and an in-memory store, on :8080: nothing else to start, no Docker
 	STORE=memory API_KEYS=$(DEV_API_KEYS) LOG_FORMAT=text \
 		go run -ldflags "-X main.version=$(VERSION)" ./cmd/api
+
+tracing: ## Start the stack with Jaeger, the API sending it a span for every request and call
+	OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318 $(COMPOSE) --profile tracing up -d --build --wait
+	@echo "API: $(API_URL)   Jaeger: http://localhost:16686 (service: golang-vibe-starter). make down stops it all."
 
 run: ## Run the API with go run, against the WireMock and flagd containers
 	$(COMPOSE) up -d --wait mock flagd
