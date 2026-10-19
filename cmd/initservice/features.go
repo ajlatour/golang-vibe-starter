@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
 	"go/format"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -24,7 +28,10 @@ import (
 //     "/* feature:NAME */", and
 //     its end, the same with "end feature:NAME". Left out, the block goes;
 //     kept, only the marker lines do, so no service has them. A block marked
-//     feature:!NAME is the opposite: what's there instead without NAME.
+//     feature:!NAME is the opposite: what's there instead without NAME. Its
+//     lines are commented out in the template, with the marker's comment
+//     (# or //), so it does nothing there; a service without NAME gets them
+//     uncommented.
 //   - remove: files and directories that are the feature's alone.
 //   - lines: per file, lines that go with it, each found by a part of it: a
 //     table row, a list item (its continuation lines too), a menu entry.
@@ -163,7 +170,6 @@ var features = []feature{
 			"integration/flagd/flags.json": {`"request-validation-enforce": {`},
 		},
 		replace: map[string][][2]string{
-			"README.md": {{"With its real dependencies (an upstream, flagd, the validation service), stubbed in containers:", "With its real dependencies (an upstream and flagd), stubbed in containers:"}},
 			"docs/openapi.json": {
 				{" (a 403 for a read-only key, or one the validation service refused), and the code tells them apart.", ", and the code tells them apart."},
 				{"403 for a write with a read-only key, or a request the request-validation service refuses (where there is one: VALIDATOR_URL).", "403 for a write with a read-only key."},
@@ -178,6 +184,56 @@ var features = []feature{
 		gone:      []string{"VALIDATOR_", "internal/validator", "request-validation", "validation_refused", "validation_unavailable"},
 		// The perf report shows a dash for a service without the check.
 		except: []string{"perf/report"},
+	},
+	{
+		Name:    "flags",
+		Summary: "Feature flags from flagd, an OpenFeature sidecar, over OFREP: cached, with embedded defaults for when flagd can't answer, and the example list's total behind one. Without them, request validation always enforces.",
+		remove: []string{"internal/featureflag", "flagd", "docs/feature-flags.md", "internal/item/flags_test.go",
+			"integration/flagd", "integration/flags_test.go", "integration/features/flags.feature"},
+		lines: map[string][]string{
+			"README.md": {"| `FLAGS_URL` ", "| `FLAGS_TIMEOUT` ", "| `FLAGS_CACHE_TTL` ", "| `FLAGS_FALLBACK_FILE` ",
+				"- [Feature flags](docs/feature-flags.md)", "flagd/               Feature flag"},
+			"docs/site/build.sh":   {"|docs/feature-flags.md|"},
+			"docs/architecture.md": {"| `internal/featureflag` |", "| `flagd` |", "| REL-2 |"},
+			"docs/development.md":  {"| A feature flag |", "- `flags.feature`:", "- Flag steps edit the tests' copy"},
+			"docs/local-stack.md":  {"| `flagd` | 8016 |"},
+			"docs/logging.md": {"| `flag`  ", "| `default` ", "| `fallbacks` ", "| `cache_ttl` ", "| `flag service unavailable, using default flag values` |",
+				"| `flag service recovered` |", "| `flag evaluation failed, using default` |", "| `flag has no configured default, using false` |",
+				"| `using feature flags` |", "| `feature flags: no FLAGS_URL, using default values only` |"},
+			"docs/performance.md":                     {"  flagd   "},
+			"cmd/api/testdata/configs/production.env": {"FLAGS_"},
+			"cmd/api/testdata/configs/v0.5.env":       {"FLAGS_"},
+		},
+		replace: map[string][][2]string{
+			"README.md": {
+				{", and feature flags come from\n[flagd](https://flagd.dev).", "."},
+				{"           httpstore  │         stubs in wiremock/mappings\n                      │\n                      └─OFREP─▶ flagd :8016 (OpenFeature sidecar)\n                                flags in flagd/flags.json\n", "           httpstore            stubs in wiremock/mappings\n"},
+			},
+			"docs/architecture.md": {
+				{" Feature flags come from a flagd sidecar, when there is one (ADR-0005).", ""},
+				{"                              │ GET /readyz           │   │\n                              ▼                       │   └──OFREP──▶ flagd (optional)", "                              │ GET /readyz           │\n                              ▼                       │"},
+			},
+			"docs/development.md": {
+				{"the spec's paths and schemas, the feature flags (`flagd/flags.json`, the\nintegration stack's, and the table in [Feature flags](feature-flags.md)), the load test's", "the spec's paths and schemas, the load test's"},
+				{"the code does the job itself: flags over plain HTTP (OFREP) instead\n  of an OpenFeature SDK, a JSON API spec", "the code does the job itself: a JSON API spec"},
+				{"[adding a flag](feature-flags.md#adding-a-flag), and ", ""},
+				{", JSON logs, and flagd reading the tests' own copy of the flag\n  definitions, `integration/flagd/flags.json`, instead of `flagd/flags.json`.", ", and JSON logs."},
+				{"Scenarios run one at a time because WireMock faults\n  and flag values are shared.", "Scenarios run one at a time because WireMock faults\n  are shared."},
+				{"flagd being down (the unit tests cover the\n  fallback), and the correlation ID", "the correlation ID"},
+				{"`API_URL`, `WIREMOCK_URL` and `FLAGD_URL` point the suite elsewhere (defaults:\n  `localhost:8080`, `:8081` and `:8016`).", "`API_URL` and `WIREMOCK_URL` point the suite elsewhere (defaults:\n  `localhost:8080` and `:8081`)."},
+			},
+			"docs/logging.md": {
+				{"`response sent`, `flag service recovered`, `request rejected by the server`", "`response sent`, `request rejected by the server`"},
+				{"`using upstream`, `using feature flags`", "`using upstream`"},
+				{"the length of a flagd outage, ", ""},
+			},
+			"docs/openapi.json": {{" When the `items-list-total` feature flag is on, the response also carries `total`, the number of items on this page.", ""}},
+			"docs/adr/0009-integration-tests-run-gherkin-against-the-composed-stack.md": {{"Scenarios\nassume WireMock's stubs, and that flagd reloads its file, which `integration/flags_test.go`\nhandles with care.", "Scenarios\nassume WireMock's stubs."}},
+		},
+		members:   map[string][]string{"docs/openapi.json": {`"total": {`}},
+		deprecate: []string{"0005", "0029"},
+		gone:      []string{"flagd", "FLAGS_", "featureflag", "feature-flags.md", "items-list-total", "OFREP", "FLAGD_URL"},
+		except:    []string{"perf/report"},
 	},
 }
 
@@ -255,12 +311,13 @@ func applyMarkers(dir string, files []string, without []feature) error {
 			return fmt.Errorf("%s: %w", f, err)
 		}
 		if strings.HasSuffix(f, ".go") && s != string(b) {
-			// What's left may be aligned as it was with the block in.
-			formatted, err := format.Source([]byte(s))
+			// What's left may import what only the block used, and be
+			// aligned as it was with the block in.
+			formatted, err := tidyGo(s)
 			if err != nil {
 				return fmt.Errorf("%s: %w", f, err)
 			}
-			s = string(formatted)
+			s = formatted
 		}
 		if s != string(b) {
 			if err := writeFile(path, []byte(s)); err != nil {
@@ -271,10 +328,62 @@ func applyMarkers(dir string, files []string, without []feature) error {
 	return nil
 }
 
+// tidyGo removes the imports src no longer uses, and formats it.
+func tidyGo(src string) (string, error) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "", src, parser.ParseComments)
+	if err != nil {
+		return "", err
+	}
+	used := map[string]bool{}
+	ast.Inspect(f, func(n ast.Node) bool {
+		if sel, ok := n.(*ast.SelectorExpr); ok {
+			if id, ok := sel.X.(*ast.Ident); ok {
+				used[id.Name] = true
+			}
+		}
+		return true
+	})
+	// The lines of the imports nothing uses, deleted from the text, so
+	// what's left keeps its layout.
+	drop := map[int]bool{}
+	for _, imp := range f.Imports {
+		if name := importName(imp); name != "_" && name != "." && !used[name] {
+			for l := fset.Position(imp.Pos()).Line; l <= fset.Position(imp.End()).Line; l++ {
+				drop[l] = true
+			}
+		}
+	}
+	var b strings.Builder
+	for i, line := range strings.SplitAfter(src, "\n") {
+		if !drop[i+1] {
+			b.WriteString(line)
+		}
+	}
+	out, err := format.Source([]byte(b.String()))
+	return string(out), err
+}
+
+// importName is the name imp is used by: its alias, or the last element of
+// its path that isn't a major version (math/rand/v2 is rand).
+func importName(imp *ast.ImportSpec) string {
+	if imp.Name != nil {
+		return imp.Name.Name
+	}
+	p, _ := strconv.Unquote(imp.Path.Value)
+	parts := strings.Split(p, "/")
+	last := parts[len(parts)-1]
+	if len(parts) > 1 && regexp.MustCompile(`^v[0-9]+$`).MatchString(last) {
+		last = parts[len(parts)-2]
+	}
+	return strings.ReplaceAll(last, "-", "_")
+}
+
 func stripMarkers(s string, out map[string]bool) (string, error) {
 	var b strings.Builder
-	var open []string // the blocks we're in, innermost last
-	dropping := 0     // how many of them are being left out
+	var open []string      // the blocks we're in, innermost last
+	dropping := 0          // how many of them are being left out
+	var uncomment []string // the comments of the feature:! blocks being kept
 	sc := bufio.NewScanner(strings.NewReader(s))
 	sc.Buffer(make([]byte, 1<<20), 1<<20)
 	line := 0
@@ -287,11 +396,15 @@ func stripMarkers(s string, out map[string]bool) (string, error) {
 				open = append(open, name)
 				// feature:!NAME is the opposite: what replaces NAME without it.
 				left := out[name]
-				if n, ok := strings.CutPrefix(name, "!"); ok {
+				n, inverse := strings.CutPrefix(name, "!")
+				if inverse {
 					left = !out[n]
 				}
 				if left || dropping > 0 {
 					dropping++
+				}
+				if inverse {
+					uncomment = append(uncomment, commentOf(text))
 				}
 				continue
 			}
@@ -302,9 +415,18 @@ func stripMarkers(s string, out map[string]bool) (string, error) {
 			if dropping > 0 {
 				dropping--
 			}
+			if strings.HasPrefix(name, "!") {
+				uncomment = uncomment[:len(uncomment)-1]
+			}
 			continue
 		}
 		if dropping == 0 {
+			if len(uncomment) > 0 {
+				var ok bool
+				if text, ok = uncommented(text, uncomment[len(uncomment)-1]); !ok {
+					return "", fmt.Errorf("line %d: in a feature:! block but not commented out: %q", line, text)
+				}
+			}
 			b.WriteString(text)
 			b.WriteByte('\n')
 		}
@@ -319,6 +441,35 @@ func stripMarkers(s string, out map[string]bool) (string, error) {
 		return strings.TrimSuffix(b.String(), "\n"), nil
 	}
 	return b.String(), nil
+}
+
+// commentOf is the comment a marker line starts with: "#", "//", "<!--" or
+// "/*".
+func commentOf(marker string) string {
+	t := strings.TrimLeft(marker, " \t")
+	for _, c := range []string{"//", "#", "<!--", "/*"} {
+		if strings.HasPrefix(t, c) {
+			return c
+		}
+	}
+	return ""
+}
+
+// uncommented is line, a line of a feature:! block, without the comment
+// that keeps it inactive in the template: after its indentation, comment and
+// one space if there is one ("    # Given ..." is "    Given ..."; "#\t@echo"
+// in a Makefile is "\t@echo"). A blank line stays blank.
+func uncommented(line, comment string) (string, bool) {
+	if strings.TrimSpace(line) == "" {
+		return line, true
+	}
+	t := strings.TrimLeft(line, " \t")
+	indent := line[:len(line)-len(t)]
+	rest, ok := strings.CutPrefix(t, comment)
+	if !ok {
+		return "", false
+	}
+	return indent + strings.TrimPrefix(rest, " "), true
 }
 
 // leaveAll applies the rules of each feature left out. A rule for a file

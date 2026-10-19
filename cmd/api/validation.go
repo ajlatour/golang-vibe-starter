@@ -29,10 +29,10 @@ type validation struct {
 // so it's turned on, and back off, at runtime; without flags, it always
 // acts. Failing closed, the service can't serve without it, so readiness
 // tracks it, while enforcing.
-func newValidation(logger *slog.Logger, cfg config, f flags) validation {
+func newValidation(logger *slog.Logger, cfg config, d deps) validation {
 	var v validation
 	// feature:flags
-	v.enforce = func(ctx context.Context) bool { return f.Bool(ctx, validator.FlagEnforce) }
+	v.enforce = func(ctx context.Context) bool { return d.flags.Bool(ctx, validator.FlagEnforce) }
 	// end feature:flags
 	if cfg.ValidatorURL == nil {
 		logger.Warn("request validation is off: no VALIDATOR_URL; every request goes unchecked")

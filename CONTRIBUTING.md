@@ -11,7 +11,7 @@ Compose, and `make`. Nothing else: every other tool is built from the pinned `to
 ```sh
 make check          # format, vet, and the unit tests with the race detector: seconds, no Docker
 make lint           # static analysis, as CI runs it
-make up             # the API with its mock upstream and flagd, on http://localhost:8080
+make up             # the API with its stubbed dependencies, on http://localhost:8080
 make integration    # the end-to-end scenarios against that stack
 ```
 

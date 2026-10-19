@@ -115,6 +115,7 @@ func TestRunErrors(t *testing.T) {
 	}
 }
 
+// feature:flags
 func TestNewFlags(t *testing.T) {
 	logger := slog.New(slog.DiscardHandler)
 
@@ -170,6 +171,8 @@ func TestNewFlags(t *testing.T) {
 		}
 	})
 }
+
+// end feature:flags
 
 // TestProfiling checks the runtime profiles and metrics are served on
 // PPROF_ADDR when it's set, and never on the API's own port, set or not.

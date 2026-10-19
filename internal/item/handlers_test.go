@@ -181,11 +181,13 @@ func decodeBody(t *testing.T, rec *httptest.ResponseRecorder, v any) {
 	}
 }
 
+// feature:flags
 // fakeFlags is a Flags that returns fixed values by key (false if absent).
 type fakeFlags map[string]bool
 
 func (f fakeFlags) Bool(_ context.Context, key string) bool { return f[key] }
 
+// feature:flags
 func TestListTotalFlag(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -229,6 +231,9 @@ func TestListTotalFlag(t *testing.T) {
 		})
 	}
 }
+
+// end feature:flags
+// end feature:flags
 
 // TestPlainStoreErrorStaysA500 checks that only upstream failures are 5xx
 // other than 500: an unexpected error from anywhere else still is one.

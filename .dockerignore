@@ -5,7 +5,9 @@
 *
 !go.mod
 !go.sum
+# feature:flags
 !flagd/
+# end feature:flags
 !internal/
 !cmd/api/
 

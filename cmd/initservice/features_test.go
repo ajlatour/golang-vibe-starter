@@ -25,11 +25,14 @@ func TestStripMarkers(t *testing.T) {
 		}
 	}
 	// feature:!x is what's there instead without x.
-	inverse := "a\n# feature:x\nwith\n# end feature:x\n# feature:!x\nwithout\n# end feature:!x\n"
-	for out, want := range map[bool]string{false: "a\nwith\n", true: "a\nwithout\n"} {
+	inverse := "a\n# feature:x\nwith\n# end feature:x\n# feature:!x\n# without\n#\twith a tab\n\t# indented\n# end feature:!x\n"
+	for out, want := range map[bool]string{false: "a\nwith\n", true: "a\nwithout\n\twith a tab\n\tindented\n"} {
 		if got, err := stripMarkers(inverse, map[string]bool{"x": out}); err != nil || got != want {
 			t.Errorf("x left out %v: %q, %v; want %q", out, got, err, want)
 		}
+	}
+	if _, err := stripMarkers("# feature:!x\nnot commented\n# end feature:!x\n", map[string]bool{"x": true}); err == nil {
+		t.Error("a feature:! block's line that isn't commented out: no error")
 	}
 	for _, bad := range []string{"// feature:x\n", "// end feature:x\n", "// feature:x\n// end feature:y\n"} {
 		if _, err := stripMarkers(bad, nil); err == nil {
@@ -55,6 +58,18 @@ func TestRemoveMember(t *testing.T) {
 	}
 	if _, err := removeMember(in, `"nope": {`); err == nil {
 		t.Error("a member that isn't there: no error")
+	}
+}
+
+func TestTidyGo(t *testing.T) {
+	in := "package x\n\nimport (\n\t\"fmt\"\n\t\"math/rand/v2\"\n\t\"os\"\n\t_ \"embed\"\n\n\tstr \"strings\"\n)\n\nvar a = fmt.Sprint(rand.N(2))\nvar b = str.TrimSpace(\"\")\n"
+	got, err := tidyGo(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "package x\n\nimport (\n\t_ \"embed\"\n\t\"fmt\"\n\t\"math/rand/v2\"\n\n\tstr \"strings\"\n)\n\nvar a = fmt.Sprint(rand.N(2))\nvar b = str.TrimSpace(\"\")\n"
+	if got != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
 }
 

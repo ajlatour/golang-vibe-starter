@@ -16,15 +16,14 @@ change the address in `compose.yaml` for that run, and change it back.
 The API starts only after WireMock passes its healthcheck. The API image is distroless and static
 (about 16 MB). It has no shell or curl, so it checks its own health with `/api healthcheck`.
 
-To run the API outside Docker, with `go run`, against the WireMock and flagd containers:
+To run the API outside Docker, with `go run`, against the stack's other containers:
 
 ```sh
 make run
 ```
 
-That starts the two containers and runs
-`UPSTREAM_URL=http://localhost:8081 FLAGS_URL=http://localhost:8016 LOG_FORMAT=text go run ./cmd/api`,
-stamping the current commit as the version.
+That starts them and runs `go run ./cmd/api` with their URLs set (`UPSTREAM_URL` and the
+rest) and text logs, stamping the current commit as the version.
 
 `compose.integration.yaml` is an override for the integration tests; see
 [Development](development.md#integration-tests).

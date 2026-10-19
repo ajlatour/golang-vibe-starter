@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
+	// feature:flags
 	"github.com/ajlatour/golang-vibe-starter/internal/featureflag"
+	// end feature:flags
 	"github.com/ajlatour/golang-vibe-starter/internal/headerguard"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpmetrics"
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
@@ -96,10 +98,14 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	if cfg.Auth.Ring != nil {
 		logx.Go(logger, "API keys reload", func() { apikey.WatchFile(ctx, logger, cfg.KeysFile, cfg.Auth.Ring, cfg.KeysReload) })
 	}
+	var d deps
+	// feature:flags
 	evaluator, err := newFlags(logger, cfg)
 	if err != nil {
 		return err
 	}
+	d.flags = evaluator
+	// end feature:flags
 	var spans tracectx.Spans
 	// feature:tracing
 	spans, stopSpans, err := newSpans(ctx, logger, cfg, 5*time.Second)
@@ -113,7 +119,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		storeChecks []httpx.Check
 	)
 	for _, r := range resources {
-		rt, checks := r.build(logger, cfg, evaluator)
+		rt, checks := r.build(logger, cfg, d)
 		allRoutes = append(allRoutes, rt)
 		storeChecks = append(storeChecks, checks...)
 	}
@@ -127,7 +133,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	validatorCalls := newValidatorCalls()
 	served = append(served, validatorCalls.WritePrometheus)
 	// The validation service, if the API can't serve without it.
-	v := newValidation(logger, cfg, evaluator)
+	v := newValidation(logger, cfg, d)
 	checks = append(checks, v.checks...)
 	// end feature:validation
 	if err := serveProfiling(ctx, logger, cfg, served...); err != nil {
@@ -191,18 +197,31 @@ func logSettings(logger *slog.Logger, cfg config) {
 // makes its store, the one STORE chooses, and returns its routes on it and
 // the readiness checks of the store. resources lists them all.
 type resource struct {
+	// feature:flags
 	flagKeys []string
-	build    func(logger *slog.Logger, cfg config, f flags) (routes, []httpx.Check)
+	// end feature:flags
+	build func(logger *slog.Logger, cfg config, d deps) (routes, []httpx.Check)
+}
+
+// deps is what the API gives every resource to build with, beside its
+// store: what's shared, made once.
+type deps struct {
+	// feature:flags
+	flags flags
+	// end feature:flags
 }
 
 // routes adds a resource's routes to mux.
 type routes func(mux *http.ServeMux, logger *slog.Logger)
 
+// feature:flags
 // flags evaluates boolean feature flags, falling back to their defaults: what
 // every resource's handlers, and request validation, read flags with.
 type flags interface {
 	Bool(ctx context.Context, key string) bool
 }
+
+// end feature:flags
 
 // serveProfiling starts the profiling server, with metrics from extra, when
 // PPROF_ADDR is set. It listens here, so a bad address fails at startup.
@@ -218,6 +237,7 @@ func serveProfiling(ctx context.Context, logger *slog.Logger, cfg config, extra 
 	return nil
 }
 
+// feature:flags
 // newFlags returns the feature flag evaluator: flagd when FLAGS_URL is set,
 // otherwise the flag definitions' default values alone. Either way every flag
 // the application reads (each resource's, and validator.FlagKeys) must be
@@ -249,12 +269,14 @@ func newFlags(logger *slog.Logger, cfg config) (flags, error) {
 	return featureflag.NewOFREP(cfg.FlagsURL.String(), client, logger, defaults, featureflag.WithCache(cfg.FlagsCacheTTL)), nil
 }
 
+// end feature:flags
+
 // defaultIdleConns is how many idle connections newTransport keeps to a
 // service when nothing caps the requests in flight.
 const defaultIdleConns = 100
 
 // newTransport returns the connection pool for calls to one service (the
-// upstream, flagd). Go's default keeps just 2 idle connections per host, so
+// upstream, and the rest). Go's default keeps just 2 idle connections per host, so
 // under load most calls would open a new one, paying for the handshake and
 // leaving sockets in TIME_WAIT; this one keeps as many as there can be
 // requests in flight, each of which makes at most one call at a time. It

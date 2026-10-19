@@ -41,7 +41,11 @@ func itemTestRoutes(t *testing.T, env string, up upstream) (routes, []httpx.Chec
 		store := itemtest.NewMemStore()
 		at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 		store.Seed(item.Restore(seededID, "seeded", "first", at, at))
-		return itemRoutes(store, item.WithFlags(fixedFlags(env == "flagOn"))), nil
+		var opts []item.Option
+		// feature:flags
+		opts = append(opts, item.WithFlags(fixedFlags(env == "flagOn")))
+		// end feature:flags
+		return itemRoutes(store, opts...), nil
 	case "paged":
 		// Three items, so a page of two has a next.
 		store := itemtest.NewMemStore()
@@ -91,6 +95,7 @@ func itemScenarios(t *testing.T, s *spec) []scenario {
 					t.Errorf("total is present with the flag off, but the spec says it appears only when the flag is on: %s", body)
 				}
 			}},
+		// feature:flags
 		{name: "list with the flag on", env: "flagOn", method: "GET", path: "/items", op: "GET /items", want: 200,
 			check: func(t *testing.T, body []byte) {
 				var got struct {
@@ -102,6 +107,7 @@ func itemScenarios(t *testing.T, s *spec) []scenario {
 					t.Errorf("total = %v with %d items, want the count: %s", got.Total, len(got.Items), body)
 				}
 			}},
+		// end feature:flags
 
 		{name: "create", env: "ok", method: "POST", path: "/items", op: "POST /items", body: itemOKBody, want: 201},
 		{name: "create at the name length limit", env: "ok", method: "POST", path: "/items", op: "POST /items", body: `{"name":"` + name(maxName) + `"}`, want: 201},

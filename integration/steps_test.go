@@ -35,7 +35,9 @@ type world struct {
 	body       []byte
 	elapsed    time.Duration
 
+	// feature:flags
 	flagsChanged bool // a step edited the flags, so restore them afterwards
+	// end feature:flags
 }
 
 func initScenario(sc *godog.ScenarioContext, s stack) {
@@ -46,6 +48,7 @@ func initScenario(sc *godog.ScenarioContext, s stack) {
 	sc.Before(func(ctx context.Context, _ *godog.Scenario) (context.Context, error) {
 		return ctx, w.resetUpstream()
 	})
+	// feature:flags
 	// Put back any flag a scenario switched, so the next one starts from the
 	// shipped defaults.
 	// Godog already reports a failed step; returning its error from here
@@ -57,10 +60,13 @@ func initScenario(sc *godog.ScenarioContext, s stack) {
 		}
 		return ctx, resetFlags(w.stack)
 	})
+	// end feature:flags
 
 	sc.Step(`^the upstream fault "([^"]+)" is active$`, w.activateFault)
 	sc.Step(`^requests are checked again within (\d+(?:\.\d+)?) seconds? of the fault ending$`, w.recoverValidation)
+	// feature:flags
 	sc.Step(`^the feature flag "([^"]+)" is (on|off)$`, w.setFlag)
+	// end feature:flags
 
 	sc.Step(`^I send the correlation ID "([^"]*)"$`, w.sendCorrelationID)
 	sc.Step(`^I send a correlation ID of (\d+) characters$`, w.sendCorrelationIDOfLength)
@@ -132,10 +138,13 @@ func (w *world) activateFault(name string) error {
 	return nil
 }
 
+// feature:flags
 func (w *world) setFlag(key, state string) error {
 	w.flagsChanged = true
 	return setFlag(w.stack, key, state == "on")
 }
+
+// end feature:flags
 
 // --- requests ----------------------------------------------------------------
 

@@ -1,8 +1,10 @@
-# Local development stack: the API, WireMock as its mock upstream, and flagd
-# as the OpenFeature sidecar.
+# Local development stack: the API, and the services it depends on, stubbed:
+# WireMock as its mock upstream, and the rest.
 #   docker compose up --build
 #   API: http://localhost:8080   WireMock: http://localhost:8081 (admin: /__admin)
+# feature:flags
 #   flagd (OpenFeature): http://localhost:8016 (OFREP)
+# end feature:flags
 
 name: golang-vibe-starter
 
@@ -34,8 +36,10 @@ services:
     environment:
       # These two wire the API to the containers below, and always apply.
       UPSTREAM_URL: http://mock:8080
+      # feature:flags
       # flagd's OFREP endpoint. Remove this to run with every flag at its default.
       FLAGS_URL: http://flagd:8016
+      # end feature:flags
       # feature:validation
       # The request-validation service, stubbed by WireMock
       # (wiremock/mappings/validator.json): it allows every request but
@@ -66,10 +70,12 @@ services:
     depends_on:
       mock:
         condition: service_healthy
+      # feature:flags
       # Started, not healthy: flagd is optional. If it's down, flag evaluation
       # falls back to defaults rather than failing requests.
       flagd:
         condition: service_started
+      # end feature:flags
     healthcheck:
       test: ["CMD", "/api", "healthcheck"]
       interval: 10s
@@ -120,6 +126,7 @@ services:
       start_interval: 1s
     stop_grace_period: 15s
 
+  # feature:flags
   flagd:
     # OpenFeature sidecar. The API evaluates flags over OFREP (HTTP, port
     # 8016); no OpenFeature SDK or gRPC dependency is needed.
@@ -138,6 +145,7 @@ services:
       - --uri
       - file:/etc/flagd/flags.json
     stop_grace_period: 5s
+  # end feature:flags
 
   # feature:perf
   k6:

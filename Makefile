@@ -18,7 +18,9 @@ export VERSION
 
 API_URL      ?= http://localhost:8080
 WIREMOCK_URL ?= http://localhost:8081
+# feature:flags
 FLAGD_URL    ?= http://localhost:8016
+# end feature:flags
 PPROF_URL    ?= http://localhost:6061
 
 # The Go tools: static analysis (ADR-0026), govulncheck and benchstat, pinned
@@ -117,9 +119,14 @@ resource-check: ## Run make resource on a copy of this repository, then vet and 
 
 .PHONY: up down logs dev run fault fault-reset
 
-up: ## Start the API, WireMock and flagd in the background (rebuilds the API)
+up: ## Start the API and its stubbed dependencies in the background (rebuilds the API)
 	$(COMPOSE) up -d --build --wait
+# feature:flags
 	@echo "API: $(API_URL)   WireMock: $(WIREMOCK_URL)   flagd: $(FLAGD_URL)"
+# end feature:flags
+# feature:!flags
+#	@echo "API: $(API_URL)   WireMock: $(WIREMOCK_URL)"
+# end feature:!flags
 
 down: ## Stop the local stack, every profile's containers included
 	@# Naming the profiles stops their containers too, which a plain down leaves running.
@@ -144,10 +151,17 @@ tracing: ## Start the stack with Jaeger, the API sending it a span for every req
 	@echo "API: $(API_URL)   Jaeger: http://localhost:16686 (service: golang-vibe-starter). make down stops it all."
 # end feature:tracing
 
-run: ## Run the API with go run, against the WireMock and flagd containers
+run: ## Run the API with go run, against the stack's other containers
+# feature:flags
 	$(COMPOSE) up -d --wait mock flagd
 	UPSTREAM_URL=$(WIREMOCK_URL) FLAGS_URL=$(FLAGD_URL) LOG_FORMAT=text \
 		go run -ldflags "-X main.version=$(VERSION)" ./cmd/api
+# end feature:flags
+# feature:!flags
+#	$(COMPOSE) up -d --wait mock
+#	UPSTREAM_URL=$(WIREMOCK_URL) LOG_FORMAT=text \
+#		go run -ldflags "-X main.version=$(VERSION)" ./cmd/api
+# end feature:!flags
 
 fault: ## Switch on a WireMock fault: make fault FAULT=unavailable
 	@if [ -z "$(FAULT)" ] || [ ! -f "wiremock/faults/$(FAULT).json" ]; then \
@@ -394,7 +408,7 @@ release-tag: ## Tag VERSION on main and push the tag: make release-tag VERSION=v
 	@echo "Pushed $(VERSION): the Release workflow builds, publishes and announces it."
 # end feature:release
 # feature:!release
-	@echo "Pushed $(VERSION)."
+#	@echo "Pushed $(VERSION)."
 # end feature:!release
 
 ##@ Documentation (rendered in Docker; nothing to install)

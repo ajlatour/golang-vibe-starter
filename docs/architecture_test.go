@@ -68,7 +68,10 @@ var adapters = map[string][]string{
 func TestDependenciesStayInAdapters(t *testing.T) {
 	fset := token.NewFileSet()
 	used := map[string]bool{}
-	roots := []string{"../cmd", "../internal", "../flagd", "../docs"}
+	roots := []string{"../cmd", "../internal", "../docs"}
+	// feature:flags
+	roots = append(roots, "../flagd")
+	// end feature:flags
 	// feature:perf
 	roots = append(roots, "../monitoring", "../perf")
 	// end feature:perf
@@ -164,13 +167,17 @@ func packageTable(t *testing.T) map[string]rule {
 	return rules
 }
 
-// codeImports returns, for every package under cmd/, internal/ and flagd/,
+// codeImports returns, for every package under cmd/, internal/ and the rest,
 // the module's packages its non-test files import.
 func codeImports(t *testing.T) map[string][]string {
 	t.Helper()
 	out := map[string][]string{}
 	fset := token.NewFileSet()
-	for _, root := range []string{"../cmd", "../internal", "../flagd"} {
+	roots := []string{"../cmd", "../internal"}
+	// feature:flags
+	roots = append(roots, "../flagd")
+	// end feature:flags
+	for _, root := range roots {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err

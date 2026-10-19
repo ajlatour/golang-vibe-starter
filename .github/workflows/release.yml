@@ -97,12 +97,12 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       # end feature:perf
       # feature:!perf
-      # The docs site as of this release, checked like CI checks the docs.
-      - name: Build the documentation
-        run: |
-          make docs-check
-          tar -czf "$RUNNER_TEMP/docs-$VERSION.tar.gz" -C bin docs
-          echo "Documentation: $(du -h "$RUNNER_TEMP/docs-$VERSION.tar.gz" | cut -f1)." >> "$GITHUB_STEP_SUMMARY"
+      # # The docs site as of this release, checked like CI checks the docs.
+      # - name: Build the documentation
+        # run: |
+          # make docs-check
+          # tar -czf "$RUNNER_TEMP/docs-$VERSION.tar.gz" -C bin docs
+          # echo "Documentation: $(du -h "$RUNNER_TEMP/docs-$VERSION.tar.gz" | cut -f1)." >> "$GITHUB_STEP_SUMMARY"
       # end feature:!perf
 
       # To run the arm64 image on this amd64 runner, for its smoke test.
@@ -164,8 +164,8 @@ jobs:
             echo "IMAGE_ARM64=$image@$arm64"
           } >> "$GITHUB_ENV"
 
-      # The image as it will ship, run on each platform against WireMock and
-      # flagd: it starts, says it's this version, serves the basics, and
+      # The image as it will ship, run on each platform against the stack's
+      # stubs: it starts, says it's this version, serves the basics, and
       # shuts down cleanly (scripts/smoke-image.sh). Nothing is tagged
       # unless both pass.
       - name: Smoke-test the image, linux/amd64

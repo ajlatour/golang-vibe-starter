@@ -28,7 +28,9 @@ var Contract = map[string]Message{
 	// Lifecycle: logged outside any request, so no request_id.
 	"using upstream": {[]string{"INFO"}, []string{"url", "timeout", "retries"}},
 	"using the in-memory store: for development only; items are lost when the service stops": {[]string{"WARN"}, nil},
+	// feature:flags
 	"using feature flags": {[]string{"INFO"}, []string{"url", "timeout", "cache_ttl"}},
+	// end feature:flags
 	// feature:tracing
 	"using tracing":  {[]string{"INFO"}, []string{"url"}},
 	"tracing failed": {[]string{"WARN"}, []string{"error"}},
@@ -36,8 +38,10 @@ var Contract = map[string]Message{
 	"using header guard": {[]string{"INFO"}, []string{"mode", "max_headers", "max_header_bytes", "max_total_bytes"}},
 	"using API keys":     {[]string{"INFO"}, []string{"api_keys", "reads"}},
 	"using limits":       {[]string{"INFO"}, []string{"max_in_flight", "rate_limit", "rate_burst"}},
-	"authentication is off: every request is allowed":        {[]string{"WARN"}, nil},
+	"authentication is off: every request is allowed": {[]string{"WARN"}, nil},
+	// feature:flags
 	"feature flags: no FLAGS_URL, using default values only": {[]string{"INFO"}, nil},
+	// end feature:flags
 	"server started": {[]string{"INFO"}, []string{"addr"}},
 	"shutting down":  {[]string{"INFO"}, []string{"timeout"}},
 	"shutdown timed out; stopping requests in flight": {[]string{"WARN"}, []string{"in_flight"}},
@@ -91,17 +95,22 @@ var Contract = map[string]Message{
 	// end feature:validation
 
 	// Feature flags.
+	// feature:flags
 	"flag service unavailable, using default flag values": {[]string{"WARN"}, []string{"flag", "error"}},
 	"flag service recovered":                              {[]string{"INFO"}, []string{"fallbacks", "duration_ms"}},
 	"flag evaluation failed, using default":               {[]string{"WARN", "DEBUG"}, []string{"flag", "default", "error"}},
 	"flag has no configured default, using false":         {[]string{"ERROR"}, []string{"flag"}},
+	// end feature:flags
 }
 
 // OutsideRequests lists the messages that are logged outside any request, and
 // so legitimately have no request_id. Every other message has one.
 var OutsideRequests = []string{
-	"using upstream", "using the in-memory store: for development only; items are lost when the service stops", "using feature flags", "using header guard", "using API keys", "using limits", "API keys reloaded", "API keys not reloaded",
-	"authentication is off: every request is allowed", "feature flags: no FLAGS_URL, using default values only",
+	"using upstream", "using the in-memory store: for development only; items are lost when the service stops", "using header guard", "using API keys", "using limits", "API keys reloaded", "API keys not reloaded",
+	"authentication is off: every request is allowed",
+	// feature:flags
+	"using feature flags", "feature flags: no FLAGS_URL, using default values only",
+	// end feature:flags
 	// feature:tracing
 	"using tracing", "tracing failed",
 	// end feature:tracing

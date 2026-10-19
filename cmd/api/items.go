@@ -12,10 +12,16 @@ import (
 
 // itemsResource is /items (internal/item).
 var itemsResource = resource{
+	// feature:flags
 	flagKeys: item.FlagKeys(),
-	build: func(logger *slog.Logger, cfg config, f flags) (routes, []httpx.Check) {
+	// end feature:flags
+	build: func(logger *slog.Logger, cfg config, d deps) (routes, []httpx.Check) {
 		store, checks := newItemStore(logger, cfg)
-		return itemRoutes(store, item.WithFlags(f)), checks
+		var opts []item.Option
+		// feature:flags
+		opts = append(opts, item.WithFlags(d.flags))
+		// end feature:flags
+		return itemRoutes(store, opts...), checks
 	},
 }
 

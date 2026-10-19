@@ -57,21 +57,25 @@ func TestLogContract(t *testing.T) {
 	upstreamURL, _ := url.Parse(upstream.URL)
 	upstreamURL.User = url.UserPassword("upuser", "UPPASS")
 
+	// feature:flags
 	// flagd: a dead address, so flag evaluation falls back and logs.
 	flagsURL, _ := url.Parse(nettest.DeadURL())
 	flagsURL.User = url.UserPassword("flaguser", "FLAGPASS")
+	// end feature:flags
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	addr, out, errc := startApp(t, ctx, map[string]string{
-		"ADDR":          "127.0.0.1:0",
-		"UPSTREAM_URL":  upstreamURL.String(),
-		"FLAGS_URL":     flagsURL.String(),
-		"FLAGS_TIMEOUT": "200ms",
-		"LOG_LEVEL":     "debug", // so debug lines are checked too
-		"LOG_FORMAT":    "json",
-		"API_KEYS":      "tests:write:" + apikey.HashHex(testWriteKey) + ",reader:read:" + apikey.HashHex(testReadKey),
-	})
+	env := map[string]string{
+		"ADDR":         "127.0.0.1:0",
+		"UPSTREAM_URL": upstreamURL.String(),
+		"LOG_LEVEL":    "debug", // so debug lines are checked too
+		"LOG_FORMAT":   "json",
+		"API_KEYS":     "tests:write:" + apikey.HashHex(testWriteKey) + ",reader:read:" + apikey.HashHex(testReadKey),
+	}
+	// feature:flags
+	env["FLAGS_URL"], env["FLAGS_TIMEOUT"] = flagsURL.String(), "200ms"
+	// end feature:flags
+	addr, out, errc := startApp(t, ctx, env)
 	base := "http://" + addr
 
 	do := func(method, path, body string, hdr map[string]string) *http.Response {
@@ -198,8 +202,10 @@ func TestLogContract(t *testing.T) {
 	}
 	all := logtest.Msgs(recs)
 	for _, want := range []string{
+		// feature:flags
 		"flag service unavailable, using default flag values",
 		"flag evaluation failed, using default",
+		// end feature:flags
 		"upstream request sent",
 		"upstream response received",
 		"request headers rejected",

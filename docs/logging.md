@@ -195,11 +195,14 @@ request's `method`, `path` and `status` never share a name with these, so the tw
 confused. A client disconnecting mid-call is logged at `DEBUG` (`upstream request cancelled`), not
 as an upstream failure.
 
+<!-- feature:flags -->
 **Feature flags** log without flooding: when flagd stops answering, the API logs one `WARN`
 (`flag service unavailable, using default flag values`) and keeps serving defaults, then one
 `INFO` (`flag service recovered`, with `fallbacks`, the number of evaluations served from
 defaults, and `duration_ms`, how long the outage lasted) when it's back. A problem with a single
 flag logs one `WARN` until it evaluates again. Per-evaluation detail is `DEBUG`.
+
+<!-- end feature:flags -->
 
 ## Memory over time
 
@@ -227,8 +230,8 @@ What is never logged:
 
 - Request or response bodies. The one exception is the upstream's own `error` message, quoted in
   an upstream failure and capped at 200 characters.
-- Query strings. `path` is the URL path only, and the base URLs in config (`UPSTREAM_URL`,
-  `FLAGS_URL`) are rejected at startup if they contain a query string or fragment.
+- Query strings. `path` is the URL path only, and the base URLs in config (`UPSTREAM_URL` and
+  the other services') are rejected at startup if they contain a query string or fragment.
 - Headers, except the correlation ID, which is validated first (see above). `Authorization`,
   `Cookie` and everything else are never read by the logging code.
 - URL credentials. A URL goes into a log only through `(*url.URL).Redacted()`, and any error that
@@ -239,7 +242,7 @@ What is logged that may be personal data: `client_ip`, the address each request 
 `api_key`, a key's configured name. An IP address is personal data in many jurisdictions;
 `LOG_CLIENT_IP=off` leaves it out, where a deployment's rules say to.
 
-Bounds: `path` and `upstream` paths are cut at 512 characters, and the upstream and flagd error
+Bounds: `path` and `upstream` paths are cut at 512 characters, and other services' error
 messages at 200, with a trailing `…`. Use `logx.Truncate` for any other logged value that comes
 from outside the service.
 

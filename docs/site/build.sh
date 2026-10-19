@@ -108,8 +108,8 @@ history_md="$out/.history.md"
 		echo "the latest ([Performance](docs/performance.md#trends))."
 # end feature:release
 # feature:!release
-		echo "This build has no performance history: \`make perf-trends\` charts the latest"
-		echo "([Performance](docs/performance.md#trends))."
+		# echo "This build has no performance history: \`make perf-trends\` charts the latest"
+		# echo "([Performance](docs/performance.md#trends))."
 # end feature:!release
 	fi
 } > "$history_md"
