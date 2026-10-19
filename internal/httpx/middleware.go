@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
@@ -33,6 +34,7 @@ type MiddlewareOption func(*middlewareOptions)
 type middlewareOptions struct {
 	metrics  Metrics
 	spans    tracectx.Spans
+	noSpans  []string
 	clientIP bool
 	timeout  time.Duration
 }
@@ -52,9 +54,11 @@ func WithMetrics(m Metrics) MiddlewareOption {
 
 // WithSpans records every request's span in s, and the spans of the calls
 // it makes (internal/jsoncall): s is told of each as it starts and ends,
-// with its trace context, method, status and route.
-func WithSpans(s tracectx.Spans) MiddlewareOption {
-	return func(o *middlewareOptions) { o.spans = s }
+// with its trace context, method, status and route. Requests for the paths
+// in exempt record none, so the probes, asked every few seconds, don't fill
+// the traces.
+func WithSpans(s tracectx.Spans, exempt ...string) MiddlewareOption {
+	return func(o *middlewareOptions) { o.spans, o.noSpans = s, exempt }
 }
 
 // WithClientIP adds client_ip, the address the request's connection came
@@ -172,7 +176,7 @@ func logRequests(logger *slog.Logger, o middlewareOptions, next http.Handler) ht
 		logger.LogAttrs(r.Context(), receivedLevel(r), "request received", received[:n]...)
 
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		if o.spans != nil {
+		if o.spans != nil && !slices.Contains(o.noSpans, r.URL.Path) {
 			end := startSpan(r, o.spans)
 			// Deferred, as the metrics are, for a request that's aborted.
 			defer func() { end(tracectx.End{Status: rec.status, Route: route(r)}) }()

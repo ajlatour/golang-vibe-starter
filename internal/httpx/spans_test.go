@@ -90,6 +90,18 @@ func TestSpans(t *testing.T) {
 	}
 }
 
+// TestSpansExempt checks a request for an exempt path records no span.
+func TestSpansExempt(t *testing.T) {
+	logger := slog.New(logx.NewContextHandler(slog.NewJSONHandler(io.Discard, nil)))
+	spans := &recordedSpans{}
+	h := httpx.Middleware(logger, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), httpx.WithSpans(spans, "/healthz"))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/healthz", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/other", nil))
+	if len(spans.starts) != 1 || len(spans.ends) != 1 {
+		t.Errorf("started %d spans and ended %d, want 1 each: none for /healthz", len(spans.starts), len(spans.ends))
+	}
+}
+
 // TestNoSpans checks that without WithSpans nothing records a request's
 // span, and the calls it makes have no spans to record theirs in.
 func TestNoSpans(t *testing.T) {

@@ -9,6 +9,7 @@ package, which a service that will never trace can delete ([removing it](#removi
 
 - [Turning it on](#turning-it-on)
 - [What's recorded](#whats-recorded)
+- [Seeing traces locally](#seeing-traces-locally)
 - [Traces and logs](#traces-and-logs)
 - [What it costs](#what-it-costs)
 - [Removing it](#removing-it)
@@ -45,7 +46,28 @@ exported is dropped, and logged as `tracing failed`; a request never waits on th
   4xx or 5xx is an error. The call sends its span's `traceparent` on, so the service it calls
   continues the trace.
 
-Readiness checks and flagd's background refreshes are outside any request, and record none.
+The probes, `/healthz` and `/readyz`, record none, since they're asked every few seconds; nor do
+readiness checks and flagd's background refreshes, which are outside any request.
+
+## Seeing traces locally
+
+```sh
+make tracing                                # the stack, with Jaeger, the API sending it spans
+scripts/api GET /items/widget
+open http://localhost:16686                 # Jaeger: search for the service golang-vibe-starter
+make down
+```
+
+Each request is a trace: the API's span for it, and inside it a span for each call, here to
+WireMock (the upstream and the request-validation service) and flagd. `make tracing` is `make up`
+with Jaeger, and `OTEL_EXPORTER_OTLP_ENDPOINT` set for the API; Jaeger keeps traces in memory
+until it stops. For an API run with `go run` (`make dev`, `make run`), start Jaeger alone and point
+the API at it:
+
+```sh
+docker compose --profile tracing up -d jaeger
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 make dev
+```
 
 ## Traces and logs
 
