@@ -24,9 +24,8 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          # The service has no dependencies, so the integration and perf
-          # report modules' go.sum files are the ones to key the cache on.
           cache-dependency-path: |
+            go.sum
             integration/go.sum
             perf/report/go.sum
 
@@ -58,7 +57,9 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: integration/go.mod
-          cache-dependency-path: integration/go.sum
+          cache-dependency-path: |
+            go.sum
+            integration/go.sum
 
       # Go's build cache from earlier runs, so the image build recompiles only
       # what changed (scripts/build-api-image.sh). Keyed on the Dockerfile
@@ -101,7 +102,9 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache-dependency-path: integration/go.sum
+          cache-dependency-path: |
+            go.sum
+            integration/go.sum
 
       - name: Build and check the docs site
         run: make docs-check
@@ -127,6 +130,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: |
+            go.sum
             go.mod
             integration/go.sum
             perf/report/go.sum
@@ -151,6 +155,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: |
+            go.sum
             integration/go.sum
             perf/report/go.sum
             tools/go.sum
@@ -170,7 +175,9 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache-dependency-path: integration/go.sum
+          cache-dependency-path: |
+            go.sum
+            integration/go.sum
 
       - name: Fuzz
         run: make fuzz FUZZTIME=10s
@@ -195,6 +202,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: |
+            go.sum
             integration/go.sum
             perf/report/go.sum
             tools/go.sum

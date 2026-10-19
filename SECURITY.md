@@ -19,5 +19,5 @@ Fixes go into the latest release only: upgrade to it to get them. Releases are l
 each with the test that verifies it, and the [standards](docs/standards.md#security) the rules every
 change follows. In short: API keys stored as hashes, every route but the probes authenticated and
 rate limited, untrusted input bounded and fuzzed, static analysis and known-vulnerability checks
-on every change, no third-party dependencies in the service, and a distroless image running as a
+on every change, no third-party dependencies in the service but the optional OpenTelemetry SDK, in one package, and a distroless image running as a
 non-root user.

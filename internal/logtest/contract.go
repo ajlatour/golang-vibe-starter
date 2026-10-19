@@ -29,6 +29,8 @@ var Contract = map[string]Message{
 	"using upstream": {[]string{"INFO"}, []string{"url", "timeout", "retries"}},
 	"using the in-memory store: for development only; items are lost when the service stops": {[]string{"WARN"}, nil},
 	"using feature flags": {[]string{"INFO"}, []string{"url", "timeout", "cache_ttl"}},
+	"using tracing":       {[]string{"INFO"}, []string{"url"}},
+	"tracing failed":      {[]string{"WARN"}, []string{"error"}},
 	"using header guard":  {[]string{"INFO"}, []string{"mode", "max_headers", "max_header_bytes", "max_total_bytes"}},
 	"using API keys":      {[]string{"INFO"}, []string{"api_keys", "reads"}},
 	"using limits":        {[]string{"INFO"}, []string{"max_in_flight", "rate_limit", "rate_burst"}},
@@ -96,6 +98,7 @@ var Contract = map[string]Message{
 var OutsideRequests = []string{
 	"using upstream", "using the in-memory store: for development only; items are lost when the service stops", "using feature flags", "using header guard", "using API keys", "using limits", "API keys reloaded", "API keys not reloaded",
 	"authentication is off: every request is allowed", "feature flags: no FLAGS_URL, using default values only",
+	"using tracing", "tracing failed",
 	"server started", "shutting down", "server stopped", "not ready", "ready again", "profiling server started", "profiling server failed",
 	"profiling server is reachable beyond this machine; keep its port private",
 	"using runtime", "runtime stats", "service failed", "panic in background task",

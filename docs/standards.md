@@ -19,9 +19,10 @@ change something.
 
 ## Principles
 
-1. **The standard library first.** The service has no third-party dependencies
-   ([ADR-0002](adr/0002-the-service-uses-the-standard-library-only.md)). A dependency is a
-   decision, recorded in an ADR, not a convenience.
+1. **The standard library first.** The service has no third-party dependencies but in adapters
+   allowed one, so far the OpenTelemetry SDK
+   ([ADR-0046](adr/0046-the-opentelemetry-sdk-is-allowed-in-one-optional-adapter.md)). A
+   dependency is a decision, recorded in an ADR, not a convenience.
 2. **What can be checked is checked.** A rule a test or a linter can enforce is enforced, so
    review is for what only people can judge. Every rule below names its check.
 3. **Documentation changes with the code.** Descriptions of the code (the API spec, the log
@@ -234,7 +235,7 @@ change something.
   `item.Name`), bounded in size, and fuzzed. *Checked by:* the fuzz tests, in CI's fuzz job.
 - A static analysis finding is fixed, or accepted on its line with the reason. *Checked by:*
   `make lint` (gosec among it).
-- The supply chain is pinned: the service has no dependencies, tools run at fixed versions or
+- The supply chain is pinned: the service's few dependencies are in `go.sum`, tools run at fixed versions or
   image digests, actions at commit SHAs, and Dependabot proposes updates weekly. Known
   vulnerabilities fail the build. *Checked by:* `docs/pins_test.go`, `make vuln`.
 - The image is distroless and runs as a non-root user; the local stack listens on loopback only.
@@ -287,8 +288,10 @@ change something.
 
 ## Dependencies and tools
 
-- The service **must** import the standard library only. A dependency needs an ADR that
-  supersedes [ADR-0002](adr/0002-the-service-uses-the-standard-library-only.md) first. *Checked
+- The service **must** import the standard library only, but in the adapters allowed a
+  dependency, each in a package of its own, behind a standard-library interface, and optional:
+  the service runs without it. A new one needs an ADR, and a line in the adapters list
+  ([ADR-0046](adr/0046-the-opentelemetry-sdk-is-allowed-in-one-optional-adapter.md)). *Checked
   by:* `docs/architecture_test.go`.
 - Code that needs a dependency to test or build the service lives in a module of its own
   (`integration/`, `perf/report/`).

@@ -78,6 +78,7 @@ updates this table, and so the architecture, in the same pull request.
 | `cmd/apidiff` | tool | Compares two versions of the OpenAPI spec: what's breaking for clients, what's additive, and the version bump that needs | none |
 | `internal/item` | feature | The item model (value objects that enforce its rules), the `Store` interface, the `/items` handlers and the API's JSON shapes (ADR-0030) | `internal/httpx` |
 | `internal/item/httpstore` | adapter | The `Store` on the upstream, over HTTP, translating the upstream's JSON and classifying its failures (ADR-0031) | `internal/item`, `internal/jsoncall`, `internal/logx` |
+| `internal/telemetry` | adapter | The OpenTelemetry SDK: records the service's spans (`tracectx.Spans`) and exports them over OTLP/HTTP. The one package that imports third-party code (ADR-0046) | `internal/tracectx` |
 | `internal/item/memstore` | adapter | The `Store` in memory, bounded: `STORE=memory` (`make dev`), and tests' stand-in store and upstream | `internal/item` |
 | `internal/featureflag` | adapter | OFREP client for flagd, flag declarations, embedded defaults | `flagd`, `internal/jsoncall`, `internal/logx`, `internal/outage` |
 | `internal/headerguard` | protection | Screens request headers | `internal/httpx`, `internal/logx` |
@@ -159,7 +160,7 @@ says so.
 
 | ID | Requirement | Why | Verified by |
 | -- | ----------- | --- | ----------- |
-| DEP-1 | The service depends on the Go standard library only. | No dependency to audit, update or be compromised through (ADR-0002) | `docs/architecture_test.go` |
+| DEP-1 | The service depends on the Go standard library only, but for the adapters allowed a third-party module: `internal/telemetry`, the OpenTelemetry SDK. Each is optional and removable: the service runs, and builds, without it. | Little to audit, update or be compromised through, and nothing on the request path but the standard library (ADR-0002, ADR-0046) | `docs/architecture_test.go` |
 | DEP-2 | Tooling that needs a dependency lives in a module of its own, which the service never imports. | Keeps DEP-1 while allowing Godog and benchstat's statistics | `docs/architecture_test.go` |
 | DEP-3 | Packages import only what the package table allows; test support only from tests. | The layering stays as designed | `docs/architecture_test.go` |
 | DEP-4 | Developer tooling needs only Go and Docker, besides the bash and curl every Mac and Linux machine has: no Node.js, nothing else to install. | Least friction for contributors (ADR-0011) | Review: `Makefile` |
@@ -252,7 +253,3 @@ What a production deployment would still want, and isn't here yet:
 - **No user identities:** clients are API keys, not people or OIDC tokens.
 - **Images aren't signed:** releases carry provenance, but no signature
   ([Releasing](releasing.md#not-yet)).
-- **No spans recorded:** W3C trace context is carried through every call and each log line has
-  its `trace_id` ([ADR-0034](adr/0034-w3c-trace-context-is-carried-through-without-a-tracing-sdk.md)),
-  but nothing records spans or their timings. The hooks are there (`tracectx.Spans`, given to
-  `httpx.WithSpans`); recording them needs an OpenTelemetry SDK, a third-party dependency (DEP-1).

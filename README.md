@@ -2,7 +2,8 @@
 
 [![CI](https://github.com/ajlatour/golang-vibe-starter/actions/workflows/ci.yml/badge.svg)](https://github.com/ajlatour/golang-vibe-starter/actions/workflows/ci.yml)
 
-A Go HTTP API built on the standard library only: no third-party dependencies. It serves `/items`
+A Go HTTP API built on the standard library, with one optional exception: the OpenTelemetry SDK, for
+[tracing](docs/tracing.md), in a package of its own that's off by default. It serves `/items`
 and gets the data from an upstream service over HTTP. In local development that upstream is
 [WireMock](https://wiremock.org), serving stub responses, and feature flags come from
 [flagd](https://flagd.dev).
@@ -226,6 +227,8 @@ The API reads these environment variables:
 | `UPSTREAM_TIMEOUT`    | `5s`       | Timeout for each upstream request. Must be shorter than `REQUEST_TIMEOUT`. |
 | `UPSTREAM_RETRIES`    | `1`        | How often a GET to the upstream is tried again after a fast failure (refused, reset, or a 5xx, within a second; never a timeout, never a write), 0 to 3, and only while a whole attempt still fits before the request's deadline. Retries share a budget of about one per ten requests, so a down upstream isn't hit harder. |
 | `REQUEST_TIMEOUT`     | `10s`      | How long a request has to be answered, whatever it waits on: past it, the calls it's making give up and it gets its answer, usually 504. The server cuts off a response only 5s after this, so every request is answered and logged. `UPSTREAM_TIMEOUT`, and `VALIDATOR_TIMEOUT` and `FLAGS_TIMEOUT` when those are used, must be shorter. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` |  | Where to export spans over OTLP/HTTP, e.g. `http://jaeger:4318` (`/v1/traces` is added). Unset, no spans are recorded, and nothing of OpenTelemetry runs. The SDK reads the other `OTEL_*` variables itself, such as `OTEL_TRACES_SAMPLER` and `OTEL_EXPORTER_OTLP_HEADERS`: [Tracing](docs/tracing.md). |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` |  | The full URL to export spans to, for traces alone; wins over `OTEL_EXPORTER_OTLP_ENDPOINT`. |
 | `FLAGS_URL`           |            | flagd OFREP base URL, e.g. `http://flagd:8016`, without a query string or fragment. Unset disables flags. |
 | `FLAGS_TIMEOUT`       | `500ms`    | Timeout for each flag evaluation.                          |
 | `FLAGS_CACHE_TTL`     | `1s`       | How long a flag's value is kept after flagd serves it, so a change in flagd shows within this; during a flagd outage, how often flagd is retried, with the evaluations in between taking their defaults at once. `0s` asks flagd every time. |
@@ -297,6 +300,8 @@ documentation (the code's doc comments) at http://localhost:6060.
   service, its contract, and failing closed or open when it can't answer.
 - [Logging](docs/logging.md): every field and message, how to read a request's log lines, and the
   rules for adding a log line.
+- [Tracing](docs/tracing.md): recording spans with OpenTelemetry and exporting them over OTLP, off
+  unless there's somewhere to send them, and how to remove it.
 
 **Build and ship**
 

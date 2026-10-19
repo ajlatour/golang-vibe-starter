@@ -23,6 +23,7 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/limit"
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 	"github.com/ajlatour/golang-vibe-starter/internal/profiling"
+	"github.com/ajlatour/golang-vibe-starter/internal/tracectx"
 	"github.com/ajlatour/golang-vibe-starter/internal/validator"
 )
 
@@ -96,6 +97,11 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	if err != nil {
 		return err
 	}
+	spans, stopSpans, err := newSpans(ctx, logger, cfg, 5*time.Second)
+	if err != nil {
+		return err
+	}
+	defer stopSpans()
 	var (
 		allRoutes   []routes
 		storeChecks []httpx.Check
@@ -125,7 +131,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	v := newValidation(logger, cfg, evaluator)
 	readiness := httpx.NewReadiness(logger, time.Second, time.Second,
 		append(storeChecks, v.checks...)...)
-	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness, Metrics: metrics, ClientIP: cfg.LogClientIP, RequestTimeout: cfg.RequestTimeout,
+	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness, Metrics: metrics, ClientIP: cfg.LogClientIP, RequestTimeout: cfg.RequestTimeout, Spans: spans,
 		Validator: v.checker, ValidatorFailOpen: cfg.ValidatorFailOpen, ValidatorEnforce: v.enforce,
 		ValidatorObserve: func(o validator.Outcome, d time.Duration) { validatorCalls.Observe(string(o), d) }},
 		allRoutes...)
@@ -305,6 +311,9 @@ type handlerConfig struct {
 	// RequestTimeout is each request's deadline (REQUEST_TIMEOUT). Zero:
 	// none.
 	RequestTimeout time.Duration
+	// Spans records each request's span, and its calls' (telemetry.go). Nil
+	// records none.
+	Spans tracectx.Spans
 	// Validator checks every request but the probes (internal/validator).
 	// Nil checks nothing.
 	Validator validator.Checker
@@ -351,6 +360,9 @@ func newHandler(logger *slog.Logger, cfg handlerConfig, rs ...routes) http.Handl
 	}
 	if cfg.RequestTimeout > 0 {
 		mwOpts = append(mwOpts, httpx.WithRequestTimeout(cfg.RequestTimeout))
+	}
+	if cfg.Spans != nil {
+		mwOpts = append(mwOpts, httpx.WithSpans(cfg.Spans))
 	}
 	// The order a request meets them, outermost first. It's a security
 	// property, so cmd/api/middleware_order_test.go holds each step to the

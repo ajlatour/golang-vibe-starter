@@ -40,6 +40,7 @@ Run it|docs/local-stack.md|local-stack.html
 Run it|docs/feature-flags.md|feature-flags.html
 Run it|docs/request-validation.md|request-validation.html
 Run it|docs/logging.md|logging.html
+Run it|docs/tracing.md|tracing.html
 Build and ship|docs/standards.md|standards.html
 Build and ship|docs/development.md|development.html
 Build and ship|docs/performance.md|performance.html

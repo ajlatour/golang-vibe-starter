@@ -69,9 +69,11 @@ template and runs the tests, so it keeps working as `/items` changes.
 
 ## Ground rules
 
-- **The service uses the standard library only.** The root `go.mod` has no third-party
-  dependencies. Where a tool would normally pull one in, the code does the job itself: flags over
-  plain HTTP (OFREP) instead of an OpenFeature SDK, a JSON API spec instead of YAML.
+- **The service uses the standard library only**, but for adapters allowed a dependency: so far one,
+  `internal/telemetry`, the OpenTelemetry SDK, optional and removable
+  ([ADR-0046](adr/0046-the-opentelemetry-sdk-is-allowed-in-one-optional-adapter.md)). Where a tool
+  would normally pull one in, the code does the job itself: flags over plain HTTP (OFREP) instead
+  of an OpenFeature SDK, a JSON API spec instead of YAML.
 - **Test-only dependencies live in their own module.** The integration tests need Godog, so they
   are a separate Go module in `integration/`, and the service never depends on it.
 - **Documentation that describes the code is checked against it.** The API spec, the log tables,
@@ -291,9 +293,5 @@ Not planned, but considered:
   bodies against `docs/openapi.json`. The in-process OpenAPI test already checks every documented
   response, so this adds little, and it would mean sharing that test's schema validator with the
   integration module.
-- **OpenTelemetry spans**: W3C trace context is already carried, and logged as `trace_id`
-  ([ADR-0034](adr/0034-w3c-trace-context-is-carried-through-without-a-tracing-sdk.md)), so
-  spans would join the traces already flowing; recording them needs the OpenTelemetry SDK, a
-  third-party dependency (DEP-1).
 - **Changing the log level at runtime** (`slog.LevelVar` and an admin endpoint).
 - **Log sampling.**
