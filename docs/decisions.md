@@ -13,6 +13,8 @@ is the first place to look for the details.
   may still hold.
 - **To change a decision**, add a new record that supersedes the old one. Set the old record's
   status to "Superseded by ADR-NNNN", and change nothing else in it: the history is the point.
+  A decision that no longer applies, with nothing in its place, is "Deprecated: <why>": `make
+  init` marks so the records of the features a service leaves out.
 - **To record a new decision**, copy the template below into a new file in [`adr/`](adr/), named
   for its number and title (`adr/0045-the-decision-in-a-few-words.md`), taking the next number.
   Record it in the pull request that makes the change. Each record is a file of its own, so pull
@@ -28,7 +30,7 @@ Template:
 ```text
 # ADR-NNNN: <the decision, as a short statement>
 
-- **Status:** Proposed | Accepted | Superseded by ADR-NNNN
+- **Status:** Proposed | Accepted | Superseded by ADR-NNNN | Deprecated: <why it no longer applies>
 - **Date:** YYYY-MM-DD (commit)
 
 **Context.** What forces a choice: the problem, the constraints, the options considered.

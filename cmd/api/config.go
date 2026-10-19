@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	// feature:tracing
 	"strings"
+	// end feature:tracing
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
@@ -58,11 +60,13 @@ type config struct {
 	// LogClientIP adds client_ip to each request's log lines.
 	LogClientIP bool
 
+	// feature:tracing
 	// TracesEndpoint is the URL spans are exported to over OTLP/HTTP:
 	// OTEL_EXPORTER_OTLP_TRACES_ENDPOINT, or OTEL_EXPORTER_OTLP_ENDPOINT with
 	// /v1/traces added, as OpenTelemetry specifies. Nil, the default, records
 	// none (telemetry.go).
 	TracesEndpoint *url.URL
+	// end feature:tracing
 
 	// ValidatorURL is the request-validation service every request is
 	// checked against (internal/validator). Nil: no check.
@@ -157,10 +161,12 @@ func loadConfig(getenv func(string) string) (config, error) {
 		// jurisdictions, so a deployment can turn it off.
 		LogClientIP: envconfig.Optional(env, "LOG_CLIENT_IP", true, parseOnOff),
 
+		// feature:tracing
 		// Off unless there's somewhere to send spans. The OpenTelemetry SDK
 		// reads the rest of its settings itself (internal/telemetry).
 		TracesEndpoint: envconfig.Optional(env, "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
 			envconfig.Optional(env, "OTEL_EXPORTER_OTLP_ENDPOINT", nil, parseOTLPEndpoint), parseHTTPURL),
+		// end feature:tracing
 
 		// Optional, so local development and tests can run without one, but
 		// loud when unset (see run). The timeout is short because the check
@@ -346,6 +352,7 @@ func parseRetries(v string) (int, error) {
 	return n, nil
 }
 
+// feature:tracing
 // parseOTLPEndpoint reads OTEL_EXPORTER_OTLP_ENDPOINT, a base URL, as the
 // URL traces go to: its path with /v1/traces added.
 func parseOTLPEndpoint(s string) (*url.URL, error) {
@@ -356,3 +363,5 @@ func parseOTLPEndpoint(s string) (*url.URL, error) {
 	u.Path = strings.TrimSuffix(u.Path, "/") + "/v1/traces"
 	return u, nil
 }
+
+// end feature:tracing

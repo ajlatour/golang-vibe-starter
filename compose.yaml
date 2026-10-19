@@ -56,9 +56,11 @@ services:
       API_KEYS: ${API_KEYS:-dev:write:1f0d1e72ef1251a015cbec8ae3ad6880002ffe8ad4de82f4f496db34dc3e91dc,dev-reader:read:1cf20667ccf4aa0982ca024c319ee0cf77cadf20e85bd2fc51264075af57b2d4}
       # All interfaces inside the container, so the port above can reach it.
       PPROF_ADDR: 0.0.0.0:6061
+      # feature:tracing
       # Where to send spans: unset, none are recorded. make tracing sets it to
       # Jaeger, below (docs/tracing.md#seeing-traces-locally).
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # end feature:tracing
     depends_on:
       mock:
         condition: service_healthy
@@ -150,6 +152,7 @@ services:
       api:
         condition: service_healthy
 
+  # feature:tracing
   # Jaeger, to see traces (make tracing; docs/tracing.md#seeing-traces-locally).
   # Not started by `up`. It takes the API's spans over OTLP/HTTP and keeps
   # them in memory, so they go when it stops. Published on this machine's
@@ -161,6 +164,7 @@ services:
     ports:
       - "127.0.0.1:16686:16686"
       - "127.0.0.1:4318:4318"
+  # end feature:tracing
 
   # The monitoring stack (make monitor; docs/performance.md#watching-resources).
   # Not started by `up`. Every container's CPU and memory from cAdvisor, the

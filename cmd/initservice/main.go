@@ -65,7 +65,16 @@ func run(args []string, dir string, out io.Writer) error {
 	fs := flag.NewFlagSet("initservice", flag.ContinueOnError)
 	name := fs.String("name", "", "the service's name: lower-case letters, digits and dashes, e.g. orders")
 	module := fs.String("module", "", "its Go module path, e.g. github.com/acme/orders")
+	withoutList := fs.String("without", "", "features to leave out, comma-separated, e.g. tracing, or all (-list-features lists them)")
+	list := fs.Bool("list-features", false, "list the features -without can leave out, as JSON, and stop")
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *list {
+		return listFeatures(out)
+	}
+	without, err := parseWithout(*withoutList)
+	if err != nil {
 		return err
 	}
 	if !nameRE.MatchString(*name) {
@@ -95,6 +104,21 @@ func run(args []string, dir string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	// The features first, while the files say what their rules expect; and
+	// this tool, unless it's a copy of the template without it (a test's).
+	leave := without
+	if _, err := os.Stat(filepath.Join(dir, "cmd/initservice")); err == nil {
+		leave = append(slices.Clip(without), initFeature)
+	}
+	for _, f := range leave {
+		if err := leaveOut(dir, f); err != nil {
+			return err
+		}
+	}
+	if err := applyMarkers(dir, files, leave); err != nil {
+		return err
+	}
+
 	changed := 0
 	for _, f := range files {
 		// This tool names the template on purpose, to know what to replace.
@@ -135,8 +159,20 @@ func run(args []string, dir string, out io.Writer) error {
 	if err := dropAuditLinks(dir); err != nil {
 		return err
 	}
+	if err := startRoadmap(dir, *name); err != nil {
+		return err
+	}
+	if slices.ContainsFunc(without, func(f feature) bool { return f.tidy }) {
+		if err := tidy(dir); err != nil {
+			return err
+		}
+	}
 
-	fmt.Fprintf(out, "Initialized %s (%s) from %s %s: %d files rewritten.\n\n", *name, *module, templateName, version, changed)
+	fmt.Fprintf(out, "Initialized %s (%s) from %s %s: %d files rewritten.\n", *name, *module, templateName, version, changed)
+	for _, f := range without {
+		fmt.Fprintf(out, "Left out: %s.\n", f.Name)
+	}
+	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Left to do by hand:")
 	fmt.Fprintln(out, "  - LICENSE: set the copyright holder, or choose another license.")
 	if owner == "" {
@@ -146,6 +182,40 @@ func run(args []string, dir string, out io.Writer) error {
 	fmt.Fprintln(out, "  - README.md: say what this service is for.")
 	fmt.Fprintln(out, "  - The example resource, /items: keep it as a guide, or remove it once the service has its own.")
 	fmt.Fprintln(out, "  - Run make check, make lint and make docs-check, and commit.")
+	return nil
+}
+
+// startRoadmap replaces the template's roadmap, which is its own, with a
+// page for the service's.
+func startRoadmap(dir, name string) error {
+	path := filepath.Join(dir, "ROADMAP.md")
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return writeFile(path, []byte(fmt.Sprintf(`# Roadmap
+
+What's planned for %s: what's done, queued and proposed. Started from the
+[%s](https://github.com/%s) template, whose own roadmap is in its repository.
+
+**Status:** ✅ done · 🔄 in progress · ⏭️ queued (decided, not yet built) · 💡 proposed.
+
+Nothing yet.
+`, name, templateName, templateRepo)))
+}
+
+// tidy runs go mod tidy in dir, after a feature that was a
+// dependency is left out, and keeps a go.sum, if empty: CI keys its caches
+// on it.
+func tidy(dir string) error {
+	cmd := exec.Command("go", "mod", "tidy")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("go mod tidy: %w\n%s", err, out)
+	}
+	sum := filepath.Join(dir, "go.sum")
+	if _, err := os.Stat(sum); errors.Is(err, os.ErrNotExist) {
+		return writeFile(sum, nil)
+	}
 	return nil
 }
 
