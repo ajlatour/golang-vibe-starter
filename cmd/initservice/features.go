@@ -29,6 +29,7 @@ import (
 //   - lines: per file, lines that go with it, each found by a part of it: a
 //     table row, a list item (its continuation lines too), a menu entry.
 //   - replace: per file, text that says something else without it.
+//   - members: per JSON file, the object members that go with it.
 //   - deprecate: its decision records, which stay, as history, marked
 //     Deprecated so nothing holds the code to them.
 //   - gone: words nothing may name once it's left out, which the template
@@ -42,8 +43,14 @@ type feature struct {
 	remove        []string
 	lines         map[string][]string
 	replace       map[string][][2]string
-	deprecate     []string
-	gone          []string
+	// members: per JSON file, the object members that go, each named by how
+	// it opens: `"key": {`.
+	members   map[string][]string
+	deprecate []string
+	gone      []string
+	// except: paths the gone check skips, where code knows of the feature
+	// and copes without it (cmd/newresource, a report that shows a dash).
+	except []string
 	// tidy runs go mod tidy after, for a feature that's a dependency.
 	tidy bool
 }
@@ -132,6 +139,45 @@ var features = []feature{
 		},
 		deprecate: []string{"0027"},
 		gone:      []string{"release.yml", "smoke-image", "make smoke", "SBOM", "docs-release", "compose.smoke"},
+	},
+	{
+		Name:    "validation",
+		Summary: "Checking every request against an external request-validation service (VALIDATOR_URL): failing closed or open, in shadow mode behind a flag, with its metrics and readiness check, and a WireMock stub of the service locally.",
+		remove: []string{"internal/validator", "cmd/api/validation.go", "docs/request-validation.md",
+			"wiremock/mappings/validator.json", "wiremock/faults/validator-down.json", "integration/features/request-validation.feature"},
+		lines: map[string][]string{
+			"README.md": {"| `validation_refused` |", "| `validation_unavailable` |", "| `VALIDATOR_URL` ", "| `VALIDATOR_TIMEOUT` ", "| `VALIDATOR_FAILURE_MODE` ",
+				"- [Request validation](docs/request-validation.md)"},
+			"docs/site/build.sh": {"|docs/request-validation.md|"},
+			"docs/logging.md": {"| `fail_open` ", "| `enforcing` ", "| `failures` ", "| `using request validation` |", "| `request validation is off:",
+				"| `request refused by validation` |", "| `request would be refused by validation` |", "| `request validation unavailable` |", "| `request validation recovered` |"},
+			"docs/feature-flags.md":                   {"| `request-validation-enforce` |"},
+			"docs/architecture.md":                    {"| 6 | Request validation,", "| `internal/validator` |", "| REL-7 |"},
+			"cmd/api/testdata/configs/production.env": {"VALIDATOR_"},
+			// A GET's only 403 was the validation service's.
+			"docs/openapi.json": {`"$ref": "#/components/responses/Refused"`},
+		},
+		members: map[string][]string{
+			"docs/openapi.json":            {`"Refused": {`},
+			"flagd/flags.json":             {`"request-validation-enforce": {`},
+			"integration/flagd/flags.json": {`"request-validation-enforce": {`},
+		},
+		replace: map[string][][2]string{
+			"README.md": {{"With its real dependencies (an upstream, flagd, the validation service), stubbed in containers:", "With its real dependencies (an upstream and flagd), stubbed in containers:"}},
+			"docs/openapi.json": {
+				{" (a 403 for a read-only key, or one the validation service refused), and the code tells them apart.", ", and the code tells them apart."},
+				{"403 for a write with a read-only key, or a request the request-validation service refuses (where there is one: VALIDATOR_URL).", "403 for a write with a read-only key."},
+				{`"read_only_key", "validation_refused", `, `"read_only_key", `},
+				{`, "validation_unavailable"`, ``},
+				{"; or, where the service checks requests (VALIDATOR_URL), the request-validation service refused the request. The reason is logged, not sent.", "."},
+				{", or, where the service checks requests (VALIDATOR_URL) and fails closed, the request-validation service can't answer,", ","},
+			},
+			"internal/httpx/codes.go": {{"things (a 403 for a read-only key, or one the validation service refused),", "things (a 503 for a service at capacity, or one shutting down),"}},
+		},
+		deprecate: []string{"0032"},
+		gone:      []string{"VALIDATOR_", "internal/validator", "request-validation", "validation_refused", "validation_unavailable"},
+		// The perf report shows a dash for a service without the check.
+		except: []string{"perf/report"},
 	},
 }
 
@@ -339,6 +385,22 @@ func leaveOut(dir string, f feature, gone map[string]bool) error {
 			return fmt.Errorf("feature %s: %s: %w", f.Name, file, err)
 		}
 	}
+	for file, opens := range f.members {
+		if goneWith(file, gone) {
+			continue
+		}
+		if err := edit(dir, file, func(s string) (string, error) {
+			for _, open := range opens {
+				var err error
+				if s, err = removeMember(s, open); err != nil {
+					return "", err
+				}
+			}
+			return s, nil
+		}); err != nil {
+			return fmt.Errorf("feature %s: %s: %w", f.Name, file, err)
+		}
+	}
 	for _, n := range f.deprecate {
 		if err := deprecate(dir, n, f.Name); err != nil {
 			return fmt.Errorf("feature %s: %w", f.Name, err)
@@ -374,6 +436,57 @@ func dropLines(s string, parts []string) (string, error) {
 		}
 	}
 	return b.String(), nil
+}
+
+// removeMember removes the JSON object member that opens with open (found
+// once in s), on lines of its own, and the comma that separated it from its
+// neighbour. It works on the text, so the file keeps its layout.
+func removeMember(s, open string) (string, error) {
+	if n := strings.Count(s, open); n != 1 {
+		return "", fmt.Errorf("%s: want it once, found it %d times", open, n)
+	}
+	i := strings.Index(s, open)
+	end, err := closingBrace(s, i+len(open)-1)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", open, err)
+	}
+	start := strings.LastIndexByte(s[:i], '\n') + 1
+	rest := s[end+1:]
+	if t := strings.TrimLeft(rest, " \t"); strings.HasPrefix(t, ",") {
+		// Not the last: its comma, and its line, go with it.
+		rest = strings.TrimPrefix(strings.TrimPrefix(t, ","), "\n")
+		return s[:start] + rest, nil
+	}
+	// The last: the comma before it goes.
+	before := strings.TrimRight(s[:start], " \t\n")
+	if !strings.HasSuffix(before, ",") {
+		return "", fmt.Errorf("%s: no comma before it, nor after", open)
+	}
+	return strings.TrimSuffix(before, ",") + "\n" + strings.TrimLeft(rest, "\n"), nil
+}
+
+// closingBrace is the index of the brace closing the one at s[open],
+// skipping those in strings.
+func closingBrace(s string, open int) (int, error) {
+	depth, inString := 0, false
+	for i := open; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case inString && c == '\\':
+			i++
+		case c == '"':
+			inString = !inString
+		case inString:
+		case c == '{':
+			depth++
+		case c == '}':
+			depth--
+			if depth == 0 {
+				return i, nil
+			}
+		}
+	}
+	return 0, errors.New("not closed")
 }
 
 // deprecate marks decision record n Deprecated: its feature was left out.

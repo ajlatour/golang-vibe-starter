@@ -6,7 +6,9 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	// feature:validation
 	"sync/atomic"
+	// end feature:validation
 	"testing"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/apikey"
@@ -14,7 +16,9 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/limit"
+	// feature:validation
 	"github.com/ajlatour/golang-vibe-starter/internal/validator"
+	// end feature:validation
 )
 
 // The order of newHandler's middleware is a security property: each step
@@ -117,6 +121,7 @@ func TestMiddlewareOrder(t *testing.T) {
 		}
 	})
 
+	// feature:validation
 	t.Run("the rate limit before request validation", func(t *testing.T) {
 		// A client over its limit never costs the validation service a call.
 		checker := &countingChecker{}
@@ -133,8 +138,10 @@ func TestMiddlewareOrder(t *testing.T) {
 			t.Errorf("the validation service was asked %d times, want once: the limited request reached it", n)
 		}
 	})
+	// end feature:validation
 }
 
+// feature:validation
 // countingChecker is a validator.Checker that allows every request, and
 // counts them.
 type countingChecker struct{ calls atomic.Int32 }
@@ -143,6 +150,8 @@ func (c *countingChecker) Check(context.Context, validator.Request) (validator.D
 	c.calls.Add(1)
 	return validator.Decision{Allow: true}, nil
 }
+
+// end feature:validation
 
 // blockingStore holds every call until release is closed, after saying on
 // entered that one has arrived.

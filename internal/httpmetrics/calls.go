@@ -24,7 +24,7 @@ type Calls struct {
 }
 
 // NewCalls returns a recorder for calls described by what (e.g. "Calls to
-// the request-validation service"), named with prefix, counting each of
+// the payments service"), named with prefix, counting each of
 // outcomes.
 func NewCalls(prefix, what string, outcomes ...string) *Calls {
 	return &Calls{prefix: prefix, what: what, outcomes: outcomes, counts: make([]atomic.Uint64, len(outcomes)), durations: newSeries(CallBuckets)}

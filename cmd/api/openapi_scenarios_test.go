@@ -121,9 +121,11 @@ func scenarios(t *testing.T, s *spec) []scenario {
 		}
 		for env, want := range map[string]int{
 			"ratelimited": http.StatusTooManyRequests, "overloaded": http.StatusServiceUnavailable,
+			// feature:validation
 			// Request validation (internal/validator): refused, and unable
 			// to answer while failing closed.
 			"refused": http.StatusForbidden, "unvalidated": http.StatusServiceUnavailable,
+			// end feature:validation
 		} {
 			list = append(list, scenario{
 				name: o.Key() + " " + env, env: env, method: strings.ToUpper(o.Method), path: path, op: o.Key(),

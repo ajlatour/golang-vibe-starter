@@ -300,12 +300,14 @@ func TestLoadConfigRequestTimeout(t *testing.T) {
 		env  map[string]string
 		want string // in the error
 	}{
-		"not a duration":             {with("REQUEST_TIMEOUT", "soon"), "REQUEST_TIMEOUT"},
-		"zero":                       {with("REQUEST_TIMEOUT", "0s"), "REQUEST_TIMEOUT"},
-		"upstream timeout too long":  {with("UPSTREAM_TIMEOUT", "10s"), "UPSTREAM_TIMEOUT (10s) must be shorter than REQUEST_TIMEOUT (10s)"},
+		"not a duration":            {with("REQUEST_TIMEOUT", "soon"), "REQUEST_TIMEOUT"},
+		"zero":                      {with("REQUEST_TIMEOUT", "0s"), "REQUEST_TIMEOUT"},
+		"upstream timeout too long": {with("UPSTREAM_TIMEOUT", "10s"), "UPSTREAM_TIMEOUT (10s) must be shorter than REQUEST_TIMEOUT (10s)"},
+		// feature:validation
 		"validator timeout too long": {with("VALIDATOR_URL", "http://v", "VALIDATOR_TIMEOUT", "12s"), "VALIDATOR_TIMEOUT (12s)"},
-		"flags timeout too long":     {with("FLAGS_URL", "http://f", "FLAGS_TIMEOUT", "11s"), "FLAGS_TIMEOUT (11s)"},
-		"shutdown shorter":           {with("SHUTDOWN_TIMEOUT", "5s"), "SHUTDOWN_TIMEOUT (5s) must be at least REQUEST_TIMEOUT (10s)"},
+		// end feature:validation
+		"flags timeout too long": {with("FLAGS_URL", "http://f", "FLAGS_TIMEOUT", "11s"), "FLAGS_TIMEOUT (11s)"},
+		"shutdown shorter":       {with("SHUTDOWN_TIMEOUT", "5s"), "SHUTDOWN_TIMEOUT (5s) must be at least REQUEST_TIMEOUT (10s)"},
 	} {
 		_, err := loadConfig(getenvFrom(tc.env))
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -313,8 +315,15 @@ func TestLoadConfigRequestTimeout(t *testing.T) {
 		}
 	}
 	// A timeout for a service that isn't configured doesn't matter.
-	if _, err := loadConfig(getenvFrom(with("VALIDATOR_TIMEOUT", "12s", "FLAGS_TIMEOUT", "12s"))); err != nil {
-		t.Errorf("timeouts of unconfigured services were checked: %v", err)
+	for _, unset := range []string{
+		// feature:validation
+		"VALIDATOR_TIMEOUT",
+		// end feature:validation
+		"FLAGS_TIMEOUT",
+	} {
+		if _, err := loadConfig(getenvFrom(with(unset, "12s"))); err != nil {
+			t.Errorf("%s of an unconfigured service was checked: %v", unset, err)
+		}
 	}
 }
 

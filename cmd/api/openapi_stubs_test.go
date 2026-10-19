@@ -97,8 +97,12 @@ func stubSamplePaths() map[string][]string {
 }
 
 // notTheItemsUpstream are paths stubbed for other services on the same
-// WireMock: the validation service (internal/validator).
-var notTheItemsUpstream = []string{"/validate"}
+// WireMock.
+var notTheItemsUpstream = []string{
+	// feature:validation
+	"/validate", // the validation service (internal/validator)
+	// end feature:validation
+}
 
 // paths returns the contract's paths m's URL matcher matches. An exact URL
 // is matched against each path's template; a pattern, by trying it on each

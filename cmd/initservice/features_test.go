@@ -41,6 +41,23 @@ func TestStripMarkers(t *testing.T) {
 	}
 }
 
+func TestRemoveMember(t *testing.T) {
+	in := "{\n  \"flags\": {\n    \"a\": {\"x\": \"}\"},\n    \"b\": {},\n    \"c\": {}\n  }\n}\n"
+	for open, want := range map[string]string{
+		`"a": {`: "{\n  \"flags\": {\n    \"b\": {},\n    \"c\": {}\n  }\n}\n",
+		`"b": {`: "{\n  \"flags\": {\n    \"a\": {\"x\": \"}\"},\n    \"c\": {}\n  }\n}\n",
+		`"c": {`: "{\n  \"flags\": {\n    \"a\": {\"x\": \"}\"},\n    \"b\": {}\n  }\n}\n",
+	} {
+		got, err := removeMember(in, open)
+		if err != nil || got != want {
+			t.Errorf("without %s:\n%s%v\nwant\n%s", open, got, err, want)
+		}
+	}
+	if _, err := removeMember(in, `"nope": {`); err == nil {
+		t.Error("a member that isn't there: no error")
+	}
+}
+
 func TestDropLines(t *testing.T) {
 	in := "| a |\n| b |\n- item one\n  continued\n- item two\nend\n"
 	got, err := dropLines(in, []string{"| b |", "item one"})

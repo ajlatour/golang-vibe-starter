@@ -24,7 +24,10 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
 	"github.com/ajlatour/golang-vibe-starter/internal/profiling"
 	"github.com/ajlatour/golang-vibe-starter/internal/tracectx"
+
+	// feature:validation
 	"github.com/ajlatour/golang-vibe-starter/internal/validator"
+	// end feature:validation
 )
 
 func main() {
@@ -116,28 +119,29 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 	}
 
 	// Request metrics: recorded always, served with the runtime's on
-	// PPROF_ADDR when it's set. Calls to the request-validation service, by
-	// outcome and how long they took: what the check costs, for the
-	// performance tests and dashboards.
+	// PPROF_ADDR when it's set.
 	metrics := httpmetrics.New()
-	outcomes := make([]string, len(validator.Outcomes))
-	for i, o := range validator.Outcomes {
-		outcomes[i] = string(o)
-	}
-	validatorCalls := httpmetrics.NewCalls("validator", "Requests checked against the request-validation service", outcomes...)
-	if err := serveProfiling(ctx, logger, cfg, metrics.WritePrometheus, validatorCalls.WritePrometheus); err != nil {
+	served := []func(io.Writer){metrics.WritePrometheus}
+	checks := storeChecks
+	// feature:validation
+	validatorCalls := newValidatorCalls()
+	served = append(served, validatorCalls.WritePrometheus)
+	// The validation service, if the API can't serve without it.
+	v := newValidation(logger, cfg, evaluator)
+	checks = append(checks, v.checks...)
+	// end feature:validation
+	if err := serveProfiling(ctx, logger, cfg, served...); err != nil {
 		return err
 	}
 
-	// Ready while this instance can reach the upstream, and the validation
-	// service if it can't serve without it, until shutdown.
-	v := newValidation(logger, cfg, evaluator)
-	readiness := httpx.NewReadiness(logger, time.Second, time.Second,
-		append(storeChecks, v.checks...)...)
-	handler := newHandler(logger, handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness, Metrics: metrics, ClientIP: cfg.LogClientIP, RequestTimeout: cfg.RequestTimeout, Spans: spans,
-		Validator: v.checker, ValidatorFailOpen: cfg.ValidatorFailOpen, ValidatorEnforce: v.enforce,
-		ValidatorObserve: func(o validator.Outcome, d time.Duration) { validatorCalls.Observe(string(o), d) }},
-		allRoutes...)
+	// Ready while this instance can reach what it needs (checks), until
+	// shutdown.
+	readiness := httpx.NewReadiness(logger, time.Second, time.Second, checks...)
+	hc := handlerConfig{Guard: cfg.HeaderGuard, Auth: cfg.Auth, Limits: cfg.Limits, Readiness: readiness, Metrics: metrics, ClientIP: cfg.LogClientIP, RequestTimeout: cfg.RequestTimeout, Spans: spans}
+	// feature:validation
+	hc = v.withValidation(hc, cfg.ValidatorFailOpen, validatorCalls)
+	// end feature:validation
+	handler := newHandler(logger, hc, allRoutes...)
 	return httpx.Serve(ctx, logger, cfg.Addr, cfg.ShutdownTimeout, handler,
 		httpx.MaxHeaderBytes(serverHeaderLimit(cfg.HeaderGuard)),
 		httpx.WriteTimeout(cfg.RequestTimeout+writeTimeoutMargin),
@@ -214,41 +218,6 @@ func serveProfiling(ctx context.Context, logger *slog.Logger, cfg config, extra 
 	return nil
 }
 
-// validation is how requests are checked against the request-validation
-// service: the checker (nil without VALIDATOR_URL), whether to act on its
-// answers, and the readiness check it adds, if any.
-type validation struct {
-	checker validator.Checker
-	enforce func(context.Context) bool
-	checks  []httpx.Check
-}
-
-// newValidation sets up request validation from VALIDATOR_URL. Whether to
-// act on the service's answers, or only log them (shadow mode), is a flag,
-// so it's turned on, and back off, at runtime. Failing closed, the service
-// can't serve without it, so readiness tracks it, while enforcing.
-func newValidation(logger *slog.Logger, cfg config, f flags) validation {
-	v := validation{enforce: func(ctx context.Context) bool { return f.Bool(ctx, validator.FlagEnforce) }}
-	if cfg.ValidatorURL == nil {
-		logger.Warn("request validation is off: no VALIDATOR_URL; every request goes unchecked")
-		return v
-	}
-	logger.Info("using request validation", logx.KeyURL, cfg.ValidatorURL.Redacted(),
-		logx.KeyTimeout, cfg.ValidatorTimeout.String(), logx.KeyFailOpen, cfg.ValidatorFailOpen)
-	c := validator.New(cfg.ValidatorURL.String(),
-		&http.Client{Timeout: cfg.ValidatorTimeout, Transport: newTransport(cfg.Limits.MaxInFlight)})
-	if !cfg.ValidatorFailOpen {
-		v.checks = append(v.checks, httpx.Check{Name: "validator", Fn: func(ctx context.Context) error {
-			if !v.enforce(ctx) {
-				return nil // in shadow mode the API serves without it
-			}
-			return c.Reachable(ctx)
-		}})
-	}
-	v.checker = c
-	return v
-}
-
 // newFlags returns the feature flag evaluator: flagd when FLAGS_URL is set,
 // otherwise the flag definitions' default values alone. Either way every flag
 // the application reads (each resource's, and validator.FlagKeys) must be
@@ -259,7 +228,10 @@ func newFlags(logger *slog.Logger, cfg config) (flags, error) {
 	if err != nil {
 		return nil, err
 	}
-	keys := validator.FlagKeys()
+	var keys []string
+	// feature:validation
+	keys = append(keys, validator.FlagKeys()...)
+	// end feature:validation
 	for _, r := range resources {
 		keys = append(keys, r.flagKeys...)
 	}
@@ -317,6 +289,7 @@ type handlerConfig struct {
 	// Spans records each request's span, and its calls'. Nil
 	// records none.
 	Spans tracectx.Spans
+	// feature:validation
 	// Validator checks every request but the probes (internal/validator).
 	// Nil checks nothing.
 	Validator validator.Checker
@@ -326,6 +299,7 @@ type handlerConfig struct {
 	ValidatorEnforce func(context.Context) bool
 	// ValidatorObserve records each check's outcome, for /metrics.
 	ValidatorObserve func(validator.Outcome, time.Duration)
+	// end feature:validation
 }
 
 // newHandler builds the API's root handler. From the outside in: the standard
@@ -390,28 +364,12 @@ func newHandler(logger *slog.Logger, cfg handlerConfig, rs ...routes) http.Handl
 		// The per-client rate limit: after authentication, so a client is
 		// its key, and a request without a valid one is refused, not counted.
 		func(h http.Handler) http.Handler { return limit.PerClient(limits, identifyByKey, h) },
+		// feature:validation
 		// The request-validation check, if there's one: last, so a client's
 		// flood never reaches it, and it knows who's calling.
 		func(h http.Handler) http.Handler { return validate(logger, cfg, probes, h) },
+		// end feature:validation
 	)
-}
-
-// validate puts the request-validation check in front of next, if there's a
-// validator: after authentication, so it knows who's calling (the key's
-// name), and after the rate limit, so a client's flood never reaches it. The
-// probes are exempt, like from the limits.
-func validate(logger *slog.Logger, cfg handlerConfig, probes []string, next http.Handler) http.Handler {
-	if cfg.Validator == nil {
-		return next
-	}
-	return validator.Middleware(logger, cfg.Validator, validator.Policy{
-		FailOpen: cfg.ValidatorFailOpen,
-		Enforce:  cfg.ValidatorEnforce,
-		Observe:  cfg.ValidatorObserve,
-		Retry:    time.Second,
-		Exempt:   probes,
-		Client:   func(r *http.Request) string { return apikey.Name(r.Context()) },
-	}, next)
 }
 
 // identifyByKey tells the per-client rate limit who a request comes from:

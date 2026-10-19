@@ -72,10 +72,12 @@ const (
 	KeyFallbacks = "fallbacks"
 	KeyCacheTTL  = "cache_ttl"
 
+	// feature:validation
 	// Request validation (internal/validator).
 	KeyFailOpen  = "fail_open" // whether requests go through when it can't answer
 	KeyEnforcing = "enforcing" // whether its answers are acted on, or only logged (shadow)
 	KeyFailures  = "failures"  // requests answered with the failure mode during an outage
+	// end feature:validation
 
 	// Startup and shutdown.
 	KeyURL     = "url"
