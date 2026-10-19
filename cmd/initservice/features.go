@@ -20,9 +20,11 @@ import (
 // table:
 //
 //   - Blocks between marker lines, in any text file: a line that is only
-//     "// feature:NAME", "# feature:NAME" or "<!-- feature:NAME -->", and
+//     "// feature:NAME", "# feature:NAME", "<!-- feature:NAME -->" or
+//     "/* feature:NAME */", and
 //     its end, the same with "end feature:NAME". Left out, the block goes;
-//     kept, only the marker lines do, so no service has them.
+//     kept, only the marker lines do, so no service has them. A block marked
+//     feature:!NAME is the opposite: what's there instead without NAME.
 //   - remove: files and directories that are the feature's alone.
 //   - lines: per file, lines that go with it, each found by a part of it: a
 //     table row, a list item (its continuation lines too), a menu entry.
@@ -56,7 +58,6 @@ var initFeature = feature{
 		"docs/development.md":  {"- [Starting a new service](#starting-a-new-service)"},
 	},
 	replace: map[string][][2]string{
-		"Makefile":                 {{".PHONY: help init init-check init-docs-check resource", ".PHONY: help resource"}},
 		"README.md":                {{"To start a new service from this template, copy it and run `make init NAME=orders\nMODULE=github.com/acme/orders`: [Starting a new service](docs/development.md#starting-a-new-service)\nsays what it changes. `make resource NAME=order` then adds", "`make resource NAME=order` adds"}},
 		".github/workflows/ci.yml": {{"  # make init, and make resource, each on a copy of the repository, then the\n  # result vetted and its tests run: so starting a new service from the\n  # template, and adding a resource to it, keep working as the template\n  # changes.", "  # make resource on a copy of the repository, then the result vetted and\n  # its tests run: so adding a resource keeps working as the code changes."}},
 		"docs/development.md":      {{"- **template**: `make init-check` and `make resource-check`: [`make init`](#starting-a-new-service),\n  and [`make resource`](#adding-a-resource), each on a copy of the repository, then the result\n  vetted and its tests run, so both keep working as the template changes.", "- **template**: `make resource-check`: [`make resource`](#adding-a-resource) on a copy of the\n  repository, then the result vetted and its tests run, so it keeps working as the code changes."}},
@@ -77,12 +78,7 @@ var features = []feature{
 			"docs/site/build.sh":   {"|docs/tracing.md|"},
 		},
 		replace: map[string][][2]string{
-			"README.md": {{"A Go HTTP API built on the standard library, with one optional exception: the OpenTelemetry SDK, for\n[tracing](docs/tracing.md), in a package of its own that's off by default.", "A Go HTTP API built on the standard library only."}},
-			"Makefile": {
-				{" logs tracing dev ", " logs dev "},
-				{"## Stop the local stack, monitoring and tracing included", "## Stop the local stack, monitoring included"},
-				{" --profile tracing down", " down"},
-			},
+			"README.md":            {{"A Go HTTP API built on the standard library, with one optional exception: the OpenTelemetry SDK, for\n[tracing](docs/tracing.md), in a package of its own that's off by default.", "A Go HTTP API built on the standard library only."}},
 			"docs/logging.md":      {{", `using tracing` |", " |"}},
 			"SECURITY.md":          {{"no third-party dependencies in the service but the optional OpenTelemetry SDK, in one package,", "no third-party dependencies in the service,"}},
 			"docs/architecture.md": {{"but for the adapters allowed a third-party module: `internal/telemetry`, the OpenTelemetry SDK. Each is", "but for the adapters allowed a third-party module, which `docs/architecture_test.go` lists: none yet. Each would be"}},
@@ -92,6 +88,50 @@ var features = []feature{
 		deprecate: []string{"0046"},
 		gone:      []string{"internal/telemetry", "OTEL_EXPORTER", "jaeger", "docs/tracing.md", "make tracing"},
 		tidy:      true,
+	},
+	{
+		Name:    "perf",
+		Summary: "Performance testing: k6 load profiles and their CI comparison on every pull request (with an allocation gate), main's performance history and a nightly soak, CI-time records, and a Grafana dashboard in the local stack (make monitor).",
+		remove: []string{"perf", "monitoring", "docs/performance.md", ".github/workflows/perf.yml",
+			".github/workflows/perf-trends.yml", ".github/workflows/soak.yml", ".github/workflows/ci-times.yml"},
+		lines: map[string][]string{
+			"README.md": {"make perf PROFILE=load", "make perf-compare", "make perf-trends", "make perf-soak",
+				"perf/                k6", "monitoring/          Prometheus", "- [Performance](docs/performance.md)"},
+			".github/workflows/ci.yml":      {"perf/report/go.sum"},
+			".github/workflows/release.yml": {"perf/report/go.sum"},
+			"docs/site/build.sh":            {"|docs/performance.md|", "|+history|"},
+			"docs/development.md": {"| A benchmarked path, adding allocations on purpose |", "| A route (new or removed) | The traffic mix",
+				"| A Go runtime metric's name, or a k6 percentile", "| A k6 profile or threshold |"},
+			"docs/releasing.md": {"| The performance records,"},
+		},
+		replace: map[string][][2]string{
+			"docs/architecture.md": {
+				{"`127.0.0.1` only. Opt-in profiles add k6 (`perf`) and cAdvisor, Prometheus and Grafana\n(`monitoring`).", "`127.0.0.1` only."},
+				{"`.github/dependabot.yml`, review: `.github/workflows/perf.yml` |", "`.github/dependabot.yml` |"},
+			},
+			"docs/standards.md":             {{"`integration/`, `perf/report/` |", "`integration/` |"}, {"(`integration/`, `perf/report/`).", "(`integration/`)."}},
+			"docs/logging.md":               {{"profiles are the next step: [Performance](performance.md#profiling).", "profiles are the next step: pprof, served on `PPROF_ADDR`."}},
+			"README.md":                     {{"Keep it private: see [Performance](docs/performance.md#profiling).", "Keep it private."}},
+			".github/workflows/release.yml": {{"contents: write # the GitHub release, and reading the perf-data branch", "contents: write # the GitHub release"}},
+			"docs/releasing.md":             {{"(open `docs/index.html`), with a Performance history page charting `main`'s performance and CI time up to the release |", "(open `docs/index.html`) |"}},
+		},
+		deprecate: []string{"0013", "0014", "0024"},
+		gone:      []string{"perf/k6", "perf/report", "perf/run", "performance.md", "make perf", "make monitor", "perf-data", "perf-ok", "Grafana", "perf.yml"},
+	},
+	{
+		Name:    "release",
+		Summary: "Publishing a release: the Release workflow, which builds the image for amd64 and arm64 with an SBOM and provenance, smoke-tests it and pushes it to GHCR, and the GitHub release with its docs. Versioning stays: the changelog, make release-prepare and release-tag.",
+		remove:  []string{".github/workflows/release.yml", "scripts/smoke-image.sh", "compose.smoke.yaml"},
+		lines: map[string][]string{
+			"docs/architecture.md": {"| DEL-2 |", "- **Images aren't signed:**"},
+		},
+		replace: map[string][][2]string{
+			"docs/architecture.md": {{"`docs/changelog_test.go`, review: `.github/workflows/release.yml` |", "`docs/changelog_test.go` |"}},
+			"docs/standards.md":    {{"release-tag`, and its image is smoke-tested before it's published ([Releasing](releasing.md)).", "release-tag` ([Releasing](releasing.md))."}},
+			"README.md":            {{"cutting a version, and the image, SBOM and provenance it\n  publishes.", "cutting a version."}},
+		},
+		deprecate: []string{"0027"},
+		gone:      []string{"release.yml", "smoke-image", "make smoke", "SBOM", "docs-release", "compose.smoke"},
 	},
 }
 
@@ -142,7 +182,7 @@ func parseWithout(s string) ([]feature, error) {
 	return out, nil
 }
 
-var markerRE = regexp.MustCompile(`^\s*(?://|#|<!--)\s*(end )?feature:([a-z-]+)\s*(?:-->)?\s*$`)
+var markerRE = regexp.MustCompile(`^\s*(?://|#|<!--|/\*)\s*(end )?feature:(!?[a-z-]+)\s*(?:-->|\*/)?\s*$`)
 
 // applyMarkers removes, from every text file in files, the blocks of the
 // features left out, and every marker line. A marker without its end, or an
@@ -199,7 +239,12 @@ func stripMarkers(s string, out map[string]bool) (string, error) {
 			name := m[2]
 			if m[1] == "" {
 				open = append(open, name)
-				if out[name] || dropping > 0 {
+				// feature:!NAME is the opposite: what replaces NAME without it.
+				left := out[name]
+				if n, ok := strings.CutPrefix(name, "!"); ok {
+					left = !out[n]
+				}
+				if left || dropping > 0 {
 					dropping++
 				}
 				continue
@@ -230,8 +275,37 @@ func stripMarkers(s string, out map[string]bool) (string, error) {
 	return b.String(), nil
 }
 
-// leaveOut applies f's rules, but its markers (applyMarkers).
-func leaveOut(dir string, f feature) error {
+// leaveAll applies the rules of each feature left out. A rule for a file
+// another of them removes is skipped: perf's lines in the release workflow,
+// say, when both go.
+func leaveAll(dir string, without []feature) error {
+	gone := map[string]bool{}
+	for _, f := range without {
+		for _, p := range f.remove {
+			gone[p] = true
+		}
+	}
+	for _, f := range without {
+		if err := leaveOut(dir, f, gone); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// goneWith reports whether file is, or is in, one of gone.
+func goneWith(file string, gone map[string]bool) bool {
+	for p := range gone {
+		if file == p || strings.HasPrefix(file, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// leaveOut applies f's rules, but its markers (applyMarkers), and those for
+// a file in gone.
+func leaveOut(dir string, f feature, gone map[string]bool) error {
 	for _, p := range f.remove {
 		path := filepath.Join(dir, p)
 		if _, err := os.Stat(path); err != nil {
@@ -242,11 +316,17 @@ func leaveOut(dir string, f feature) error {
 		}
 	}
 	for file, parts := range f.lines {
+		if goneWith(file, gone) {
+			continue
+		}
 		if err := edit(dir, file, func(s string) (string, error) { return dropLines(s, parts) }); err != nil {
 			return fmt.Errorf("feature %s: %s: %w", f.Name, file, err)
 		}
 	}
 	for file, pairs := range f.replace {
+		if goneWith(file, gone) {
+			continue
+		}
 		if err := edit(dir, file, func(s string) (string, error) {
 			for _, p := range pairs {
 				if !strings.Contains(s, p[0]) {

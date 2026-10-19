@@ -44,6 +44,8 @@ comma-separated, or `WITHOUT=all`. `go run ./cmd/initservice -list-features` lis
 | Feature | What goes |
 | ------- | --------- |
 | `tracing` | OpenTelemetry ([Tracing](tracing.md)): `internal/telemetry`, its settings and log lines, and Jaeger in the local stack. The service then has no third-party dependency at all. |
+| `perf` | Performance testing ([Performance](performance.md)): `perf/`, the k6 load profiles and the report tool; the Performance, Performance trends, Soak and CI times workflows; `monitoring/` and its profile in the local stack. The Go benchmarks stay. |
+| `release` | Publishing ([Releasing](releasing.md)): the Release workflow (the multi-platform image, its SBOM and provenance, the smoke test, GHCR and the GitHub release), `make smoke` and `scripts/smoke-image.sh`. Versioning stays: the changelog, `make release-prepare` and `release-tag`. |
 
 A feature is marked in the code where it's mixed with the rest (`// feature:tracing` …
 `// end feature:tracing`, or `#` and `<!-- -->` in other files), and listed in
@@ -54,8 +56,9 @@ as well as what it leaves out, and its own tool, `cmd/initservice`.
 Run it once, on a fresh copy, then `make check`, `make lint` and `make docs-check`, and commit.
 `make init-check`, which CI runs, does all that on copies of the template, with every feature,
 with each left out, and with all of them left out, and checks nothing still names what was left
-out; `make init-docs-check` builds the docs of a service without any, so `make init` keeps working
-as the template changes.
+out; `make init-docs-check` runs shellcheck and actionlint on, and builds the docs of, a service
+with each left out and with all of them, so `make init` keeps working as the template changes.
+A block marked `feature:!perf` (with a `!`) is the opposite: what's there instead without `perf`.
 
 <!-- end feature:init -->
 
@@ -291,9 +294,12 @@ Dockerfile's, compose's, and the tools the Makefile and workflows run, listed in
 
 A newer push to the same branch cancels the run in progress.
 
+<!-- feature:release -->
 `.github/workflows/release.yml` publishes a release when a version tag is pushed; see
 [Releasing](releasing.md).
 
+<!-- end feature:release -->
+<!-- feature:perf -->
 `.github/workflows/perf-trends.yml` runs after every merge to `main`, recording its performance on
 the `perf-data` branch; see [trends](performance.md#trends).
 
@@ -304,6 +310,7 @@ if the API's heap or goroutines grew; see [Soak](performance.md#soak).
 performance with its base and keeps the result in a comment on the pull request. See
 [pull request reports](performance.md#pull-request-reports).
 
+<!-- end feature:perf -->
 ## Open ideas
 
 Not planned, but considered:

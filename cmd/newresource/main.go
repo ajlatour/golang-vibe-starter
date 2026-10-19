@@ -88,6 +88,9 @@ func run(args []string, dir string, out io.Writer) error {
 		}
 	}
 	for _, e := range edits {
+		if _, err := os.Stat(filepath.Join(dir, e.file)); errors.Is(err, os.ErrNotExist) && optional[e.file] {
+			continue // a part this service was started without
+		}
 		if err := edit(dir, e.file, func(s string) (string, error) { return e.fn(s, r) }); err != nil {
 			return fmt.Errorf("%s: %w", e.file, err)
 		}
@@ -100,7 +103,7 @@ func run(args []string, dir string, out io.Writer) error {
 	fmt.Fprintf(out, "  - docs/openapi.json: %s, %s and %s, to match; the tests say where they differ.\n", r.text("Item"), r.text("ItemInput"), r.text("ItemList"))
 	fmt.Fprintf(out, "  - Its store: internal/%s/httpstore speaks to the upstream's /%s; replace it with the store you need.\n", *name, *plural)
 	fmt.Fprintf(out, "  - Its flag, %s: keep it, or remove it from the handlers, flagd/flags.json and docs/feature-flags.md.\n", r.text("items-list-total"))
-	fmt.Fprintf(out, "  - The examples: cmd/api/%s_test.go's scenarios, wiremock/mappings/%s-*.json, docs/curl.md, perf/k6.js, integration/features/%s.feature.\n", *plural, *plural, *plural)
+	fmt.Fprintf(out, "  - The examples: cmd/api/%s_test.go's scenarios, wiremock/mappings/%s-*.json, docs/curl.md, the load test's mix if there is one, integration/features/%s.feature.\n", *plural, *plural, *plural)
 	fmt.Fprintln(out, "  - README.md and the docs, where they describe the API's resources.")
 	fmt.Fprintln(out, "  - Run make check, make lint and make docs-check, and commit.")
 	return nil
@@ -210,6 +213,10 @@ func article(b *strings.Builder, word string) {
 
 func isLetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
 func isIdent(c byte) bool  { return isLetter(c) || c >= '0' && c <= '9' || c == '_' }
+
+// optional are the files edits names that a service may not have: those of
+// the template's optional parts.
+var optional = map[string]bool{"perf/k6.js": true}
 
 // edits add the new resource to each list that names every resource.
 var edits = []struct {

@@ -343,7 +343,7 @@ flagd/               Feature flag definitions: served by flagd, embedded as fall
 scripts/             The shell scripts the Makefile and CI run
 tools/images/        The tool images the build runs, pinned, for Dependabot
 compose*.yaml        The local stack, and its integration and smoke-test variants
-.github/             CI, performance, release and nightly soak workflows; Dependabot
+.github/             The CI and other workflows; Dependabot
 ```
 
 [Architecture](docs/architecture.md#building-blocks) has every package, what it's for and what it

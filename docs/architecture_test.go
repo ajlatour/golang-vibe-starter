@@ -68,7 +68,11 @@ var adapters = map[string][]string{
 func TestDependenciesStayInAdapters(t *testing.T) {
 	fset := token.NewFileSet()
 	used := map[string]bool{}
-	for _, root := range []string{"../cmd", "../internal", "../flagd", "../docs", "../monitoring", "../perf"} {
+	roots := []string{"../cmd", "../internal", "../flagd", "../docs"}
+	// feature:perf
+	roots = append(roots, "../monitoring", "../perf")
+	// end feature:perf
+	for _, root := range roots {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -117,7 +121,11 @@ func TestDependenciesStayInAdapters(t *testing.T) {
 // TestToolingModulesAreSeparate holds DEP-2: what needs a dependency is a
 // module of its own.
 func TestToolingModulesAreSeparate(t *testing.T) {
-	for _, dir := range []string{"../integration", "../perf/report", "../tools"} {
+	dirs := []string{"../integration", "../tools"}
+	// feature:perf
+	dirs = append(dirs, "../perf/report")
+	// end feature:perf
+	for _, dir := range dirs {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err != nil {
 			t.Errorf("%s has no go.mod of its own: its dependencies would become the service's (DEP-2)", dir)
 		}

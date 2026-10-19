@@ -161,7 +161,7 @@ says so.
 | ID | Requirement | Why | Verified by |
 | -- | ----------- | --- | ----------- |
 | DEP-1 | The service depends on the Go standard library only, but for the adapters allowed a third-party module: `internal/telemetry`, the OpenTelemetry SDK. Each is optional and removable: the service runs, and builds, without it. | Little to audit, update or be compromised through, and nothing on the request path but the standard library (ADR-0002, ADR-0046) | `docs/architecture_test.go` |
-| DEP-2 | Tooling that needs a dependency lives in a module of its own, which the service never imports. | Keeps DEP-1 while allowing Godog and benchstat's statistics | `docs/architecture_test.go` |
+| DEP-2 | Tooling that needs a dependency lives in a module of its own, which the service never imports. | Keeps DEP-1 while allowing test and tooling dependencies, such as Godog | `docs/architecture_test.go` |
 | DEP-3 | Packages import only what the package table allows; test support only from tests. | The layering stays as designed | `docs/architecture_test.go` |
 | DEP-4 | Developer tooling needs only Go and Docker, besides the bash and curl every Mac and Linux machine has: no Node.js, nothing else to install. | Least friction for contributors (ADR-0011) | Review: `Makefile` |
 
@@ -203,6 +203,7 @@ says so.
 | REL-7 | With `VALIDATOR_URL`, every request but the probes is checked against the request-validation service; when it can't answer, requests are refused (503) unless `VALIDATOR_FAILURE_MODE=open`, and it's asked again at most once a second. | A check the API can't serve without is never skipped quietly (ADR-0032) | `internal/validator/validator_test.go`, `integration/features/request-validation.feature` |
 | REL-8 | A panic doesn't end the process: a handler's becomes a 500 (or an aborted response, once it has started), a background task's is logged and stops only that task. The Go runtime's memory limit is 90% of the container's unless `GOMEMLIMIT` says otherwise. | Every request in flight would end with the process (ADR-0044) | `internal/httpx/middleware_test.go`, `internal/logx/recover_test.go`, `internal/profiling/memlimit_test.go` |
 
+<!-- feature:perf -->
 ### Performance
 
 | ID | Requirement | Why | Verified by |
@@ -213,6 +214,7 @@ says so.
 | PERF-4 | CI's time on `main`, by job and step, is recorded after every successful run. | A slower pipeline slows every merge (ADR-0024) | `.github/workflows/ci-times.yml`, `perf/report/ci_test.go`, `perf/save_record_test.go` |
 | PERF-5 | Under 30 minutes of steady load, the API's live heap and goroutines don't grow, checked nightly on `main`. | Leaks show only with time | `.github/workflows/soak.yml`, `perf/soak.sh`, `perf/report/soak_test.go` |
 
+<!-- end feature:perf -->
 ### Observability
 
 | ID | Requirement | Why | Verified by |

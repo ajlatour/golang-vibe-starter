@@ -71,10 +71,13 @@ The check is a network call on every request's path, so the API measures it. `/m
 - `validator_calls_total{outcome}`, each check's outcome: `allowed`, `refused`, `shadow_refused`,
   `unavailable`, or `not_asked` (during an outage, between tries).
 
+<!-- feature:perf -->
 The local stack runs the check against WireMock, so the load tests include its cost. Each pull
 request's performance report has a **Request validation** section with the calls' median and p99,
 from the API's own histogram, next to `main`'s; and `main`'s trends, which every release attaches
 in its Performance history, chart them over time ([Performance](performance.md#trends)).
+
+<!-- end feature:perf -->
 
 ## When it can't answer
 

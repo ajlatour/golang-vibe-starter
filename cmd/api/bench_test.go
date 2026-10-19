@@ -21,7 +21,7 @@ import (
 // it: the middleware, the header guard, the handler, the upstream call over
 // real HTTP (to an in-process upstream, so the network is loopback and the
 // upstream nearly free), and the JSON both ways, with logging on at INFO into
-// io.Discard and the request metrics recorded, as in production. It's the in-process counterpart of the k6 load tests: what one
+// io.Discard and the request metrics recorded, as in production. It's the in-process counterpart of a load test: what one
 // request costs, without Docker or WireMock in the numbers.
 func BenchmarkAPI(b *testing.B) {
 	upstreamStore := itemtest.NewMemStore()

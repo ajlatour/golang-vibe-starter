@@ -1,8 +1,10 @@
 # Releasing
 
-A release is a version tag on `main`. Pushing the tag publishes the API's image to the GitHub
-Container Registry and a GitHub release, both made by the Release workflow
-(`.github/workflows/release.yml`) from the tagged commit.
+A release is a version tag on `main`.
+<!-- feature:release -->
+Pushing the tag publishes the API's image to the GitHub Container Registry and a GitHub release,
+both made by the Release workflow (`.github/workflows/release.yml`) from the tagged commit.
+<!-- end feature:release -->
 
 Versions follow [Semantic Versioning](https://semver.org/): while the version is 0.x, a minor
 release (0.2.0) may break callers; from 1.0.0 only a major one may.
@@ -42,11 +44,12 @@ request so a problem shows before it's tagged:
   optional parameter or field, status, or error code). Descriptions don't count. On a pull
   request (`make api-compat`, and CI's docs job, which shows the report in its summary), a
   breaking change needs a `**Breaking**` entry in a change file in `changes/`, so it's a
-  decision, written down for the release notes. For a release, `make release-prepare` and the
-  Release workflow refuse a version bump too small for the changes: an additive change needs at
+  decision, written down for the release notes. For a release, `make release-prepare` refuses a
+  version bump too small for the changes: an additive change needs at
   least a minor release, and a breaking one a minor release while the version is 0.x, a major
   one from 1.0.0. `sh scripts/api-compat.sh release vX.Y.Z` runs that check alone.
 
+<!-- feature:release -->
 - **The image that ships is run before it's published.** `scripts/smoke-image.sh` runs an image
   for one platform against WireMock and flagd and checks: it is that platform's image, it says
   it's the version being released, it runs as a non-root user, the probes answer, a request
@@ -78,9 +81,12 @@ registry, and no release. Then it publishes:
 | The documentation, `docs-v0.1.0.tar.gz` | Attached to the release: the docs site as of the tag (open `docs/index.html`), with a Performance history page charting `main`'s performance and CI time up to the release |
 | The performance records, `performance-records-v0.1.0.tar.gz` | Attached to the release: the `perf-data` records that page charts, as JSON, for analysis of your own |
 
+<!-- feature:perf -->
 So each release carries the history up to it, and comparing two releases' Performance history
 pages shows what changed between them. The history comes from the `perf-data` branch as it is when
 the release is made ([Performance](performance.md#trends)).
+
+<!-- end feature:perf -->
 
 The binary inside reports the version: `version` on every log line is `v0.1.0`. The image's
 labels name the source repository, the commit and the version. The package is private, like the
@@ -104,3 +110,5 @@ each platform's image, and publishes nothing. `sh scripts/changelog.sh notes` pr
 Images aren't signed. Signing with cosign and keyless OIDC would need a third-party tool, and
 GitHub's own artifact attestations aren't available to private repositories on this plan. The
 provenance attached to the image records how it was built, but not who vouches for it.
+
+<!-- end feature:release -->

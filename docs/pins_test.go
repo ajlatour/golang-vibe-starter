@@ -86,7 +86,10 @@ func TestToolImagesResolve(t *testing.T) {
 	if len(names) == 0 {
 		t.Fatal("tools/images/Dockerfile lists no images")
 	}
-	uses := read(t, "../Makefile") + read(t, "../.github/workflows/release.yml")
+	uses := read(t, "../Makefile")
+	// feature:release
+	uses += read(t, "../.github/workflows/release.yml")
+	// end feature:release
 	for _, n := range names {
 		out, err := exec.Command("sh", "../scripts/image.sh", n[1]).Output()
 		if ref := strings.TrimSpace(string(out)); err != nil || !pinnedImageRE.MatchString(ref) {

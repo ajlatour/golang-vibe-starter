@@ -77,6 +77,7 @@ curl -X POST localhost:8081/__admin/mappings/reset
 
 The integration tests switch these same stubs on, one scenario at a time.
 
+<!-- feature:perf -->
 ## Load-test tuning
 
 [Performance](performance.md) covers running the load tests; this section covers WireMock's part.
@@ -108,3 +109,5 @@ p99 and p99.9 as upstream latency. When load testing:
   enabling JVM GC logging through `JAVA_OPTS`.
 - WireMock competes with the API and the load generator for CPU. Consider capping it with `cpus:`
   in compose, and keep the load generator's CPU usage in view.
+
+<!-- end feature:perf -->

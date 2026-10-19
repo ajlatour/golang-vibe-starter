@@ -110,10 +110,8 @@ func run(args []string, dir string, out io.Writer) error {
 	if _, err := os.Stat(filepath.Join(dir, "cmd/initservice")); err == nil {
 		leave = append(slices.Clip(without), initFeature)
 	}
-	for _, f := range leave {
-		if err := leaveOut(dir, f); err != nil {
-			return err
-		}
+	if err := leaveAll(dir, leave); err != nil {
+		return err
 	}
 	if err := applyMarkers(dir, files, leave); err != nil {
 		return err

@@ -143,6 +143,7 @@ change something.
 - Only hashes of secrets are configured (API keys), and no secret is ever logged. *Checked by:*
   `cmd/api/logcontract_test.go`.
 
+<!-- feature:perf -->
 ### Performance
 
 - Measure before optimizing: the benchmarks (`make bench`), the load tests and the profiles
@@ -151,6 +152,8 @@ change something.
   then it carries the `perf-ok` label and says why. *Checked by:* the Performance workflow.
 - Tricks that save an allocation (a response made once, a canonical header key, a stack buffer)
   are for code a benchmark shows is hot, with a comment saying why.
+
+<!-- end feature:perf -->
 
 ## HTTP APIs
 
