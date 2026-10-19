@@ -9,16 +9,17 @@ where it's a decision, an [ADR](docs/decisions.md).
 
 **Status:** ✅ done · 🔄 in progress · ⏭️ queued (decided, not yet built) · 💡 proposed.
 
-**Dependency cost**, because the service uses the standard library only (DEP-1,
-[ADR-0002](docs/adr/0002-the-service-uses-the-standard-library-only.md), enforced by a
-test):
+**Dependency cost**, because the service uses the standard library only, but for adapters allowed
+a dependency of their own (DEP-1,
+[ADR-0046](docs/adr/0046-the-opentelemetry-sdk-is-allowed-in-one-optional-adapter.md), enforced
+by a test):
 
 | Cost | Meaning |
 | ---- | ------- |
 | **stdlib** | Code in this module, no new dependency. Fits as is. |
 | **container** | A tool run in Docker, in the compose stack or CI, like WireMock and Redocly ([ADR-0011](docs/adr/0011-tooling-runs-in-docker-or-through-go-run.md)). No change to the service. |
 | **tool module** | A Go dependency in a module of its own (like `integration/` and `perf/report/`), or run with `go run`: tests and tooling only (DEP-2). |
-| **service dep** | A dependency of the service itself. Needs an ADR that replaces DEP-1 first. |
+| **service dep** | A dependency of the service itself, in an adapter of its own. Needs an ADR, and a line in the test's list of adapters (DEP-1). |
 
 ## Already in place
 
@@ -73,7 +74,7 @@ In the order they build on each other: the building blocks first, then what uses
 | ✅ | **Run with no infrastructure.** Promote the in-memory store from `itemtest` to a real adapter, chosen with `STORE=memory`, and a `make dev` that runs the service with it, rebuilding on change. | `go run ./cmd/api` serves requests on a fresh clone, with no Docker, upstream or flagd. The first five minutes decide whether a template gets used. | stdlib; a file watcher via `go run` |
 | ✅ | **`make init NAME=orders MODULE=github.com/acme/orders`.** Renames the module, the service, its image and its compose project; empties the changelog and `changes/`; and says what's left to do by hand. A test runs it on a copy and runs the suite ([starting a new service](docs/development.md#starting-a-new-service)). Still to do: GitHub's "template repository" setting, and an option to remove the example resource. | Renaming by hand misses some of the 230 places. A test would run it on a copy and run the suite, so it can't rot. | stdlib (a Go program in `cmd/`) |
 | ✅ | **A resource generator: `make resource NAME=order`.** Copies `/items` under the new name: the package (model, store interface, handlers, stores, contract tests), its paths and schemas in the spec, WireMock stubs, a `docs/curl.md` section, its share of the load test, its flag and an integration feature, all passing the drift tests as generated ([adding a resource](docs/development.md#adding-a-resource)). | Adding a resource is the most common change, and touches the most places. A test generates one in a copy and runs every check on it. | stdlib (`text/template`) |
-| 💡 | **An ADR for dependencies in adapters.** Keep the core (handlers, models, protections) standard library only, and allow vetted dependencies in adapter packages behind interfaces, from a list the architecture test enforces. | A microservice needs a database driver and a telemetry SDK. DEP-1 rules both out, and the rows below need them. | an ADR superseding [ADR-0002](docs/adr/0002-the-service-uses-the-standard-library-only.md) |
+| ✅ | **An ADR for dependencies in adapters.** Keep the core (handlers, models, protections) standard library only, and allow vetted dependencies in adapter packages behind interfaces, from a list the architecture test enforces ([ADR-0046](docs/adr/0046-the-opentelemetry-sdk-is-allowed-in-one-optional-adapter.md), for OpenTelemetry). | A microservice needs a database driver and a telemetry SDK. DEP-1 rules both out, and the rows below need them. | an ADR superseding [ADR-0002](docs/adr/0002-the-service-uses-the-standard-library-only.md) |
 | 💡 | **A SQL store**, Postgres, with migrations embedded and run at startup (or as a job), transactions, and the store contract run against a real database in the integration stack. | Most services own their data; the upstream store fits only those that front another service. | [`pgx`](https://github.com/jackc/pgx), in an adapter |
 | 💡 | **OpenTelemetry spans and OTLP export**, with a Collector and a trace viewer (Jaeger or Tempo) in the compose stack. | Trace context is already carried and logged; spans show where a request's time went, across services. | the OTel Go SDK, in an adapter |
 | 💡 | **Events and a worker.** A transactional outbox, a publisher, and a `cmd/worker` that consumes, built on the same plumbing: configuration, logging, `logx.Go`, graceful shutdown, readiness. | Services talk by events as well as requests; a worker template saves building that plumbing a second time. | a broker client (NATS or Kafka), in an adapter |

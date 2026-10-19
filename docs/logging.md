@@ -57,7 +57,7 @@ include `.git`; without it, container logs show `version=devel`.
 | `panic`       | `panic serving request` | The recovered panic value.                                  |
 | `stack`       | `panic serving request` | The goroutine stack at the panic.                           |
 | `default`     | `flag evaluation failed, using default` | The default value that was used instead.     |
-| `url`         | `using upstream`, `using feature flags` | A configured base URL, credentials redacted.  |
+| `url`         | `using upstream`, `using feature flags`, `using tracing` | A configured base URL, credentials redacted.  |
 | `timeout`     | startup and shutdown lines | A configured timeout, e.g. `5s`.                          |
 | `addr`        | `server started`, and the profiling server's lines | The address the server is listening on. |
 | `reason`      | `request headers rejected`, `request headers would be rejected` | Which header rule was broken: `header too large`, `too many headers`, `headers too large`, `duplicate header`, `missing content type` or `unsupported content type`. |
@@ -125,6 +125,8 @@ upstream, comes back, and leaves the API.
 | `using upstream` | INFO | `url`, `timeout`, `retries` | Startup. |
 | `using the in-memory store: for development only; items are lost when the service stops` | WARN | | Startup, with `STORE=memory`: a warning, so a deployment that's set it by mistake shows it. |
 | `using feature flags` | INFO | `url`, `timeout`, `cache_ttl` | Startup, with `FLAGS_URL` set. |
+| `using tracing` | INFO | `url` | Startup, with an OTLP endpoint set: spans are recorded and exported there ([Tracing](tracing.md)). |
+| `tracing failed` | WARN | `error` | The OpenTelemetry SDK couldn't do its part, usually export a batch of spans: the collector is down or refuses them. The spans are dropped; requests aren't affected. Up to one a batch, every 5 seconds, while it lasts. |
 | `using API keys` | INFO | `api_keys`, `reads` | Startup: the names and scopes of the configured keys (never the keys), and whether reads need one. |
 | `authentication is off: every request is allowed` | WARN | none | Startup, with `API_AUTH=off`. For local development only. |
 | `using limits` | INFO | `max_in_flight`, `rate_limit`, `rate_burst` | Startup: the cap on requests in flight and the per-client rate limit in force (0 is none). |

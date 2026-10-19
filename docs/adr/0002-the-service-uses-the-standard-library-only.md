@@ -1,6 +1,6 @@
 # ADR-0002: The service uses the standard library only
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0046
 - **Date:** 2026-10-03 (029a3cd)
 
 **Context.** Every dependency is code to audit, update and trust. Go's standard library covers

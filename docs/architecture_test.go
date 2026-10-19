@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -53,11 +54,61 @@ func section(t *testing.T, doc, heading string) string {
 	return rest
 }
 
-// TestServiceHasNoDependencies holds DEP-1: the service's module requires
-// nothing.
-func TestServiceHasNoDependencies(t *testing.T) {
-	if regexp.MustCompile(`(?m)^require\b`).MatchString(read(t, "../go.mod")) {
-		t.Error("go.mod requires a module: the service uses the standard library only (DEP-1, ADR-0002)")
+// adapters are the packages that may import a third-party module, and the
+// modules each may (DEP-1, ADR-0046): an import path within one of them.
+var adapters = map[string][]string{
+	"internal/telemetry": {"go.opentelemetry.io/otel"},
+}
+
+// TestDependenciesStayInAdapters holds DEP-1: the service imports
+// third-party code only in the adapters allowed it, their tests included,
+// and its go.mod requires directly only the modules they import.
+func TestDependenciesStayInAdapters(t *testing.T) {
+	fset := token.NewFileSet()
+	used := map[string]bool{}
+	for _, root := range []string{"../cmd", "../internal", "../flagd", "../docs", "../monitoring", "../perf"} {
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				if _, err := os.Stat(filepath.Join(path, "go.mod")); err == nil {
+					return filepath.SkipDir // a module of its own (DEP-2)
+				}
+				return nil
+			}
+			if !strings.HasSuffix(path, ".go") {
+				return nil
+			}
+			f, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
+			if err != nil {
+				return err
+			}
+			pkg := filepath.ToSlash(strings.TrimPrefix(filepath.Dir(path), "../"))
+			for _, imp := range f.Imports {
+				p, _ := strconv.Unquote(imp.Path.Value)
+				first, _, _ := strings.Cut(p, "/")
+				if !strings.Contains(first, ".") || strings.HasPrefix(p, module) {
+					continue // the standard library, or the service's own
+				}
+				ok := slices.ContainsFunc(adapters[pkg], func(m string) bool { return p == m || strings.HasPrefix(p, m+"/") })
+				if !ok {
+					t.Errorf("%s imports %s: only the adapters allowed it may import third-party code (DEP-1, ADR-0046)", path, p)
+				}
+				used[p] = true
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	direct := regexp.MustCompile(`(?m)^\t(\S+) v\S+$`) // a require line without "// indirect"
+	for _, m := range direct.FindAllStringSubmatch(read(t, "../go.mod"), -1) {
+		mod := m[1]
+		if !slices.ContainsFunc(slices.Collect(maps.Keys(used)), func(p string) bool { return p == mod || strings.HasPrefix(p, mod+"/") }) {
+			t.Errorf("go.mod requires %s directly, which no adapter imports (DEP-1, ADR-0046): go mod tidy", mod)
+		}
 	}
 }
 
