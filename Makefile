@@ -21,22 +21,33 @@ WIREMOCK_URL ?= http://localhost:8081
 FLAGD_URL    ?= http://localhost:8016
 PPROF_URL    ?= http://localhost:6061
 
-# Performance tests. PROFILE picks the k6 profile (perf/profiles.json) for
-# make perf and perf-profile, which have their own defaults. The comparisons
-# measure the working tree against BENCH_BASE, interleaving BENCH_COUNT
-# benchmark rounds (benchstat wants at least 6) and LOAD_ROUNDS k6 runs.
 # The Go tools: static analysis (ADR-0026), govulncheck and benchstat, pinned
 # with their dependencies' checksums in tools/go.mod (ADR-0045), and built
 # from it into bin/tools. Building them is cached like any build, so nothing
 # is fetched once it's done; Dependabot proposes their updates.
 TOOLS := $(CURDIR)/bin/tools
 
+# feature:perf
+# Performance tests. PROFILE picks the k6 profile (perf/profiles.json) for
+# make perf and perf-profile, which have their own defaults. The comparisons
+# measure the working tree against BENCH_BASE, interleaving BENCH_COUNT
+# benchmark rounds (benchstat wants at least 6) and LOAD_ROUNDS k6 runs.
 BENCH_COUNT ?= 6
 LOAD_ROUNDS ?= 2
 BENCH_BASE  ?= main
 BENCH_OUT   := bin/bench
 LOAD_OUT    := bin/perf/compare
 BENCHSTAT   := $(TOOLS)/benchstat
+# end feature:perf
+
+# The compose profiles beside the stack, which make down stops too.
+PROFILES :=
+# feature:perf
+PROFILES += --profile monitoring --profile perf
+# end feature:perf
+# feature:tracing
+PROFILES += --profile tracing
+# end feature:tracing
 
 # The fault stubs that `make fault` can switch on.
 FAULTS := $(notdir $(basename $(wildcard wiremock/faults/*.json)))
@@ -51,24 +62,28 @@ DOCS_OUT := bin/docs
 REDOCLY := docker run --rm --user $(shell id -u):$(shell id -g) -v "$(CURDIR):/spec" -w /spec $(shell sh scripts/image.sh redocly)
 
 .DEFAULT_GOAL := help
-.PHONY: help init init-check init-docs-check resource resource-check up down logs tracing dev run test fmt fmt-check vet test-race cover check \
-	integration integration-up integration-test integration-logs integration-down \
-	lint tools api-key vuln fuzz live-test fault fault-reset docs docs-open docs-check docs-release godoc spec spec-lint \
-	api-compat smoke release-prepare release-tag perf perf-profile perf-soak bench bench-compare load-compare perf-compare perf-data perf-trends monitor
 
 ##@ Help
+
+.PHONY: help
 
 help: ## List the targets
 	@awk 'BEGIN { FS = ":.*## " } \
 		/^##@/ { printf "\n%s\n", substr($$0, 5) } \
 		/^[a-zA-Z_-]+:.*## / { printf "  make %-18s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 	@echo
-	@echo "  Variables: FAULT=<name> for make fault; TAGS=@smoke or ARGS=... for the integration tests;"
+	@echo "  Variables: FAULT=<name> for make fault; TAGS=@smoke or ARGS=... for the integration tests."
+# feature:perf
 	@echo "  PROFILE=<name> for make perf: $$(sed -n 's/^  "\([a-z-]*\)": {/\1/p' perf/profiles.json | tr '\n' ' ')"
+# end feature:perf
 
 ##@ Start a service
 
+.PHONY: resource resource-check
+
 # feature:init
+.PHONY: init init-check init-docs-check
+
 init: ## Make this copy a service of its own: make init NAME=orders MODULE=github.com/acme/orders [WITHOUT=tracing]
 	@if [ -z "$(NAME)" ] || [ -z "$(MODULE)" ]; then \
 		echo "usage: make init NAME=<service name> MODULE=<Go module path>"; exit 2; fi
@@ -77,11 +92,18 @@ init: ## Make this copy a service of its own: make init NAME=orders MODULE=githu
 init-check: ## Run make init on copies of this repository, with each feature left out, then vet and test them
 	TEMPLATE_CHECK=1 go test -count=1 -timeout 25m -run TestInitOnACopy ./cmd/initservice
 
-init-docs-check: ## Run make init on a copy, every feature left out, then build and check its docs site (Docker)
-	rm -rf bin/init-copy && git worktree prune
-	git worktree add -q --detach bin/init-copy HEAD
-	cd bin/init-copy && go run ./cmd/initservice -name orders -module github.com/acme/orders -without all >/dev/null && $(MAKE) docs-check
-	git worktree remove --force bin/init-copy
+# Each feature left out on its own, and all of them.
+INIT_CASES = $(shell go run ./cmd/initservice -list-features | sed -n 's/.*"Name": "\(.*\)",/\1/p') all
+
+init-docs-check: ## Run make init on copies, each feature left out and then all, and check each one's scripts, workflows and docs site (Docker)
+	@set -e; for without in $(INIT_CASES); do \
+		echo "== make init WITHOUT=$$without"; \
+		rm -rf bin/init-copy; git worktree prune; \
+		git worktree add -q --detach bin/init-copy HEAD; \
+		(cd bin/init-copy && go run ./cmd/initservice -name orders -module github.com/acme/orders -without $$without >/dev/null && \
+			git add -A && $(MAKE) -s lint-files docs-check >/dev/null) || { echo "FAILED: WITHOUT=$$without"; exit 1; }; \
+		git worktree remove --force bin/init-copy; \
+	done
 # end feature:init
 
 resource: ## Add a resource, copied from /items: make resource NAME=order (PLURAL=... if not NAME with an s)
@@ -93,13 +115,15 @@ resource-check: ## Run make resource on a copy of this repository, then vet and 
 
 ##@ Local stack
 
+.PHONY: up down logs dev run fault fault-reset
+
 up: ## Start the API, WireMock and flagd in the background (rebuilds the API)
 	$(COMPOSE) up -d --build --wait
 	@echo "API: $(API_URL)   WireMock: $(WIREMOCK_URL)   flagd: $(FLAGD_URL)"
 
-down: ## Stop the local stack, monitoring and tracing included
+down: ## Stop the local stack, every profile's containers included
 	@# Naming the profiles stops their containers too, which a plain down leaves running.
-	$(COMPOSE) --profile monitoring --profile perf --profile tracing down
+	$(COMPOSE) $(PROFILES) down
 
 logs: ## Follow the stack's logs (Ctrl-C to stop)
 	$(COMPOSE) logs -f
@@ -113,6 +137,8 @@ dev: ## Run the API with go run and an in-memory store, on :8080: nothing else t
 		go run -ldflags "-X main.version=$(VERSION)" ./cmd/api
 
 # feature:tracing
+.PHONY: tracing
+
 tracing: ## Start the stack with Jaeger, the API sending it a span for every request and call
 	OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318 $(COMPOSE) --profile tracing up -d --build --wait
 	@echo "API: $(API_URL)   Jaeger: http://localhost:16686 (service: golang-vibe-starter). make down stops it all."
@@ -137,9 +163,13 @@ fault-reset: ## Switch off every fault (back to the mounted stubs)
 
 ##@ Checks and tests
 
+.PHONY: test fmt fmt-check vet test-race cover check tools lint lint-files api-key vuln fuzz live-test
+
 test: ## Unit tests (no Docker)
 	go test ./...
+# feature:perf
 	go test -C perf/report ./...
+# end feature:perf
 
 fmt: ## Format the code
 	gofmt -w .
@@ -151,11 +181,15 @@ fmt-check: ## Fail if any file needs gofmt
 vet: ## go vet, for the service and the integration and perf report modules
 	go vet ./...
 	go vet -C integration ./...
+# feature:perf
 	go vet -C perf/report ./...
+# end feature:perf
 
 test-race: ## Unit tests with the race detector
 	go test -race ./...
+# feature:perf
 	go test -C perf/report -race ./...
+# end feature:perf
 
 # The coverage floor, across the service's packages: a change that lowers the
 # total below it fails CI. Raise it as coverage rises; don't lower it.
@@ -179,21 +213,31 @@ lint: tools ## staticcheck (every check), modernize, gosec, go mod tidy, shellch
 	@# and stays so. modernize flags code a newer Go says more simply.
 	$(TOOLS)/staticcheck -checks all ./...
 	cd integration && $(TOOLS)/staticcheck -checks all ./...
+# feature:perf
 	cd perf/report && $(TOOLS)/staticcheck -checks all ./...
+# end feature:perf
 	$(TOOLS)/modernize -test ./...
 	cd integration && $(TOOLS)/modernize -test ./...
+# feature:perf
 	cd perf/report && $(TOOLS)/modernize -test ./...
+# end feature:perf
 	$(TOOLS)/gosec -quiet ./...
 	cd integration && $(TOOLS)/gosec -quiet ./...
+# feature:perf
 	@# The report tool's job is reading the files named on its command line,
 	@# which is all G304 (file inclusion via a variable) would flag there.
 	cd perf/report && $(TOOLS)/gosec -quiet -exclude=G304 ./...
+# end feature:perf
 	@# go.mod and go.sum say exactly what the code needs.
 	go mod tidy -diff
 	go -C integration mod tidy -diff
+# feature:perf
 	go -C perf/report mod tidy -diff
+# end feature:perf
 	go -C tools mod tidy -diff
-	@# The shell scripts, and the workflows (with the shell in their steps).
+	$(MAKE) lint-files
+
+lint-files: ## shellcheck on the shell scripts, and actionlint on the workflows (with the shell in their steps)
 	$(DOCKER_RUN) -v "$(CURDIR):/mnt" -w /mnt $(shell sh scripts/image.sh shellcheck) $$(git ls-files '*.sh') scripts/api
 	$(DOCKER_RUN) -v "$(CURDIR):/repo" -w /repo $(shell sh scripts/image.sh actionlint) -color=false
 
@@ -204,7 +248,9 @@ api-key: ## Generate an API key and its API_KEYS entry: make api-key NAME=ci SCO
 vuln: tools ## Check all three modules for known vulnerabilities the code can reach
 	$(TOOLS)/govulncheck ./...
 	cd integration && $(TOOLS)/govulncheck ./...
+# feature:perf
 	cd perf/report && $(TOOLS)/govulncheck ./...
+# end feature:perf
 
 # The fuzz tests, as package:Function. go test fuzzes one at a time.
 FUZZ_TARGETS := internal/httpx:FuzzDecodeJSON internal/httpx:FuzzCorrelationID internal/tracectx:FuzzParse \
@@ -228,6 +274,8 @@ live-test: ## The opt-in httpstore test against the running WireMock
 
 ##@ Integration tests (Godog, against the whole stack)
 
+.PHONY: integration integration-up integration-test integration-logs integration-down
+
 integration: ## Start the test stack, run the suite, and always stop it again
 	$(MAKE) integration-up
 	@$(MAKE) integration-test; status=$$?; \
@@ -246,7 +294,10 @@ integration-logs: ## Print the test stack's logs
 integration-down: ## Stop the test stack
 	$(COMPOSE_INTEGRATION) down
 
+# feature:perf
 ##@ Performance (see docs/performance.md)
+
+.PHONY: monitor perf perf-profile perf-soak bench perf-data perf-trends bench-compare load-compare perf-compare
 
 monitor: ## Start the stack with monitoring: a Grafana dashboard of load, containers and the Go runtime
 	$(COMPOSE) --profile monitoring up -d --build --wait
@@ -300,15 +351,22 @@ perf-compare: ## Both comparisons, written up as the pull request comment CI pos
 		-bench-base $(BENCH_OUT)/base.txt -bench-head $(BENCH_OUT)/head.txt \
 		-load $(LOAD_OUT) $$([ $$status -ne 0 ] && echo -load-failed) > bin/perf/report.md || status=$$?; \
 	echo "The report is in bin/perf/report.md"; exit $$status
+# end feature:perf
 
 ##@ Releasing (see docs/releasing.md)
+
+.PHONY: api-compat release-prepare
 
 api-compat: ## What changed in the API since the last release, and whether the changelog says so for a breaking change
 	sh scripts/api-compat.sh pr
 
+# feature:release
+.PHONY: smoke
+
 smoke: ## Build the image for this machine and smoke-test it as the Release workflow does (PLATFORM=linux/amd64 for another)
 	docker buildx build --platform $(or $(PLATFORM),linux/$(shell docker version -f '{{.Server.Arch}}')) --load --build-arg VERSION=v0.0.0-smoke -f cmd/api/Dockerfile -t vibe-smoke:local .
 	sh scripts/smoke-image.sh vibe-smoke:local $(or $(PLATFORM),linux/$(shell docker version -f '{{.Server.Arch}}')) v0.0.0-smoke
+# end feature:release
 
 release-prepare: ## Turn Unreleased into VERSION on a branch, for a pull request: make release-prepare VERSION=v0.1.0
 	@echo "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "usage: make release-prepare VERSION=vX.Y.Z"; exit 2; }
@@ -323,16 +381,25 @@ release-prepare: ## Turn Unreleased into VERSION on a branch, for a pull request
 	git commit -q -am "Release $(VERSION)"
 	@echo "Now push release-$(VERSION), open a pull request, and once it's merged: make release-tag VERSION=$(VERSION)"
 
-release-tag: ## Tag VERSION on main and push the tag, which publishes the release: make release-tag VERSION=v0.1.0
+.PHONY: release-tag
+
+release-tag: ## Tag VERSION on main and push the tag: make release-tag VERSION=v0.1.0
 	@echo "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$$' || { echo "usage: make release-tag VERSION=vX.Y.Z"; exit 2; }
 	@[ "$$(git rev-parse --abbrev-ref HEAD)" = main ] || { echo "switch to main first"; exit 1; }
 	git pull -q --ff-only origin main
 	@sh scripts/changelog.sh notes $(VERSION) >/dev/null
 	git tag -a $(VERSION) -m "Release $(VERSION)"
 	git push origin $(VERSION)
+# feature:release
 	@echo "Pushed $(VERSION): the Release workflow builds, publishes and announces it."
+# end feature:release
+# feature:!release
+	@echo "Pushed $(VERSION)."
+# end feature:!release
 
 ##@ Documentation (rendered in Docker; nothing to install)
+
+.PHONY: docs docs-open docs-check godoc spec spec-lint
 
 docs: ## Render the README, guides, changelog and API spec as a local site in bin/docs
 	@# Start empty, so a page the build didn't produce can't survive from an earlier run.
@@ -349,9 +416,15 @@ docs-open: docs ## Build the docs site and open it in your browser
 docs-check: docs ## Build the docs site and check every page exists and every link resolves
 	DOCS_SITE=$(DOCS_OUT) go test ./docs/site -count=1 -v
 
+# feature:release
+# feature:perf
+.PHONY: docs-release
+
 docs-release: perf-data ## Build and check the docs site with its Performance history charted from perf-data, as a release attaches it
 	bin/perf-report trends -fragment $(TRENDS_ARGS) > bin/perf/history.html
 	$(MAKE) docs-check HISTORY=bin/perf/history.html
+# end feature:perf
+# end feature:release
 
 godoc: ## Browse the Go package documentation at http://localhost:6060 (Ctrl-C to stop)
 	go run golang.org/x/pkgsite/cmd/pkgsite@v0.5.0 -http=localhost:6060 .

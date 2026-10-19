@@ -267,10 +267,12 @@ The page is drawn by the report tool, with no JavaScript or chart library.
 The timings come from shared runners, so a single point means little; look for steps and slopes.
 Allocations are exact, so a step in them is always a real change.
 
+<!-- feature:release -->
 Every release attaches its documentation with these charts in it: the docs site's Performance
 history page, built from the records up to the release, and the records themselves
 ([Releasing](releasing.md#what-the-tag-publishes)). `make docs-release` builds that site locally;
 `make docs` leaves the page as a note pointing here, so building the docs needs no records.
+<!-- end feature:release -->
 
 ## Soak
 

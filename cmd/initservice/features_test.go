@@ -24,6 +24,13 @@ func TestStripMarkers(t *testing.T) {
 			t.Errorf("without %v: %q, %v; want %q", tt.out, got, err, tt.want)
 		}
 	}
+	// feature:!x is what's there instead without x.
+	inverse := "a\n# feature:x\nwith\n# end feature:x\n# feature:!x\nwithout\n# end feature:!x\n"
+	for out, want := range map[bool]string{false: "a\nwith\n", true: "a\nwithout\n"} {
+		if got, err := stripMarkers(inverse, map[string]bool{"x": out}); err != nil || got != want {
+			t.Errorf("x left out %v: %q, %v; want %q", out, got, err, want)
+		}
+	}
 	for _, bad := range []string{"// feature:x\n", "// end feature:x\n", "// feature:x\n// end feature:y\n"} {
 		if _, err := stripMarkers(bad, nil); err == nil {
 			t.Errorf("%q: no error", bad)
@@ -96,7 +103,7 @@ func TestLeaveOut(t *testing.T) {
 		replace:   map[string][][2]string{"text.md": {{"with the feature", "without it"}}},
 		deprecate: []string{"0007"},
 	}
-	if err := leaveOut(dir, f); err != nil {
+	if err := leaveOut(dir, f, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := applyMarkers(dir, []string{"code.go", "table.md", "gone.md"}, []feature{f}); err != nil {
@@ -118,13 +125,18 @@ func TestLeaveOut(t *testing.T) {
 		}
 	}
 
+	// A rule for a file another feature removes is skipped.
+	if err := leaveOut(dir, feature{Name: "s", lines: map[string][]string{"elsewhere/x.md": {"nope"}}}, map[string]bool{"elsewhere": true}); err != nil {
+		t.Errorf("a rule for a file another feature removes: %v", err)
+	}
+
 	for name, stale := range map[string]feature{
 		"a file that isn't there": {Name: "s", remove: []string{"nope"}},
 		"a line that isn't there": {Name: "s", lines: map[string][]string{"table.md": {"nope"}}},
 		"text that isn't there":   {Name: "s", replace: map[string][][2]string{"text.md": {{"nope", ""}}}},
 		"a record that isn't":     {Name: "s", deprecate: []string{"9999"}},
 	} {
-		if err := leaveOut(dir, stale); err == nil {
+		if err := leaveOut(dir, stale, nil); err == nil {
 			t.Errorf("%s: no error", name)
 		}
 	}

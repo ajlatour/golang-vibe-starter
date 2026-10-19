@@ -140,9 +140,10 @@ jobs:
       - name: Start a service from the template
         run: make init-check
 
-      # The docs site of a service with every feature left out: links to
-      # the pages that went with them are what the test above can't see.
-      - name: Its docs, with every feature left out
+      # The scripts, workflows and docs site of a service with each feature
+      # left out, and with all of them: shellcheck, actionlint and the docs'
+      # links check what the test above can't, which is Docker's.
+      - name: Its scripts, workflows and docs, with features left out
         run: make init-docs-check
       # end feature:init
 

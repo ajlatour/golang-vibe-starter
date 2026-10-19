@@ -214,7 +214,8 @@ func checkInit(t *testing.T, without []feature, list string) {
 		for _, word := range f.gone {
 			// The decision records are history, and the changelog's line
 			// says where the service came from.
-			grep("still naming "+f.Name+", left out", "-F", "-e", word, "--", ".", ":!docs/adr", ":!CHANGELOG.md")
+			// cmd/newresource knows the parts a service may not have.
+			grep("still naming "+f.Name+", left out", "-F", "-e", word, "--", ".", ":!docs/adr", ":!CHANGELOG.md", ":!cmd/newresource")
 		}
 	}
 
@@ -229,7 +230,9 @@ func checkInit(t *testing.T, without []feature, list string) {
 		}
 	}
 	for _, module := range []string{".", "integration", "perf/report"} {
-		goCmd(module, "vet", "./...")
+		if _, err := os.Stat(filepath.Join(dir, module, "go.mod")); err == nil { // perf/report goes with perf
+			goCmd(module, "vet", "./...")
+		}
 	}
 	goCmd("tools", "build", "-o", t.TempDir(), "tool") // tool directives, no packages of its own
 	goCmd(".", "test", "-count=1", "./...")

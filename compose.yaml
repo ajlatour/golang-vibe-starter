@@ -9,7 +9,7 @@ name: golang-vibe-starter
 services:
   api:
     # The image `up --build` builds, or with --no-build, an image built
-    # elsewhere: perf/load-ab.sh runs two versions of the API this way.
+    # elsewhere, such as one version of two being compared under load.
     image: ${API_IMAGE:-golang-vibe-starter-api}
     build:
       context: .
@@ -24,7 +24,7 @@ services:
       # WireMock's unauthenticated admin API.
       - "127.0.0.1:8080:8080"
       # The runtime profiles (pprof), published on this machine's loopback
-      # only: they expose the program's internals. docs/performance.md.
+      # only: they expose the program's internals.
       - "127.0.0.1:6061:6061"
     # Your settings, if you've copied .env.example to .env and uncommented
     # some. The environment block below wins over this file.
@@ -50,8 +50,8 @@ services:
       # gvs_local-read-only, which may only read. They're in this file, so
       # they're no secret: they work only because the stack is published on
       # loopback. Set API_KEYS in .env (make api-key) to use your own.
-      # Per-client rate limit: off locally, so the load tests in perf/ measure
-      # the API rather than the limiter. Set RATE_LIMIT in .env to try it.
+      # Per-client rate limit: off locally, so load tests measure the API
+      # rather than the limiter. Set RATE_LIMIT in .env to try it.
       RATE_LIMIT: ${RATE_LIMIT:-0}
       API_KEYS: ${API_KEYS:-dev:write:1f0d1e72ef1251a015cbec8ae3ad6880002ffe8ad4de82f4f496db34dc3e91dc,dev-reader:read:1cf20667ccf4aa0982ca024c319ee0cf77cadf20e85bd2fc51264075af57b2d4}
       # All interfaces inside the container, so the port above can reach it.
@@ -137,6 +137,7 @@ services:
       - file:/etc/flagd/flags.json
     stop_grace_period: 5s
 
+  # feature:perf
   k6:
     # The load generator for the performance tests in perf/. Not started by
     # `up`: `make perf PROFILE=<name>` runs it on demand (the perf profile),
@@ -151,6 +152,7 @@ services:
     depends_on:
       api:
         condition: service_healthy
+  # end feature:perf
 
   # feature:tracing
   # Jaeger, to see traces (make tracing; docs/tracing.md#seeing-traces-locally).
@@ -166,6 +168,7 @@ services:
       - "127.0.0.1:4318:4318"
   # end feature:tracing
 
+  # feature:perf
   # The monitoring stack (make monitor; docs/performance.md#watching-resources).
   # Not started by `up`. Every container's CPU and memory from cAdvisor, the
   # API's runtime metrics and k6's results, in Prometheus, on a Grafana
@@ -224,3 +227,4 @@ services:
       GF_NEWS_NEWS_FEED_ENABLED: "false"
     depends_on:
       - prometheus
+  # end feature:perf

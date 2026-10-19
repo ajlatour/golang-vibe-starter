@@ -3,12 +3,18 @@
 # updates together), and the container images (pinned to digests). Weekly,
 # with each kind grouped into one pull request, so updates arrive as a few
 # reviewable PRs rather than a stream. The images the build runs elsewhere
-# (pandoc, Redocly, the SBOM generator) are listed in tools/images/Dockerfile
+# (pandoc, Redocly and the rest) are listed in tools/images/Dockerfile
 # for this; docs/pins_test.go checks no pinned image is written anywhere else.
 version: 2
 updates:
   - package-ecosystem: gomod
-    directories: ["/", "/integration", "/perf/report", "/tools"]
+    directories:
+      - "/"
+      - "/integration"
+      - "/tools"
+      # feature:perf
+      - "/perf/report"
+      # end feature:perf
     schedule:
       interval: weekly
     groups:

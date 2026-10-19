@@ -6,11 +6,12 @@
 #
 #   sh docs/site/build.sh <output directory> [performance history]
 #
+# feature:perf
 # The Performance history page holds the charts of main's performance and CI
-# times when given them, as an HTML fragment (`report trends -fragment`; make
-# docs-release, for the docs a release attaches); without, it says where to
-# find them.
+# times when given them, as an HTML fragment (`report trends -fragment`);
+# without, it says where to find them.
 #
+# end feature:perf
 # Pages work straight from disk: links between documents are rewritten from
 # .md to .html, the link to docs/openapi.json points at api.html, the one to
 # .env.example at a copy of it, and the CI
@@ -19,7 +20,9 @@
 set -eu
 
 out=${1:?usage: build.sh <output directory> [performance history]}
+# feature:perf
 history=${2:-}
+# end feature:perf
 mkdir -p "$out"
 cp docs/site/site.css "$out/site.css"
 # Linked from the README; .txt so a browser shows it rather than downloading it.
@@ -28,7 +31,7 @@ cp LICENSE "$out/license.txt"
 
 # The navigation, by theme: one "theme|source|output" line per page, in
 # order. "-" as the source is a page built elsewhere (Redocly's API spec), and
-# "+history" the Performance history page, which this script writes.
+# "+history" one this script writes (the Performance history).
 # Every guide in docs/ must be listed: the build stops on one that isn't, so a
 # new guide is placed in a theme on purpose.
 navigation='Start|README.md|index.html
@@ -85,6 +88,7 @@ decisions_md="$out/.decisions.md"
 	done
 } > "$decisions_md"
 
+# feature:perf
 # The Performance history page's source: the charts, a raw HTML block with no
 # blank line (one would end it), or where to find them.
 history_md="$out/.history.md"
@@ -97,12 +101,19 @@ history_md="$out/.history.md"
 		echo
 		cat "$history"
 	else
+# feature:release
 		echo "This build has no performance history. The documentation attached to each"
 		echo "[release](docs/releasing.md#what-the-tag-publishes) includes it, charting \`main\`'s performance and"
 		echo "CI's time up to that release; \`make docs-release\` builds it here, and \`make perf-trends\` charts"
 		echo "the latest ([Performance](docs/performance.md#trends))."
+# end feature:release
+# feature:!release
+		echo "This build has no performance history: \`make perf-trends\` charts the latest"
+		echo "([Performance](docs/performance.md#trends))."
+# end feature:!release
 	fi
 } > "$history_md"
+# end feature:perf
 
 # A page's title is its first top-level heading.
 title() { sed -n 's/^# //p' "$1" | head -n 1; }
@@ -122,7 +133,9 @@ nav() {
 			fi
 			case $nav_src in
 			-) nav_label="API spec" ;;
+# feature:perf
 			+history) nav_label=$(title "$history_md") ;;
+# end feature:perf
 			README.md) nav_label=Overview ;;
 			*) nav_label=$(title "$nav_src") ;;
 			esac
@@ -139,7 +152,9 @@ nav() {
 
 for page in $pages; do
 	src=${page%%:*} dest=${page#*:}
+# feature:perf
 	[ "$src" = +history ] && src=$history_md
+# end feature:perf
 	[ "$src" = docs/decisions.md ] && src=$decisions_md
 	case $src in
 	docs/adr/*) nav decisions.html ;; # a record is part of the decisions
@@ -172,4 +187,7 @@ for page in $pages; do
 		> "$out/$dest"
 	echo "  $src -> $out/$dest"
 done
-rm -f "$out/.nav.html" "$history_md" "$decisions_md"
+rm -f "$out/.nav.html" "$decisions_md"
+# feature:perf
+rm -f "$history_md"
+# end feature:perf

@@ -44,7 +44,10 @@ func siteDir(t *testing.T) string {
 // Performance history page.
 func expectedPages(t *testing.T) []string {
 	t.Helper()
-	pages := []string{"index.html", "changelog.html", "roadmap.html", "api.html", "history.html"}
+	pages := []string{"index.html", "changelog.html", "roadmap.html", "api.html"}
+	// feature:perf
+	pages = append(pages, "history.html")
+	// end feature:perf
 	guides, err := filepath.Glob("../*.md")
 	if err != nil {
 		t.Fatal(err)
@@ -228,8 +231,10 @@ func TestReadmeGroupsLikeTheSite(t *testing.T) {
 			continue // the README is the Overview: it doesn't list itself
 		case "-":
 			src = "docs/openapi.json" // the spec, which the site renders as api.html
+		// feature:perf
 		case "+history":
 			continue // generated from the perf-data branch: no file to link to
+			// end feature:perf
 		}
 		site[len(site)-1].sources = append(site[len(site)-1].sources, src)
 	}
@@ -257,6 +262,8 @@ func TestReadmeGroupsLikeTheSite(t *testing.T) {
 	}
 }
 
+// feature:perf
+
 // TestHistoryPage checks the Performance history page holds either the
 // charts, as live SVG (a blank line in the fragment, or a change in pandoc,
 // would turn them into escaped text), or the note saying where to find them.
@@ -282,3 +289,5 @@ func TestHistoryPage(t *testing.T) {
 		t.Error("history.html has neither the charts nor the note saying where they are")
 	}
 }
+
+// end feature:perf

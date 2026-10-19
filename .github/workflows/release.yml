@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
-      contents: write # the GitHub release (and reading the perf-data branch)
+      contents: write # the GitHub release, and reading the perf-data branch
       packages: write # the image
     env:
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
@@ -81,6 +81,7 @@ jobs:
       - name: Checks
         run: make check
 
+      # feature:perf
       # The docs site as of this release, its Performance history page charted
       # from the perf-data branch, and checked like CI checks the docs.
       - name: Build the documentation
@@ -94,6 +95,15 @@ jobs:
               "and $(find bin/perf/trends-data -path '*/ci/*.json' | wc -l | tr -d ' ') CI runs."
             echo
           } >> "$GITHUB_STEP_SUMMARY"
+      # end feature:perf
+      # feature:!perf
+      # The docs site as of this release, checked like CI checks the docs.
+      - name: Build the documentation
+        run: |
+          make docs-check
+          tar -czf "$RUNNER_TEMP/docs-$VERSION.tar.gz" -C bin docs
+          echo "Documentation: $(du -h "$RUNNER_TEMP/docs-$VERSION.tar.gz" | cut -f1)." >> "$GITHUB_STEP_SUMMARY"
+      # end feature:!perf
 
       # To run the arm64 image on this amd64 runner, for its smoke test.
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
@@ -207,10 +217,15 @@ jobs:
             echo "Image: \`$image:$VERSION\`, for linux/amd64 and linux/arm64, with an SBOM and build provenance."
             echo
             echo "Documentation: \`docs-$VERSION.tar.gz\`, the docs site as of this release; open \`docs/index.html\`."
+            # feature:perf
             echo "Its Performance history page charts \`main\`'s performance and CI time up to the release, from the"
             echo "records in \`performance-records-$VERSION.tar.gz\`."
+            # end feature:perf
             echo
             cat "$RUNNER_TEMP/notes.md"
           } > "$RUNNER_TEMP/release.md"
-          gh release create "$VERSION" --title "$VERSION" --notes-file "$RUNNER_TEMP/release.md" --verify-tag \
-            "$RUNNER_TEMP/docs-$VERSION.tar.gz" "$RUNNER_TEMP/performance-records-$VERSION.tar.gz"
+          assets=("$RUNNER_TEMP/docs-$VERSION.tar.gz")
+          # feature:perf
+          assets+=("$RUNNER_TEMP/performance-records-$VERSION.tar.gz")
+          # end feature:perf
+          gh release create "$VERSION" --title "$VERSION" --notes-file "$RUNNER_TEMP/release.md" --verify-tag "${assets[@]}"

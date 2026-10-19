@@ -42,6 +42,7 @@ th { background: var(--code-bg); }
 img { max-width: 100%; }
 
 /* The Performance history page: charts from `report trends -fragment`. */
+/* feature:perf */
 .perf-history .meta, .perf-history .note { color: var(--muted); font-size: 13px; margin: 4px 0 12px; }
 .perf-history section { background: var(--code-bg); border-radius: 8px; padding: 16px; margin: 16px 0; }
 .perf-history h2 { font-size: 17px; margin: 0; padding: 0; border: 0; }
@@ -50,3 +51,4 @@ img { max-width: 100%; }
 .perf-history svg .grid { stroke: var(--line); stroke-width: 1; }
 .perf-history .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; margin-top: 8px; }
 .perf-history .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; background: var(--c); }
+/* end feature:perf */
