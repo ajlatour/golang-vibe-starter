@@ -1,7 +1,7 @@
 # Tracing
 
 The service records a span for each request it serves, and for each call it makes on the way (the
-upstream, the request-validation service, flagd), and exports them over OTLP/HTTP, in OTLP's JSON
+upstream and the other services it calls), and exports them over OTLP/HTTP, in OTLP's JSON
 encoding, to an OpenTelemetry Collector or a backend that takes it, such as Jaeger. One that takes
 only protobuf goes behind a Collector, which translates. It's off unless
 there's somewhere to send them, and it's optional in the code too: the OpenTelemetry SDK is in one
@@ -59,7 +59,7 @@ make down
 ```
 
 Each request is a trace: the API's span for it, and inside it a span for each call, here to
-WireMock (the upstream and the request-validation service) and flagd. `make tracing` is `make up`
+the services the stack stubs (WireMock, and flagd). `make tracing` is `make up`
 with Jaeger, and `OTEL_EXPORTER_OTLP_ENDPOINT` set for the API; Jaeger keeps traces in memory
 until it stops. For an API run with `go run` (`make dev`, `make run`), start Jaeger alone and point
 the API at it:

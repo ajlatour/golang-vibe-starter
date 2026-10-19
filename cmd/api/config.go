@@ -68,6 +68,7 @@ type config struct {
 	TracesEndpoint *url.URL
 	// end feature:tracing
 
+	// feature:validation
 	// ValidatorURL is the request-validation service every request is
 	// checked against (internal/validator). Nil: no check.
 	ValidatorURL     *url.URL
@@ -75,6 +76,7 @@ type config struct {
 	// ValidatorFailOpen lets requests through when the service can't
 	// answer; the default refuses them (VALIDATOR_FAILURE_MODE).
 	ValidatorFailOpen bool
+	// end feature:validation
 
 	// HeaderGuard is the header guard's policy: headerguard.DefaultPolicy,
 	// with the mode and limits overridden by the environment.
@@ -168,6 +170,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 			envconfig.Optional(env, "OTEL_EXPORTER_OTLP_ENDPOINT", nil, parseOTLPEndpoint), parseHTTPURL),
 		// end feature:tracing
 
+		// feature:validation
 		// Optional, so local development and tests can run without one, but
 		// loud when unset (see run). The timeout is short because the check
 		// is on every request's path, and failing closed is the default
@@ -176,6 +179,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 		ValidatorURL:      envconfig.Optional(env, "VALIDATOR_URL", nil, parseHTTPURL),
 		ValidatorTimeout:  envconfig.Optional(env, "VALIDATOR_TIMEOUT", 300*time.Millisecond, envconfig.ParsePositiveDuration),
 		ValidatorFailOpen: envconfig.Optional(env, "VALIDATOR_FAILURE_MODE", false, parseFailureMode),
+		// end feature:validation
 	}
 
 	// The header guard: the defaults live in headerguard.DefaultPolicy, and
@@ -238,7 +242,9 @@ func (cfg config) checkTimeouts() []error {
 		set  bool
 	}{
 		{"UPSTREAM_TIMEOUT", cfg.UpstreamTimeout, cfg.Store == storeUpstream},
+		// feature:validation
 		{"VALIDATOR_TIMEOUT", cfg.ValidatorTimeout, cfg.ValidatorURL != nil},
+		// end feature:validation
 		{"FLAGS_TIMEOUT", cfg.FlagsTimeout, cfg.FlagsURL != nil},
 	} {
 		if t.set && t.d >= cfg.RequestTimeout {
@@ -330,6 +336,7 @@ func parseOnOff(v string) (bool, error) {
 	return false, fmt.Errorf("want on or off, got %q", v)
 }
 
+// feature:validation
 // parseFailureMode reads VALIDATOR_FAILURE_MODE: closed (the default)
 // refuses requests when the validation service can't answer, open lets them
 // through.
@@ -342,6 +349,8 @@ func parseFailureMode(v string) (bool, error) {
 	}
 	return false, fmt.Errorf("want closed or open, got %q", v)
 }
+
+// end feature:validation
 
 // parseRetries reads UPSTREAM_RETRIES: 0 to 3.
 func parseRetries(v string) (int, error) {

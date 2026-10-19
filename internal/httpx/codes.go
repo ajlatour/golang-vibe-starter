@@ -29,8 +29,10 @@ const (
 	CodeAPIKeyInvalid Code = "api_key_invalid"
 	// 403: a write with a key that may only read.
 	CodeReadOnlyKey Code = "read_only_key"
+	// feature:validation
 	// 403: the request-validation service refused the request.
 	CodeValidationRefused Code = "validation_refused"
+	// end feature:validation
 	// 404: no item has that ID, or no route has that path.
 	CodeNotFound Code = "not_found"
 	// 405: the path has routes, but none for that method; Allow lists them.
@@ -57,9 +59,11 @@ const (
 	// 503: the service is shutting down, and stopped the request before it
 	// finished: retry it, and another instance will serve it.
 	CodeShuttingDown Code = "shutting_down"
+	// feature:validation
 	// 503: the request-validation service can't answer, and the API fails
 	// closed.
 	CodeValidationUnavailable Code = "validation_unavailable"
+	// end feature:validation
 	// 504: the upstream didn't answer in time.
 	CodeUpstreamTimeout Code = "upstream_timeout"
 )

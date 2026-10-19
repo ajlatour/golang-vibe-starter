@@ -9,7 +9,7 @@ import (
 )
 
 func TestCalls(t *testing.T) {
-	c := httpmetrics.NewCalls("validator", "Calls to the request-validation service", "allowed", "refused", "not_asked")
+	c := httpmetrics.NewCalls("validator", "Calls to the payments service", "allowed", "refused", "not_asked")
 	c.Observe("allowed", 3*time.Millisecond)
 	c.Observe("allowed", 40*time.Millisecond)
 	c.Observe("refused", 2*time.Millisecond)

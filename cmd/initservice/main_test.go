@@ -215,7 +215,11 @@ func checkInit(t *testing.T, without []feature, list string) {
 			// The decision records are history, and the changelog's line
 			// says where the service came from.
 			// cmd/newresource knows the parts a service may not have.
-			grep("still naming "+f.Name+", left out", "-F", "-e", word, "--", ".", ":!docs/adr", ":!CHANGELOG.md", ":!cmd/newresource")
+			args := []string{"-F", "-e", word, "--", ".", ":!docs/adr", ":!CHANGELOG.md", ":!cmd/newresource"}
+			for _, p := range f.except {
+				args = append(args, ":!"+p)
+			}
+			grep("still naming "+f.Name+", left out", args...)
 		}
 	}
 

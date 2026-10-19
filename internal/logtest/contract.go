@@ -80,6 +80,7 @@ var Contract = map[string]Message{
 	"API keys reloaded":                 {[]string{"INFO"}, []string{"api_keys"}},
 	"API keys not reloaded":             {[]string{"ERROR"}, []string{"error"}},
 
+	// feature:validation
 	// Request validation (internal/validator).
 	"using request validation": {[]string{"INFO"}, []string{"url", "timeout", "fail_open"}},
 	"request validation is off: no VALIDATOR_URL; every request goes unchecked": {[]string{"WARN"}, nil},
@@ -87,6 +88,7 @@ var Contract = map[string]Message{
 	"request would be refused by validation":                                    {[]string{"INFO"}, []string{"reason"}},
 	"request validation unavailable":                                            {[]string{"WARN"}, []string{"enforcing", "fail_open", "error"}},
 	"request validation recovered":                                              {[]string{"INFO"}, []string{"failures", "duration_ms"}},
+	// end feature:validation
 
 	// Feature flags.
 	"flag service unavailable, using default flag values": {[]string{"WARN"}, []string{"flag", "error"}},
@@ -107,5 +109,7 @@ var OutsideRequests = []string{
 	"profiling server is reachable beyond this machine; keep its port private",
 	"using runtime", "runtime stats", "service failed", "panic in background task",
 	"request rejected by the server", "shutdown timed out; stopping requests in flight",
+	// feature:validation
 	"using request validation", "request validation is off: no VALIDATOR_URL; every request goes unchecked",
+	// end feature:validation
 }

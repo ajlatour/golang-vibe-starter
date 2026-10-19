@@ -45,6 +45,7 @@ comma-separated, or `WITHOUT=all`. `go run ./cmd/initservice -list-features` lis
 | ------- | --------- |
 | `tracing` | OpenTelemetry ([Tracing](tracing.md)): `internal/telemetry`, its settings and log lines, and Jaeger in the local stack. The service then has no third-party dependency at all. |
 | `perf` | Performance testing ([Performance](performance.md)): `perf/`, the k6 load profiles and the report tool; the Performance, Performance trends, Soak and CI times workflows; `monitoring/` and its profile in the local stack. The Go benchmarks stay. |
+| `validation` | Request validation ([Request validation](request-validation.md)): `internal/validator`, its settings, log lines, metrics, readiness check and error codes, its flag, and WireMock's stub of the service. |
 | `release` | Publishing ([Releasing](releasing.md)): the Release workflow (the multi-platform image, its SBOM and provenance, the smoke test, GHCR and the GitHub release), `make smoke` and `scripts/smoke-image.sh`. Versioning stays: the changelog, `make release-prepare` and `release-tag`. |
 
 A feature is marked in the code where it's mixed with the rest (`// feature:tracing` …

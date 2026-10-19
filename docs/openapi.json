@@ -89,7 +89,7 @@
           "429": { "$ref": "#/components/responses/TooManyRequests" },
           "503": { "$ref": "#/components/responses/ServiceUnavailable" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
+          "403": { "$ref": "#/components/responses/Refused" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
           "504": { "$ref": "#/components/responses/GatewayTimeout" }
@@ -163,7 +163,7 @@
           "429": { "$ref": "#/components/responses/TooManyRequests" },
           "503": { "$ref": "#/components/responses/ServiceUnavailable" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
-          "403": { "$ref": "#/components/responses/Forbidden" },
+          "403": { "$ref": "#/components/responses/Refused" },
           "500": { "$ref": "#/components/responses/InternalError" },
           "502": { "$ref": "#/components/responses/BadGateway" },
           "504": { "$ref": "#/components/responses/GatewayTimeout" }
@@ -401,6 +401,11 @@
           "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" },
           "WWW-Authenticate": { "required": true, "description": "The scheme to use.", "schema": { "type": "string", "pattern": "^Bearer " } }
         },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "Refused": {
+        "description": "The request-validation service (VALIDATOR_URL, where there is one) refused the request. The reason is logged, not sent.",
+        "headers": { "Client-Correlation-Id": { "$ref": "#/components/headers/CorrelationID" }, "API-Version": { "$ref": "#/components/headers/APIVersion" } },
         "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
       },
       "Forbidden": {

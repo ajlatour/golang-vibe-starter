@@ -22,7 +22,9 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/item"
 	"github.com/ajlatour/golang-vibe-starter/internal/item/itemtest"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
+	// feature:validation
 	"github.com/ajlatour/golang-vibe-starter/internal/validator"
+	// end feature:validation
 )
 
 // TestRun starts the API on a random port against an in-process upstream
@@ -138,16 +140,18 @@ func TestNewFlags(t *testing.T) {
 	})
 	t.Run("flagd down falls back to the definitions file", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "flags.json")
-		// Every flag defined, each on but enforcing request validation.
+		// Every flag defined, each on.
 		defs := map[string]any{}
-		keys := []string{validator.FlagEnforce}
+		var keys []string
+		// feature:validation
+		keys = append(keys, validator.FlagEnforce)
+		// end feature:validation
 		for _, r := range resources {
 			keys = append(keys, r.flagKeys...)
 		}
 		for _, key := range keys {
 			defs[key] = map[string]any{"variants": map[string]bool{"on": true, "off": false}, "defaultVariant": "on"}
 		}
-		defs[validator.FlagEnforce].(map[string]any)["defaultVariant"] = "off"
 		b, err := json.Marshal(map[string]any{"flags": defs})
 		if err != nil {
 			t.Fatal(err)

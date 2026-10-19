@@ -5,8 +5,7 @@
 // the dependency at most once per retry interval, answering the calls in
 // between at once instead of each waiting out a timeout.
 //
-// The flagd client (internal/featureflag) and the request validation
-// middleware (internal/validator) both use it.
+// The clients of the services the API can run without use it.
 package outage
 
 import (

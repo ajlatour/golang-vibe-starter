@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -13,7 +14,9 @@ import (
 	"github.com/ajlatour/golang-vibe-starter/internal/httpx"
 	"github.com/ajlatour/golang-vibe-starter/internal/limit"
 	"github.com/ajlatour/golang-vibe-starter/internal/nettest"
+	// feature:validation
 	"github.com/ajlatour/golang-vibe-starter/internal/validator"
+	// end feature:validation
 )
 
 // fixedFlags is a resource's Flags with one answer for every flag.
@@ -32,8 +35,8 @@ var errBoom = errors.New("boom")
 //	paged       three of each, so a page of two has a next
 //	ratelimited the test client (its key) has spent its rate (429)
 //	overloaded  the one request the service takes at once is stuck (503)
-//	refused     the request-validation service refuses every request (403)
-//	unvalidated the request-validation service can't answer, failing closed (503)
+//	refused     with request validation, its service refuses every request (403),
+//	unvalidated or can't answer, failing closed (503)
 //	internal    stores that fail with a plain error (a bug here: 500)
 //	badgw       an upstream that refuses connections (502)
 //	timeout     an upstream that never answers (504)
@@ -53,11 +56,12 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 	case "overloaded":
 		// The service takes one request at once, held below.
 		cfg.Limits = limit.Policy{MaxInFlight: 1}
-		cfg.Validator = blockingCheck{entered: make(chan struct{}), release: make(chan struct{})}
+	// feature:validation
 	case "refused":
 		cfg.Validator = fixedDecision{}
 	case "unvalidated":
 		cfg.Validator = validator.New(nettest.DeadURL(), &http.Client{Timeout: time.Second})
+	// end feature:validation
 	case "badgw":
 		up = upstream{url: nettest.DeadURL(), client: &http.Client{Timeout: time.Second}}
 	case "timeout":
@@ -90,27 +94,24 @@ func handlerFor(t *testing.T, env string) (http.Handler, string) {
 		spend.Header.Set("Authorization", "Bearer "+testWriteKey)
 		h.ServeHTTP(httptest.NewRecorder(), spend)
 	case "overloaded":
-		block := cfg.Validator.(blockingCheck)
-		stuck := httptest.NewRequest("GET", "/", nil)
+		// A create whose body never ends: the handler is reading it, so the
+		// request holds the one slot. The first byte is taken only once the
+		// handler reads, so when the write returns, it's there.
+		body, more := io.Pipe()
+		stuck := httptest.NewRequest("POST", testResources[0].path, body)
 		stuck.Header.Set("Authorization", "Bearer "+testWriteKey)
+		stuck.Header.Set("Content-Type", "application/json")
 		done := make(chan struct{})
 		go func() { h.ServeHTTP(httptest.NewRecorder(), stuck); close(done) }()
-		<-block.entered
-		t.Cleanup(func() { close(block.release); <-done })
+		if _, err := more.Write([]byte("{")); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { more.Close(); <-done })
 	}
 	return h, ""
 }
 
-// blockingCheck is a validator.Checker that holds every check until release
-// is closed, after saying on entered that one has arrived.
-type blockingCheck struct{ entered, release chan struct{} }
-
-func (b blockingCheck) Check(context.Context, validator.Request) (validator.Decision, error) {
-	b.entered <- struct{}{}
-	<-b.release
-	return validator.Decision{Allow: true}, nil
-}
-
+// feature:validation
 // fixedDecision is a validator.Checker that answers every request with
 // itself: the zero value refuses.
 type fixedDecision validator.Decision
@@ -118,3 +119,5 @@ type fixedDecision validator.Decision
 func (d fixedDecision) Check(context.Context, validator.Request) (validator.Decision, error) {
 	return validator.Decision(d), nil
 }
+
+// end feature:validation
