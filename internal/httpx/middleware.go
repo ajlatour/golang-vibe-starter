@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ajlatour/golang-vibe-starter/internal/logx"
+	"github.com/ajlatour/golang-vibe-starter/internal/tracectx"
 )
 
 // Middleware wraps h with the standard stack: the defensive response headers
@@ -31,6 +32,7 @@ type MiddlewareOption func(*middlewareOptions)
 
 type middlewareOptions struct {
 	metrics  Metrics
+	spans    tracectx.Spans
 	clientIP bool
 	timeout  time.Duration
 }
@@ -46,6 +48,13 @@ type Metrics interface {
 // WithMetrics records every request in m.
 func WithMetrics(m Metrics) MiddlewareOption {
 	return func(o *middlewareOptions) { o.metrics = m }
+}
+
+// WithSpans records every request's span in s, and the spans of the calls
+// it makes (internal/jsoncall): s is told of each as it starts and ends,
+// with its trace context, method, status and route.
+func WithSpans(s tracectx.Spans) MiddlewareOption {
+	return func(o *middlewareOptions) { o.spans = s }
 }
 
 // WithClientIP adds client_ip, the address the request's connection came
@@ -163,6 +172,11 @@ func logRequests(logger *slog.Logger, o middlewareOptions, next http.Handler) ht
 		logger.LogAttrs(r.Context(), receivedLevel(r), "request received", received[:n]...)
 
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		if o.spans != nil {
+			end := startSpan(r, o.spans)
+			// Deferred, as the metrics are, for a request that's aborted.
+			defer func() { end(tracectx.End{Status: rec.status, Route: route(r)}) }()
+		}
 		if metrics != nil {
 			// Deferred, so a request that ends in a panic recoverPanics passes
 			// on (http.ErrAbortHandler) is still counted as finished, and the
@@ -186,6 +200,18 @@ func logRequests(logger *slog.Logger, o middlewareOptions, next http.Handler) ht
 		finished = true
 		logResponse(logger, o, r, rec, start)
 	})
+}
+
+// startSpan starts r's own span in s, a child of the caller's if it sent a
+// trace context (assignRequestID), and makes its context the request's, for
+// the calls it makes. It returns the span's end.
+func startSpan(r *http.Request, s tracectx.Spans) func(tracectx.End) {
+	ctx := r.Context()
+	parent, _ := logx.Trace(ctx)
+	span, end := s.Start(ctx, tracectx.Span{Kind: tracectx.Server, Name: r.Method, Method: r.Method, Parent: parent})
+	logx.SetTrace(ctx, span)
+	logx.SetSpans(ctx, s)
+	return end
 }
 
 // logResponse writes a request's "response sent" line.

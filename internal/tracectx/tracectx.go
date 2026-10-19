@@ -6,10 +6,14 @@
 // OpenTelemetry SDK is added, its spans join the traces already flowing.
 //
 // It records nothing itself: no spans, no timings. The trace ID goes into the
-// request's log lines (trace_id), which ties them to the trace.
+// request's log lines (trace_id), which ties them to the trace. Spans is how
+// something that does record them is told of each span: the request's own,
+// and each call it makes. The service runs without one; internal/telemetry,
+// an OpenTelemetry SDK's, is one.
 package tracectx
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 )
@@ -18,7 +22,8 @@ import (
 const Header = "traceparent"
 
 // Parent is a trace context: the trace a request belongs to, the span that
-// sent it (the parent of any span this service makes), and the trace flags.
+// sent it (the parent of any span this service makes; none, all zeros, for a
+// trace this service started), and the trace flags.
 type Parent struct {
 	TraceID [16]byte
 	SpanID  [8]byte
@@ -56,14 +61,18 @@ func decode(dst []byte, s string) bool {
 	return err == nil
 }
 
-// New starts a trace: a random trace ID, and a random span ID standing for
-// the request's own span. It isn't sampled: nothing here records it.
+// New starts a trace: a random trace ID, and no parent span, since the
+// trace starts here. It isn't sampled: nothing here records it. Its calls
+// onward still each get a span ID of their own (Child).
 func New() Parent {
 	var p Parent
 	_, _ = rand.Read(p.TraceID[:])
-	_, _ = rand.Read(p.SpanID[:])
 	return p
 }
+
+// IsRoot reports whether p is a trace this service started: it has no
+// parent span.
+func (p Parent) IsRoot() bool { return p.SpanID == [8]byte{} }
 
 // Child returns the context for a call this service makes within p's trace:
 // the same trace and flags, with a new span ID for the call.
@@ -87,3 +96,50 @@ func (p Parent) String() string {
 
 // TraceIDString is p's trace ID in hex, as logged.
 func (p Parent) TraceIDString() string { return hex.EncodeToString(p.TraceID[:]) }
+
+// Spans records the spans of a trace: the request's own, as the service
+// serves it, and each call it makes onward. Start starts one and returns its
+// context, which is what its children and the calls it makes carry: the same
+// trace, the span's own ID, and whether it's sampled. end ends it.
+//
+// A Spans must keep the trace ID it's given, a root span's included, so the
+// trace_id logged is the trace's. And it must be cheap: Start is on every
+// request's path.
+type Spans interface {
+	Start(ctx context.Context, s Span) (Parent, func(End))
+}
+
+// Kind says which side of a call a span is.
+type Kind uint8
+
+const (
+	// Server is a request this service serves.
+	Server Kind = iota + 1
+	// Client is a call this service makes.
+	Client
+)
+
+// Span is a span as it starts.
+type Span struct {
+	Kind Kind
+	// Name says what it is: for a server span, the method, the route being
+	// known only at its end; for a client span, the call's label, such as
+	// "upstream GET /items/widget", which is safe to log.
+	Name   string
+	Method string
+	// Parent is its parent's context: the caller's span, or for a root span
+	// (Parent.IsRoot) only the trace's ID.
+	Parent Parent
+}
+
+// End is how a span ended.
+type End struct {
+	// Status is the response's: the one the service sent, or got (0 if none
+	// arrived).
+	Status int
+	// Route is a server span's route pattern, such as "GET /items/{id}" (""
+	// if none matched).
+	Route string
+	// Err is why a client span's call failed, if it did.
+	Err error
+}

@@ -121,9 +121,15 @@ func (c Call) Do(ctx context.Context) (status int, err error) {
 	}
 	req.Header.Set("Accept", "application/json")
 	// The call joins the request's trace, as a span of its own
-	// (internal/tracectx).
+	// (internal/tracectx), recorded if the request's spans are.
 	if trace, ok := logx.Trace(ctx); ok {
-		req.Header[traceparentKey] = []string{trace.Child().String()}
+		span := trace.Child()
+		if spans := logx.Spans(ctx); spans != nil {
+			var end func(tracectx.End)
+			span, end = spans.Start(ctx, tracectx.Span{Kind: tracectx.Client, Name: c.Label, Method: c.Method, Parent: trace})
+			defer func() { end(tracectx.End{Status: status, Err: err}) }()
+		}
+		req.Header[traceparentKey] = []string{span.String()}
 	}
 	if c.In != nil {
 		req.Header.Set("Content-Type", "application/json")

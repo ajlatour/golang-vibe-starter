@@ -337,3 +337,59 @@ func TestCallJoinsTheTrace(t *testing.T) {
 		t.Errorf("a call outside any request sent traceparent %q", got)
 	}
 }
+
+// recordedSpans is a tracectx.Spans that keeps what it's told, giving each
+// span a fixed ID and sampling it.
+type recordedSpans struct {
+	starts []tracectx.Span
+	ends   []tracectx.End
+}
+
+var spanID = [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
+
+func (s *recordedSpans) Start(_ context.Context, sp tracectx.Span) (tracectx.Parent, func(tracectx.End)) {
+	s.starts = append(s.starts, sp)
+	return tracectx.Parent{TraceID: sp.Parent.TraceID, SpanID: spanID, Flags: 1}, func(e tracectx.End) { s.ends = append(s.ends, e) }
+}
+
+// TestCallRecordsItsSpan checks a call made within a request whose spans are
+// recorded records its own, as a client span of the request's, named by its
+// label, and sends that span's context on; and that it's ended with the
+// status, or the error.
+func TestCallRecordsItsSpan(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("traceparent")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	parent, _ := tracectx.Parse("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00")
+	ctx := logx.WithRequestID(t.Context(), "req-1")
+	logx.SetTrace(ctx, parent)
+	spans := &recordedSpans{}
+	logx.SetSpans(ctx, spans)
+
+	call := jsoncall.Call{Client: srv.Client(), Method: http.MethodGet, URL: srv.URL, Label: "upstream GET /x", Want: http.StatusNoContent}
+	if _, err := call.Do(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if want := (tracectx.Parent{TraceID: parent.TraceID, SpanID: spanID, Flags: 1}).String(); got != want {
+		t.Errorf("traceparent %q, want the call's span's, %q", got, want)
+	}
+	if len(spans.starts) != 1 || spans.starts[0] != (tracectx.Span{Kind: tracectx.Client, Name: "upstream GET /x", Method: http.MethodGet, Parent: parent}) {
+		t.Errorf("started %+v, want one client span of the request's", spans.starts)
+	}
+	if len(spans.ends) != 1 || spans.ends[0].Status != http.StatusNoContent || spans.ends[0].Err != nil {
+		t.Errorf("ended %+v, want 204 and no error", spans.ends)
+	}
+
+	// A call that gets no answer ends its span with why.
+	dead := jsoncall.Call{Client: srv.Client(), Method: http.MethodGet, URL: nettest.DeadURL(), Label: "dead", Want: http.StatusOK}
+	if _, err := dead.Do(ctx); err == nil {
+		t.Fatal("a call to a dead address succeeded")
+	}
+	if len(spans.ends) != 2 || spans.ends[1].Status != 0 || spans.ends[1].Err == nil {
+		t.Errorf("ended %+v, want the second with status 0 and its error", spans.ends)
+	}
+}
