@@ -33,9 +33,9 @@ var Contract = map[string]Message{
 	"using tracing":  {[]string{"INFO"}, []string{"url"}},
 	"tracing failed": {[]string{"WARN"}, []string{"error"}},
 	// end feature:tracing
-	"using header guard":  {[]string{"INFO"}, []string{"mode", "max_headers", "max_header_bytes", "max_total_bytes"}},
-	"using API keys":      {[]string{"INFO"}, []string{"api_keys", "reads"}},
-	"using limits":        {[]string{"INFO"}, []string{"max_in_flight", "rate_limit", "rate_burst"}},
+	"using header guard": {[]string{"INFO"}, []string{"mode", "max_headers", "max_header_bytes", "max_total_bytes"}},
+	"using API keys":     {[]string{"INFO"}, []string{"api_keys", "reads"}},
+	"using limits":       {[]string{"INFO"}, []string{"max_in_flight", "rate_limit", "rate_burst"}},
 	"authentication is off: every request is allowed":        {[]string{"WARN"}, nil},
 	"feature flags: no FLAGS_URL, using default values only": {[]string{"INFO"}, nil},
 	"server started": {[]string{"INFO"}, []string{"addr"}},
