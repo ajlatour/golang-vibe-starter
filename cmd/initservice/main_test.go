@@ -112,6 +112,65 @@ func TestInit(t *testing.T) {
 	}
 }
 
+// TestInitResource renames the example resource: paths and text, the lists'
+// JSON key kept, and the files' modes.
+func TestInitResource(t *testing.T) {
+	dir := gitRepo(t, map[string]string{
+		"CHANGELOG.md":          "# Changelog\n\n## Unreleased\n\n## [0.6.1] - 2026-10-14\n\nItems.\n",
+		"docs/openapi.json":     "{\"info\": {\"version\": \"0.6.1\"}, \"paths\": {\"/items\": {}}, \"required\": [\"items\"]}\n",
+		"docs/site/build.sh":    "navigation=''\n",
+		"README.md":             "# golang-vibe-starter\n\nAn item, and items.\n",
+		"internal/item/item.go": "// Package item is an item.\npackage item\n\ntype Item struct {\n\tName string\n\tID   int\n}\n",
+		"cmd/api/items.go":      "package main\n\nimport _ \"github.com/ajlatour/golang-vibe-starter/internal/item\"\n",
+		"internal/rename/x.go":  "package rename // item, kept: the tool's own\n",
+		"scripts/items.sh":      "echo items\n",
+	})
+	if err := os.Chmod(filepath.Join(dir, "scripts/items.sh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := run([]string{"-name", "shop", "-module", "github.com/acme/shop", "-resource", "category", "-resource-plural", "categories"}, dir, &out); err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]string{
+		"internal/category/category.go": "// Package category is a category.\npackage category\n\ntype Category struct {",
+		"cmd/api/categories.go":         `"github.com/acme/shop/internal/category"`,
+		"docs/openapi.json":             `"paths": {"/categories": {}}, "required": ["items"]`,
+		"README.md":                     "A category, and categories.",
+		"internal/rename/x.go":          "item, kept",
+		"CHANGELOG.md":                  "Started from the",
+	} {
+		if got := read(t, filepath.Join(dir, path)); !strings.Contains(got, want) {
+			t.Errorf("%s:\n%s\nwant it to contain %q", path, got, want)
+		}
+	}
+	for _, gone := range []string{"internal/item", "cmd/api/items.go"} {
+		if _, err := os.Stat(filepath.Join(dir, gone)); !os.IsNotExist(err) {
+			t.Errorf("%s is still there", gone)
+		}
+	}
+	if info, err := os.Stat(filepath.Join(dir, "scripts/categories.sh")); err != nil || info.Mode().Perm()&0o100 == 0 {
+		t.Errorf("scripts/categories.sh: %v, %v; want it, still executable", info, err)
+	}
+	if !strings.Contains(out.String(), "/categories") {
+		t.Errorf("no word of the resource's name:\n%s", out.String())
+	}
+
+	for name, args := range map[string][]string{
+		"a plural without a name": {"-resource-plural", "orders"},
+		"capitals":                {"-resource", "Order"},
+		"its plural is itself":    {"-resource", "sheep", "-resource-plural", "sheep"},
+	} {
+		dir := gitRepo(t, map[string]string{"CHANGELOG.md": "## Unreleased\n\n## [0.6.1] - 2026-10-14\n"})
+		if err := run(append([]string{"-name", "x", "-module", "github.com/acme/x"}, args...), dir, io.Discard); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+	if r, err := parseResource("item", ""); r != nil || err != nil {
+		t.Errorf("the template's own name: %v, %v; want nothing to do", r, err)
+	}
+}
+
 func TestInitOffGitHub(t *testing.T) {
 	dir := gitRepo(t, map[string]string{
 		"go.mod":             "module github.com/ajlatour/golang-vibe-starter\n",
@@ -174,26 +233,43 @@ func TestInitOnACopy(t *testing.T) {
 	if len(features) > 1 {
 		cases = append(cases, all)
 	}
-	for _, without := range cases {
+	type rename struct{ name, plural string }
+	type initCase struct {
+		without  []feature
+		resource rename
+	}
+	var all2 []initCase
+	for _, w := range cases {
+		all2 = append(all2, initCase{without: w})
+	}
+	// The example resource renamed: to a plural that isn't an s, with every
+	// feature; and with none.
+	all2 = append(all2, initCase{resource: rename{"category", "categories"}}, initCase{without: all, resource: rename{"order", ""}})
+	for _, c := range all2 {
 		var names []string
-		for _, f := range without {
+		for _, f := range c.without {
 			names = append(names, f.Name)
 		}
 		label := "everything"
 		if len(names) > 0 {
 			label = "without " + strings.Join(names, ",")
 		}
+		args := []string{"-without", strings.Join(names, ",")}
+		if c.resource.name != "" {
+			label += ", as " + c.resource.name
+			args = append(args, "-resource", c.resource.name, "-resource-plural", c.resource.plural)
+		}
 		t.Run(label, func(t *testing.T) {
 			t.Parallel()
-			checkInit(t, without, strings.Join(names, ","))
+			checkInit(t, c.without, c.resource.name != "", args...)
 		})
 	}
 }
 
-func checkInit(t *testing.T, without []feature, list string) {
+func checkInit(t *testing.T, without []feature, renamed bool, args ...string) {
 	dir := copyRepo(t)
 	var out strings.Builder
-	if err := run([]string{"-name", "orders", "-module", "github.com/acme/orders", "-without", list}, dir, &out); err != nil {
+	if err := run(append([]string{"-name", "orders", "-module", "github.com/acme/orders"}, args...), dir, &out); err != nil {
 		t.Fatal(err)
 	}
 	t.Log(out.String())
@@ -210,12 +286,17 @@ func checkInit(t *testing.T, without []feature, list string) {
 	// roadmap's line saying where it came from, and the license's holder.
 	grep("still naming the template", "-e", "golang-vibe-starter", "-e", "ajlatour", "--", ".", ":!CHANGELOG.md", ":!ROADMAP.md", ":!LICENSE")
 	grep("a feature marker left in", "-E", "-e", markerRE.String(), "--", ".")
+	if renamed {
+		// Only the list's key, "items", is every resource's: no "item" is
+		// left of the example, but in the renaming tool.
+		grep("still naming the example resource", "-i", "-w", "-e", "item", "--", ".", ":!CHANGELOG.md", ":!internal/rename")
+	}
 	for _, f := range append(slices.Clip(without), initFeature) {
 		for _, word := range f.gone {
 			// The decision records are history, and the changelog's line
 			// says where the service came from.
 			// cmd/newresource knows the parts a service may not have.
-			args := []string{"-F", "-e", word, "--", ".", ":!docs/adr", ":!CHANGELOG.md", ":!cmd/newresource"}
+			args := []string{"-F", "-e", word, "--", ".", ":!docs/adr", ":!CHANGELOG.md", ":!cmd/newresource", ":!internal/rename"}
 			for _, p := range f.except {
 				args = append(args, ":!"+p)
 			}

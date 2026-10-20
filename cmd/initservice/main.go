@@ -36,6 +36,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/rename"
 )
 
 // What the template calls itself.
@@ -67,6 +69,8 @@ func run(args []string, dir string, out io.Writer) error {
 	module := fs.String("module", "", "its Go module path, e.g. github.com/acme/orders")
 	withoutList := fs.String("without", "", "features to leave out, comma-separated, e.g. tracing, or all (-list-features lists them)")
 	list := fs.Bool("list-features", false, "list the features -without can leave out, as JSON, and stop")
+	resource := fs.String("resource", "", "the example resource's name in this service, singular, e.g. order (default: item, as in the template)")
+	resourcePlural := fs.String("resource-plural", "", "its plural, if it isn't the name with an s, e.g. categories")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -74,6 +78,10 @@ func run(args []string, dir string, out io.Writer) error {
 		return listFeatures(out)
 	}
 	without, err := parseWithout(*withoutList)
+	if err != nil {
+		return err
+	}
+	resourceRename, err := parseResource(*resource, *resourcePlural)
 	if err != nil {
 		return err
 	}
@@ -115,6 +123,11 @@ func run(args []string, dir string, out io.Writer) error {
 	}
 	if err := applyMarkers(dir, files, leave); err != nil {
 		return err
+	}
+	if resourceRename != nil {
+		if files, err = renameResource(dir, files, *resourceRename); err != nil {
+			return err
+		}
 	}
 
 	changed := 0
@@ -170,6 +183,9 @@ func run(args []string, dir string, out io.Writer) error {
 	for _, f := range without {
 		fmt.Fprintf(out, "Left out: %s.\n", f.Name)
 	}
+	if resourceRename != nil {
+		fmt.Fprintf(out, "The example resource is /%s.\n", resourceRename.ToPlural)
+	}
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Left to do by hand:")
 	fmt.Fprintln(out, "  - LICENSE: set the copyright holder, or choose another license.")
@@ -178,9 +194,112 @@ func run(args []string, dir string, out io.Writer) error {
 	}
 	fmt.Fprintln(out, "  - Create the repository, push, and in its settings turn on private vulnerability reporting (SECURITY.md).")
 	fmt.Fprintln(out, "  - README.md: say what this service is for.")
-	fmt.Fprintln(out, "  - The example resource, /items: keep it as a guide, or remove it once the service has its own.")
+	example := "/items"
+	if resourceRename != nil {
+		example = "/" + resourceRename.ToPlural
+		fmt.Fprintf(out, "  - The resource, %s: give it the fields it's meant to have (docs/development.md#adding-a-resource lists where).\n", example)
+	} else {
+		fmt.Fprintf(out, "  - The example resource, %s: keep it as a guide, or remove it once the service has its own.\n", example)
+	}
 	fmt.Fprintln(out, "  - Run make check, make lint and make docs-check, and commit.")
 	return nil
+}
+
+// resourceNameRE is what a resource's name may be: a Go package's name, and
+// its path.
+var resourceNameRE = regexp.MustCompile(`^[a-z][a-z0-9]{0,30}$`)
+
+// parseResource reads -resource and -resource-plural: the example
+// resource's new name, or nil to keep it as item.
+func parseResource(name, plural string) (*rename.Renamer, error) {
+	if name == "" {
+		if plural != "" {
+			return nil, errors.New("-resource-plural without -resource")
+		}
+		return nil, nil
+	}
+	if plural == "" {
+		plural = name + "s"
+	}
+	for _, n := range []string{name, plural} {
+		if !resourceNameRE.MatchString(n) {
+			return nil, fmt.Errorf("-resource %q: want lower-case letters and digits, starting with a letter: it names a Go package and the resource's path", n)
+		}
+	}
+	if name == plural {
+		return nil, fmt.Errorf("-resource %q: its plural is the same; give one with -resource-plural", name)
+	}
+	if name == exampleResource || plural == rename.ListKey {
+		return nil, nil // the template's own name: nothing to do
+	}
+	return &rename.Renamer{From: exampleResource, FromPlural: rename.ListKey, To: name, ToPlural: plural}, nil
+}
+
+// exampleResource is the template's example resource, /items.
+const exampleResource = "item"
+
+// renameResource renames the example resource across files, paths and
+// contents, but in the license, the changelog and the renaming tools
+// themselves, and returns the files' new names.
+func renameResource(dir string, files []string, r rename.Renamer) ([]string, error) {
+	var out []string
+	for _, f := range files {
+		path := filepath.Join(dir, f)
+		b, err := readFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue // a feature's file, gone
+		}
+		if err != nil {
+			return nil, err
+		}
+		to := f
+		if !(f == "LICENSE" || f == "CHANGELOG.md" || strings.HasPrefix(f, "cmd/initservice/") || strings.HasPrefix(f, "internal/rename/")) {
+			to = r.Text(f)
+			if bytes.IndexByte(b, 0) < 0 {
+				s := r.Text(string(b))
+				if strings.HasSuffix(f, ".go") && s != string(b) {
+					// Renamed, names change length, and so does alignment.
+					var err error
+					if s, err = tidyGo(s); err != nil {
+						return nil, fmt.Errorf("%s: %w", f, err)
+					}
+				}
+				b = []byte(s)
+			}
+		}
+		out = append(out, to)
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, err
+		}
+		dest := filepath.Join(dir, to)
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil { // #nosec G301 -- a source directory, as checked in
+			return nil, err
+		}
+		if err := os.WriteFile(dest, b, info.Mode().Perm()); err != nil { // #nosec G306 G703 -- a file in the repository being initialized, as checked in
+			return nil, err
+		}
+		// The old name goes once the new one's written, and its directory
+		// with it if that leaves it empty.
+		if to != f {
+			if err := os.Remove(path); err != nil {
+				return nil, err
+			}
+			removeEmptyDirs(dir, filepath.Dir(f))
+		}
+	}
+	return out, nil
+}
+
+// removeEmptyDirs removes rel, under dir, and each of its parents, while
+// they're empty.
+func removeEmptyDirs(dir, rel string) {
+	for rel != "." && rel != "" {
+		if os.Remove(filepath.Join(dir, rel)) != nil {
+			return
+		}
+		rel = filepath.Dir(rel)
+	}
 }
 
 // startRoadmap replaces the template's roadmap, which is its own, with a
