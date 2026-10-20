@@ -24,6 +24,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/rename"
 )
 
 // The example resource, which every new one is copied from.
@@ -45,8 +47,17 @@ func run(args []string, dir string, out io.Writer) error {
 	fs := flag.NewFlagSet("newresource", flag.ContinueOnError)
 	name := fs.String("name", "", "the resource's name, singular, in lower-case letters and digits: order")
 	plural := fs.String("plural", "", "its plural, if it isn't the name with an s: categories")
+	from := fs.String("from", fromName, "the resource to copy, singular")
+	fromPl := fs.String("from-plural", "", "its plural, if it isn't the name with an s")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	switch {
+	case *fromPl != "":
+	case *from == fromName:
+		*fromPl = fromPlural
+	default:
+		*fromPl = *from + "s"
 	}
 	if *plural == "" {
 		*plural = *name + "s"
@@ -59,15 +70,24 @@ func run(args []string, dir string, out io.Writer) error {
 	if *name == *plural {
 		return fmt.Errorf("the name and its plural are both %q: give a plural with PLURAL", *name)
 	}
-	if strings.Contains(*name, fromName) || strings.Contains(*plural, fromName) {
-		return fmt.Errorf("%q: a name containing %q would be renamed along with the example's", *name, fromName)
+	if strings.Contains(*name, *from) || strings.Contains(*plural, *from) {
+		return fmt.Errorf("%q: a name containing %q would be renamed along with the example's", *name, *from)
 	}
-	r := renamer{to: *name, toPlural: *plural}
+	// lit maps the names this file's text is written with, the example's, to
+	// the resource copied; r, that one's to the new one's.
+	lit := rename.Renamer{From: fromName, FromPlural: fromPlural, To: *from, ToPlural: *fromPl}
+	gomod, err := readFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		return err
+	}
+	keep := []string{rename.Module(string(gomod))}
+	lit.Keep = keep
+	r := rename.Renamer{From: *from, FromPlural: *fromPl, To: *name, ToPlural: *plural, Keep: keep}
 	if _, err := os.Stat(filepath.Join(dir, "internal", *name)); err == nil {
 		return fmt.Errorf("internal/%s already exists", *name)
 	}
 
-	files, err := owned(dir)
+	files, err := owned(dir, *from, *fromPl)
 	if err != nil {
 		return err
 	}
@@ -76,14 +96,14 @@ func run(args []string, dir string, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		to := filepath.Join(dir, r.text(f))
+		to := filepath.Join(dir, r.Text(f))
 		if _, err := os.Stat(to); err == nil {
-			return fmt.Errorf("%s already exists", r.text(f))
+			return fmt.Errorf("%s already exists", r.Text(f))
 		}
 		if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil { // #nosec G301 -- a source directory, as checked in
 			return err
 		}
-		if err := writeFile(to, []byte(r.text(string(b)))); err != nil {
+		if err := writeFile(to, []byte(r.Text(string(b)))); err != nil {
 			return err
 		}
 	}
@@ -91,19 +111,20 @@ func run(args []string, dir string, out io.Writer) error {
 		if _, err := os.Stat(filepath.Join(dir, e.file)); errors.Is(err, os.ErrNotExist) && optional[e.file] {
 			continue // a part this service was started without
 		}
-		if err := edit(dir, e.file, func(s string) (string, error) { return e.fn(s, r) }); err != nil {
+		if err := edit(dir, e.file, func(s string) (string, error) { return e.fn(s, r, lit) }); err != nil {
 			return fmt.Errorf("%s: %w", e.file, err)
 		}
 	}
 
-	fmt.Fprintf(out, "Added /%s, copied from /%s: %d files, and an entry in each list of resources.\n\n", *plural, fromPlural, len(files))
+	fmt.Fprintf(out, "Added /%s, copied from /%s: %d files, and an entry in each list of resources.\n\n", *plural, *fromPl, len(files))
+	name2 := func(s string) string { return r.Text(lit.Text(s)) }
 	fmt.Fprintln(out, "It builds and passes every check as it is. To make it the resource you mean:")
-	fmt.Fprintf(out, "  - internal/%s/%s.go: its fields, each a value object enforcing its rules, in %s and Draft.\n", *name, *name, r.text("Item"))
+	fmt.Fprintf(out, "  - internal/%s/%s.go: its fields, each a value object enforcing its rules, in %s and Draft.\n", *name, *name, name2("Item"))
 	fmt.Fprintf(out, "  - internal/%s/handlers.go: Request and Response, the shapes the API speaks.\n", *name)
-	fmt.Fprintf(out, "  - docs/openapi.json: %s, %s and %s, to match; the tests say where they differ.\n", r.text("Item"), r.text("ItemInput"), r.text("ItemList"))
+	fmt.Fprintf(out, "  - docs/openapi.json: %s, %s and %s, to match; the tests say where they differ.\n", name2("Item"), name2("ItemInput"), name2("ItemList"))
 	fmt.Fprintf(out, "  - Its store: internal/%s/httpstore speaks to the upstream's /%s; replace it with the store you need.\n", *name, *plural)
 	if _, err := os.Stat(filepath.Join(dir, "flagd")); err == nil {
-		fmt.Fprintf(out, "  - Its flag, %s: keep it, or remove it from the handlers, flagd/flags.json and docs/feature-flags.md.\n", r.text("items-list-total"))
+		fmt.Fprintf(out, "  - Its flag, %s: keep it, or remove it from the handlers, flagd/flags.json and docs/feature-flags.md.\n", name2("items-list-total"))
 	}
 	fmt.Fprintf(out, "  - The examples: cmd/api/%s_test.go's scenarios, wiremock/mappings/%s-*.json, docs/curl.md, the load test's mix if there is one, integration/features/%s.feature.\n", *plural, *plural, *plural)
 	fmt.Fprintln(out, "  - README.md and the docs, where they describe the API's resources.")
@@ -111,12 +132,13 @@ func run(args []string, dir string, out io.Writer) error {
 	return nil
 }
 
-// owned lists the files the example resource owns, which are copied: its
-// package, and each file named for it.
-func owned(dir string) ([]string, error) {
-	cmd := exec.Command("git", "ls-files", "-z", "internal/"+fromName,
-		"cmd/api/"+fromPlural+".go", "cmd/api/"+fromPlural+"_test.go",
-		"wiremock/mappings/"+fromPlural+"-*.json", "integration/features/"+fromPlural+".feature")
+// owned lists the files the resource named name (plural) owns, which are
+// copied: its package, and each file named for it.
+func owned(dir, name, plural string) ([]string, error) {
+	// #nosec G204 -- git, with paths built from names nameRE checked (or the example's)
+	cmd := exec.Command("git", "ls-files", "-z", "internal/"+name,
+		"cmd/api/"+plural+".go", "cmd/api/"+plural+"_test.go",
+		"wiremock/mappings/"+plural+"-*.json", "integration/features/"+plural+".feature")
 	cmd.Dir = dir
 	b, err := cmd.Output()
 	if err != nil {
@@ -129,92 +151,10 @@ func owned(dir string) ([]string, error) {
 		}
 	}
 	if len(files) == 0 {
-		return nil, fmt.Errorf("no internal/%s: the example resource, which new ones are copied from, has gone", fromName)
+		return nil, fmt.Errorf("no internal/%s: the resource to copy from isn't there", name)
 	}
 	return files, nil
 }
-
-// renamer renames the example resource's names to a new one's, keeping
-// their case: item to order, Items to Orders, ITEM to ORDER. It leaves the
-// names that aren't the resource's: "items", the list's key in every
-// resource's JSON, and Items, the field holding it (httpx.List).
-type renamer struct{ to, toPlural string }
-
-var wordRE = regexp.MustCompile(`(?i)` + fromName + `(s)?`)
-
-func (r renamer) text(s string) string {
-	var b strings.Builder
-	last := 0
-	for _, m := range wordRE.FindAllStringSubmatchIndex(s, -1) {
-		i, j := m[0], m[1]
-		word := s[i:j]
-		plural := m[2] >= 0
-		var prev, next byte
-		if i > 0 {
-			prev = s[i-1]
-		}
-		if j < len(s) {
-			next = s[j]
-		}
-		if r.keep(s, word, plural, prev, next, j) {
-			continue
-		}
-		b.WriteString(s[last:i])
-		repl := r.to
-		if plural {
-			repl = r.toPlural
-		}
-		switch {
-		case word == strings.ToUpper(word):
-			repl = strings.ToUpper(repl)
-		case word[0] >= 'A' && word[0] <= 'Z':
-			repl = strings.ToUpper(repl[:1]) + repl[1:]
-		}
-		article(&b, repl)
-		b.WriteString(repl)
-		last = j
-	}
-	b.WriteString(s[last:])
-	return b.String()
-}
-
-// keep reports whether word, at s[:j], isn't the resource's name.
-func (r renamer) keep(s, word string, plural bool, prev, next byte, j int) bool {
-	switch {
-	case word[0] >= 'a' && word[0] <= 'z' && isLetter(prev):
-		return true // inside a word: omitempty
-	case word == "items" && prev == '"' && (next == '"' || next == '.'):
-		return true // the list's JSON key, or a path into it
-	case word == "Items" && !isIdent(prev) && !isIdent(next):
-		// The list's field, where it's named as one: x.Items, Items: ...,
-		// Items []T.
-		rest := strings.TrimLeft(s[j:], " \t")
-		return prev == '.' || strings.HasPrefix(rest, ":") || strings.HasPrefix(rest, "[")
-	}
-	return false
-}
-
-// article makes the "a" or "an" b ends with, if any, the one word takes.
-func article(b *strings.Builder, word string) {
-	s := b.String()
-	an := strings.ContainsRune("aeiouAEIOU", rune(word[0]))
-	for _, a := range []string{"an ", "a ", "An ", "A "} {
-		if !strings.HasSuffix(s, a) || (len(s) > len(a) && isLetter(s[len(s)-len(a)-1])) {
-			continue
-		}
-		want := a[:1]
-		if an {
-			want += "n"
-		}
-		s = s[:len(s)-len(a)] + want + " "
-		b.Reset()
-		b.WriteString(s)
-		return
-	}
-}
-
-func isLetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
-func isIdent(c byte) bool  { return isLetter(c) || c >= '0' && c <= '9' || c == '_' }
 
 // optional are the files edits names that a service may not have: those of
 // the template's optional parts.
@@ -225,45 +165,61 @@ var optional = map[string]bool{
 // edits add the new resource to each list that names every resource.
 var edits = []struct {
 	file string
-	fn   func(s string, r renamer) (string, error)
+	// fn adds it: r renames the copied resource to the new one, and lit the
+	// example's names, which the literals here are written with, to the
+	// copied one's.
+	fn func(s string, r, lit rename.Renamer) (string, error)
 }{
-	{"cmd/api/resources.go", func(s string, r renamer) (string, error) {
-		return appendToList(s, "var resources = []resource{\n", "\t"+r.toPlural+"Resource,\n")
+	{"cmd/api/resources.go", func(s string, r, lit rename.Renamer) (string, error) {
+		return appendToList(s, "var resources = []resource{\n", "\t"+r.ToPlural+"Resource,\n")
 	}},
-	{"cmd/api/resources_test.go", func(s string, r renamer) (string, error) {
-		return appendToList(s, "var testResources = []testResource{\n", "\t"+r.toPlural+"Test,\n")
+	{"cmd/api/resources_test.go", func(s string, r, lit rename.Renamer) (string, error) {
+		return appendToList(s, "var testResources = []testResource{\n", "\t"+r.ToPlural+"Test,\n")
 	}},
-	{"docs/openapi.json", func(s string, r renamer) (string, error) {
-		return copyMembers(s, r, []string{`"/items": {`, `"/items/{id}": {`}, []string{`"ItemID": {`},
-			[]string{`"Item": {`, `"ItemInput": {`, `"ItemList": {`})
+	{"docs/openapi.json", func(s string, r, lit rename.Renamer) (string, error) {
+		return copyMembers(s, r, lits(lit, `"/items": {`, `"/items/{id}": {`), lits(lit, `"ItemID": {`),
+			lits(lit, `"Item": {`, `"ItemInput": {`, `"ItemList": {`))
 	}},
-	{"flagd/flags.json", func(s string, r renamer) (string, error) {
-		return copyMembers(s, r, []string{`"items-list-total": {`})
+	{"flagd/flags.json", func(s string, r, lit rename.Renamer) (string, error) {
+		return copyMembers(s, r, lits(lit, `"items-list-total": {`))
 	}},
-	{"integration/flagd/flags.json", func(s string, r renamer) (string, error) {
-		return copyMembers(s, r, []string{`"items-list-total": {`})
+	{"integration/flagd/flags.json", func(s string, r, lit rename.Renamer) (string, error) {
+		return copyMembers(s, r, lits(lit, `"items-list-total": {`))
 	}},
-	{"docs/feature-flags.md", func(s string, r renamer) (string, error) {
-		return copyLines(s, r, regexp.MustCompile("^\\| `items-list-total` \\|"))
+	{"docs/feature-flags.md", func(s string, r, lit rename.Renamer) (string, error) {
+		return copyLines(s, r, regexp.MustCompile("^\\| `"+lit.Text("items-list-total")+"` \\|"))
 	}},
-	{"perf/k6.js", func(s string, r renamer) (string, error) {
-		return copyLines(s, r, regexp.MustCompile(`^  \{ weight: .*route: '[A-Z]+ /items[/'{]`))
+	{"perf/k6.js", func(s string, r, lit rename.Renamer) (string, error) {
+		return copyLines(s, r, regexp.MustCompile(`^  \{ weight: .*route: '[A-Z]+ /`+lit.ToPlural+`[/'{]`))
 	}},
-	{"docs/architecture.md", func(s string, r renamer) (string, error) {
-		return copyLines(s, r, rowRE)
+	{"docs/architecture.md", func(s string, r, lit rename.Renamer) (string, error) {
+		return copyLines(s, r, rowRE(lit.To))
 	}},
-	{"docs/curl.md", func(s string, r renamer) (string, error) {
+	{"docs/curl.md", func(s string, r, lit rename.Renamer) (string, error) {
 		const before = "\n## Plain curl\n"
 		i := strings.Index(s, before)
 		if i < 0 {
 			return "", errors.New("no \"## Plain curl\" section to put the new resource's examples before")
 		}
-		return s[:i] + r.text(curlSection) + s[i:], nil
+		return s[:i] + r.Text(lit.Text(curlSection)) + s[i:], nil
 	}},
 }
 
-// rowRE matches the package table's rows for the example's packages.
-var rowRE = regexp.MustCompile("^\\| `internal/item(/[a-z]+)?` \\|")
+// rowRE matches the package table's rows for the packages of the resource
+// called name.
+func rowRE(name string) *regexp.Regexp {
+	return regexp.MustCompile("^\\| `internal/" + regexp.QuoteMeta(name) + "(/[a-z]+)?` \\|")
+}
+
+// lits is opens, written with the example's names, with the copied
+// resource's.
+func lits(lit rename.Renamer, opens ...string) []string {
+	out := make([]string, len(opens))
+	for i, o := range opens {
+		out[i] = lit.Text(o)
+	}
+	return out
+}
 
 // curlSection is the new resource's examples in docs/curl.md, renamed; the
 // WireMock stubs, copied, hold the same three.
@@ -299,7 +255,7 @@ func appendToList(s, open, entry string) (string, error) {
 }
 
 // copyLines adds, after each line that matches re, its copy renamed.
-func copyLines(s string, r renamer, re *regexp.Regexp) (string, error) {
+func copyLines(s string, r rename.Renamer, re *regexp.Regexp) (string, error) {
 	lines := strings.SplitAfter(s, "\n")
 	var b strings.Builder
 	n := 0
@@ -317,7 +273,7 @@ func copyLines(s string, r renamer, re *regexp.Regexp) (string, error) {
 				start--
 			}
 			for _, c := range lines[start : i+1] {
-				b.WriteString(r.text(c))
+				b.WriteString(r.Text(c))
 			}
 		}
 	}
@@ -331,7 +287,7 @@ func copyLines(s string, r renamer, re *regexp.Regexp) (string, error) {
 // copy renamed. A group is members side by side, each named by how it opens
 // (`"key": {`), found once in s. It works on the text, so the file keeps its
 // layout.
-func copyMembers(s string, r renamer, groups ...[]string) (string, error) {
+func copyMembers(s string, r rename.Renamer, groups ...[]string) (string, error) {
 	for _, group := range groups {
 		start, end := -1, -1
 		for _, open := range group {
@@ -351,7 +307,7 @@ func copyMembers(s string, r renamer, groups ...[]string) (string, error) {
 			end = close
 		}
 		indent := s[strings.LastIndexByte(s[:start], '\n')+1 : start]
-		s = s[:end+1] + ",\n" + indent + r.text(s[start:end+1]) + s[end+1:]
+		s = s[:end+1] + ",\n" + indent + r.Text(s[start:end+1]) + s[end+1:]
 	}
 	return s, nil
 }

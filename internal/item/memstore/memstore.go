@@ -25,9 +25,9 @@ import (
 
 // Store is an item.Store in memory. It holds at most MaxItems.
 type Store struct {
-	mu    sync.RWMutex
-	items map[item.ID]item.Item
-	now   func() time.Time
+	mu   sync.RWMutex
+	byID map[item.ID]item.Item
+	now  func() time.Time
 }
 
 var _ item.Store = (*Store)(nil)
@@ -41,7 +41,7 @@ var ErrFull = fmt.Errorf("the in-memory store holds its maximum of %d items", Ma
 
 // New returns an empty Store.
 func New() *Store {
-	return &Store{items: make(map[item.ID]item.Item), now: time.Now}
+	return &Store{byID: make(map[item.ID]item.Item), now: time.Now}
 }
 
 // Seed stores items exactly as given, IDs and timestamps included, replacing
@@ -51,7 +51,7 @@ func (s *Store) Seed(items ...item.Item) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, it := range items {
-		s.items[it.ID] = it
+		s.byID[it.ID] = it
 	}
 }
 
@@ -61,8 +61,8 @@ func (s *Store) List(_ context.Context, p item.Page) (item.Listing, error) {
 		return item.Listing{}, err
 	}
 	s.mu.RLock()
-	all := make([]item.Item, 0, len(s.items))
-	for _, it := range s.items {
+	all := make([]item.Item, 0, len(s.byID))
+	for _, it := range s.byID {
 		all = append(all, it)
 	}
 	s.mu.RUnlock()
@@ -131,7 +131,7 @@ func decodeCursor(c item.Cursor) (*position, error) {
 func (s *Store) Get(_ context.Context, id item.ID) (item.Item, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	it, ok := s.items[id]
+	it, ok := s.byID[id]
 	if !ok {
 		return item.Item{}, item.ErrNotFound
 	}
@@ -152,10 +152,10 @@ func (s *Store) Create(_ context.Context, d item.Draft) (item.Item, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.items) >= MaxItems {
+	if len(s.byID) >= MaxItems {
 		return item.Item{}, ErrFull
 	}
-	s.items[it.ID] = it
+	s.byID[it.ID] = it
 	return it, nil
 }
 
@@ -165,24 +165,24 @@ func (s *Store) Update(_ context.Context, id item.ID, d item.Draft) (item.Item, 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	cur, ok := s.items[id]
+	cur, ok := s.byID[id]
 	if !ok {
 		return item.Item{}, item.ErrNotFound
 	}
 	cur.Name = d.Name()
 	cur.Description = d.Description()
 	cur.UpdatedAt = s.now().UTC()
-	s.items[cur.ID] = cur
+	s.byID[cur.ID] = cur
 	return cur, nil
 }
 
 func (s *Store) Delete(_ context.Context, id item.ID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.items[id]; !ok {
+	if _, ok := s.byID[id]; !ok {
 		return item.ErrNotFound
 	}
-	delete(s.items, id)
+	delete(s.byID, id)
 	return nil
 }
 

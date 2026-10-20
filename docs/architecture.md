@@ -73,8 +73,9 @@ updates this table, and so the architecture, in the same pull request.
 | ------- | ---- | ---- | ---------- |
 | `cmd/api` | composition root | Reads config, wires everything, runs the server | any runtime package |
 | `cmd/apikey` | tool | Generates an API key and its `API_KEYS` entry | `internal/apikey` |
-| `cmd/newresource` | tool | Adds a resource to the API, copied from `/items` (`make resource`) | none |
-| `cmd/initservice` | tool | Makes a copy of the template a service of its own (`make init`) | none |
+| `cmd/newresource` | tool | Adds a resource to the API, copied from `/items` (`make resource`) | `internal/rename` |
+| `cmd/initservice` | tool | Makes a copy of the template a service of its own (`make init`) | `internal/rename` |
+| `internal/rename` | tool | Renames a resource in text, keeping case and articles: the tools' (`make resource`) | nothing |
 | `cmd/apidiff` | tool | Compares two versions of the OpenAPI spec: what's breaking for clients, what's additive, and the version bump that needs | none |
 | `internal/item` | feature | The item model (value objects that enforce its rules), the `Store` interface, the `/items` handlers and the API's JSON shapes (ADR-0030) | `internal/httpx` |
 | `internal/item/httpstore` | adapter | The `Store` on the upstream, over HTTP, translating the upstream's JSON and classifying its failures (ADR-0031) | `internal/item`, `internal/jsoncall`, `internal/logx` |

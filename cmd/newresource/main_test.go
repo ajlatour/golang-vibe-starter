@@ -7,52 +7,22 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ajlatour/golang-vibe-starter/internal/rename"
 )
 
-func TestRename(t *testing.T) {
-	order := renamer{to: "order", toPlural: "orders"}
-	category := renamer{to: "category", toPlural: "categories"}
-	for _, tt := range []struct {
-		r        renamer
-		in, want string
-	}{
-		{order, "package item", "package order"},
-		{order, `"github.com/x/y/internal/item/itemtest"`, `"github.com/x/y/internal/order/ordertest"`},
-		{order, "func compareItems(a, b item.Item) int", "func compareOrders(a, b order.Order) int"},
-		{order, "ErrInvalidItem, MaxItems, upstreamItem, ITEM", "ErrInvalidOrder, MaxOrders, upstreamOrder, ORDER"},
-		{order, "GET /items/{id}, items-list-total, new-item", "GET /orders/{id}, orders-list-total, new-order"},
-		{order, "Items created in the same tick", "Orders created in the same tick"},
-		{order, "Feature: Items\n", "Feature: Orders\n"},
-
-		// Articles follow the new word.
-		{order, "an item, An item, a widget", "an order, An order, a widget"},
-		{category, "an item, a gadget", "a category, a gadget"},
-		{category, "Getting an item's items", "Getting a category's categories"},
-
-		// Not the resource's names: inside a word, the list's JSON key and
-		// the field holding it.
-		{order, "`json:\"description,omitempty\"`", "`json:\"description,omitempty\"`"},
-		{order, `{"items": [], "items.0.id"}`, `{"items": [], "items.0.id"}`},
-		{order, "l.Items, Items: x, Items []T", "l.Items, Items: x, Items []T"},
-	} {
-		if got := tt.r.text(tt.in); got != tt.want {
-			t.Errorf("%s: text(%q) = %q, want %q", tt.r.to, tt.in, got, tt.want)
-		}
-	}
-}
-
 func TestCopyMembers(t *testing.T) {
-	r := renamer{to: "order", toPlural: "orders"}
-	in := "{\n  \"paths\": {\n    \"/items\": {\"get\": {\"summary\": \"{ a brace\"}},\n    \"/items/{id}\": {}\n  },\n  \"x\": {}\n}\n"
-	got, err := copyMembers(in, r, []string{`"/items": {`, `"/items/{id}": {`})
+	r := rename.Renamer{From: "zebra", FromPlural: "zebras", To: "order", ToPlural: "orders"}
+	in := "{\n  \"paths\": {\n    \"/zebras\": {\"get\": {\"summary\": \"{ a brace\"}},\n    \"/zebras/{id}\": {}\n  },\n  \"x\": {}\n}\n"
+	got, err := copyMembers(in, r, []string{`"/zebras": {`, `"/zebras/{id}": {`})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "{\n  \"paths\": {\n    \"/items\": {\"get\": {\"summary\": \"{ a brace\"}},\n    \"/items/{id}\": {},\n    \"/orders\": {\"get\": {\"summary\": \"{ a brace\"}},\n    \"/orders/{id}\": {}\n  },\n  \"x\": {}\n}\n"
+	want := "{\n  \"paths\": {\n    \"/zebras\": {\"get\": {\"summary\": \"{ a brace\"}},\n    \"/zebras/{id}\": {},\n    \"/orders\": {\"get\": {\"summary\": \"{ a brace\"}},\n    \"/orders/{id}\": {}\n  },\n  \"x\": {}\n}\n"
 	if got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
-	if _, err := copyMembers(in, r, []string{`"/items/{id}": {`, `"x": {`}); err == nil {
+	if _, err := copyMembers(in, r, []string{`"/zebras/{id}": {`, `"x": {`}); err == nil {
 		t.Error("members not side by side: no error")
 	}
 	if _, err := copyMembers(in, r, []string{`"nope": {`}); err == nil {
@@ -61,13 +31,13 @@ func TestCopyMembers(t *testing.T) {
 }
 
 func TestCopyLines(t *testing.T) {
-	r := renamer{to: "order", toPlural: "orders"}
-	in := "| a |\n| `internal/item` | x |\n| `internal/item/memstore` | y |\n| b |\n"
-	got, err := copyLines(in, r, rowRE)
+	r := rename.Renamer{From: "zebra", FromPlural: "zebras", To: "order", ToPlural: "orders"}
+	in := "| a |\n| `internal/zebra` | x |\n| `internal/zebra/memstore` | y |\n| b |\n"
+	got, err := copyLines(in, r, rowRE("zebra"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "| a |\n| `internal/item` | x |\n| `internal/item/memstore` | y |\n| `internal/order` | x |\n| `internal/order/memstore` | y |\n| b |\n"
+	want := "| a |\n| `internal/zebra` | x |\n| `internal/zebra/memstore` | y |\n| `internal/order` | x |\n| `internal/order/memstore` | y |\n| b |\n"
 	if got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
@@ -80,7 +50,7 @@ func TestResourceRefuses(t *testing.T) {
 		"capitals":               {"-name", "Order"},
 		"a dash":                 {"-name", "line-item"},
 		"a plural that's itself": {"-name", "sheep", "-plural", "sheep"},
-		"the example's name":     {"-name", "lineitem"},
+		"the example's name":     {"-name", "line" + fromName},
 	} {
 		if err := run(args, dir, io.Discard); err == nil {
 			t.Errorf("%s: no error", name)
@@ -96,9 +66,14 @@ func TestResourceOnACopy(t *testing.T) {
 	if os.Getenv("TEMPLATE_CHECK") == "" {
 		t.Skip("TEMPLATE_CHECK is not set; make resource-check runs this")
 	}
+	// A plural that isn't the name with an s, and not this service's own.
+	name, plural := "category", "categories"
+	if fromName == name {
+		name, plural = "person", "people"
+	}
 	dir := copyRepo(t)
 	var out strings.Builder
-	if err := run([]string{"-name", "category", "-plural", "categories"}, dir, &out); err != nil {
+	if err := run([]string{"-name", name, "-plural", plural}, dir, &out); err != nil {
 		t.Fatal(err)
 	}
 	t.Log(out.String())
@@ -168,20 +143,22 @@ func copyRepo(t *testing.T) string {
 func TestRun(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string]string{
-		"internal/item/item.go":              "// Package item is an item.\npackage item\n\ntype Item struct{ Items []int `json:\"items\"` }\n",
-		"cmd/api/items.go":                   "package main\n\nvar itemsResource = 1\n",
-		"cmd/api/items_test.go":              "package main\n",
-		"wiremock/mappings/items-read.json":  `{"request": {"url": "/items"}}` + "\n",
-		"integration/features/items.feature": "Feature: Items\n",
-		"cmd/api/resources.go":               "package main\n\nvar resources = []resource{\n\titemsResource,\n}\n",
-		"cmd/api/resources_test.go":          "package main\n\nvar testResources = []testResource{\n\titemsTest,\n}\n",
-		"docs/openapi.json":                  "{\n  \"paths\": {\n    \"/items\": {},\n    \"/items/{id}\": {}\n  },\n  \"parameters\": {\n    \"ItemID\": {}\n  },\n  \"schemas\": {\n    \"Item\": {},\n    \"ItemInput\": {},\n    \"ItemList\": {}\n  }\n}\n",
-		"flagd/flags.json":                   "{\n  \"flags\": {\n    \"items-list-total\": {}\n  }\n}\n",
-		"integration/flagd/flags.json":       "{\n  \"flags\": {\n    \"items-list-total\": {}\n  }\n}\n",
-		"docs/feature-flags.md":              "| `items-list-total` | boolean |\n",
-		"perf/k6.js":                         "const mix = [\n  { weight: 40, route: 'GET /items', call: () => 1 },\n];\n",
-		"docs/architecture.md":               "| `internal/item` | feature |\n",
-		"docs/curl.md":                       "# Calling the API\n\n## Plain curl\n",
+		"internal/zebra/zebra.go": "// Package zebra is a zebra.\npackage zebra\n\ntype Zebra struct{ Items []int `json:\"items\"` }\n",
+		// A service named for its resource: the module path stays as it is.
+		"go.mod":                              "module github.com/acme/zebras\n",
+		"cmd/api/zebras.go":                   "package main\n\nimport _ \"github.com/acme/zebras/internal/zebra\"\n\nvar zebrasResource = 1\n",
+		"cmd/api/zebras_test.go":              "package main\n",
+		"wiremock/mappings/zebras-read.json":  `{"request": {"url": "/zebras"}}` + "\n",
+		"integration/features/zebras.feature": "Feature: Zebras\n",
+		"cmd/api/resources.go":                "package main\n\nvar resources = []resource{\n\titemsResource,\n}\n",
+		"cmd/api/resources_test.go":           "package main\n\nvar testResources = []testResource{\n\titemsTest,\n}\n",
+		"docs/openapi.json":                   "{\n  \"paths\": {\n    \"/zebras\": {},\n    \"/zebras/{id}\": {}\n  },\n  \"parameters\": {\n    \"ZebraID\": {}\n  },\n  \"schemas\": {\n    \"Zebra\": {},\n    \"ZebraInput\": {},\n    \"ZebraList\": {}\n  }\n}\n",
+		"flagd/flags.json":                    "{\n  \"flags\": {\n    \"zebras-list-total\": {}\n  }\n}\n",
+		"integration/flagd/flags.json":        "{\n  \"flags\": {\n    \"zebras-list-total\": {}\n  }\n}\n",
+		"docs/feature-flags.md":               "| `zebras-list-total` | boolean |\n",
+		"perf/k6.js":                          "const mix = [\n  { weight: 40, route: 'GET /zebras', call: () => 1 },\n];\n",
+		"docs/architecture.md":                "| `internal/zebra` | feature |\n",
+		"docs/curl.md":                        "# Calling the API\n\n## Plain curl\n",
 	}
 	for path, content := range files {
 		p := filepath.Join(dir, path)
@@ -201,17 +178,17 @@ func TestRun(t *testing.T) {
 	}
 
 	var out strings.Builder
-	if err := run([]string{"-name", "order"}, dir, &out); err != nil {
+	if err := run([]string{"-name", "order", "-from", "zebra"}, dir, &out); err != nil {
 		t.Fatal(err)
 	}
 	for path, want := range map[string]string{
 		"internal/order/order.go":             "package order\n\ntype Order struct{ Items []int `json:\"items\"` }",
-		"cmd/api/orders.go":                   "var ordersResource = 1",
+		"cmd/api/orders.go":                   "import _ \"github.com/acme/zebras/internal/order\"\n\nvar ordersResource = 1",
 		"wiremock/mappings/orders-read.json":  `"/orders"`,
 		"integration/features/orders.feature": "Feature: Orders",
 		"cmd/api/resources.go":                "\titemsResource,\n\tordersResource,\n}",
 		"cmd/api/resources_test.go":           "\titemsTest,\n\tordersTest,\n}",
-		"docs/openapi.json":                   "\"/items/{id}\": {},\n    \"/orders\": {},\n    \"/orders/{id}\": {}",
+		"docs/openapi.json":                   "\"/zebras/{id}\": {},\n    \"/orders\": {},\n    \"/orders/{id}\": {}",
 		"flagd/flags.json":                    `"orders-list-total": {}`,
 		"docs/feature-flags.md":               "`orders-list-total`",
 		"perf/k6.js":                          "route: 'GET /orders'",
@@ -229,7 +206,7 @@ func TestRun(t *testing.T) {
 	if !strings.Contains(out.String(), "Added /orders") {
 		t.Errorf("output: %s", out.String())
 	}
-	if err := run([]string{"-name", "order"}, dir, io.Discard); err == nil {
+	if err := run([]string{"-name", "order", "-from", "zebra"}, dir, io.Discard); err == nil {
 		t.Error("adding it twice: no error")
 	}
 }

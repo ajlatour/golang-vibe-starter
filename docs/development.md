@@ -20,6 +20,7 @@ template" or a plain clone, and then one command makes the copy its own:
 ```sh
 make init NAME=orders MODULE=github.com/acme/orders                   # everything
 make init NAME=orders MODULE=github.com/acme/orders WITHOUT=tracing   # leaving tracing out
+make init NAME=orders MODULE=github.com/acme/orders RESOURCE=order    # /orders, not /items
 ```
 
 `NAME` is the service's name, in lower-case letters, digits and dashes: it names the images, the
@@ -37,6 +38,12 @@ version of the template it came from; `changes/` is emptied; the spec's version 
 template's audit page goes. The example `/items` resource, the decision records and the license
 stay. It prints what's left to do by hand: the license's holder, the repository's settings, the
 README's opening, and when to remove `/items`.
+
+`RESOURCE=order` (and `RESOURCE_PLURAL=` when it isn't the name with an s) gives the example
+resource the name of the service's first: `/items` becomes `/orders` everywhere, its package,
+files, types, routes, spec, stubs, tests and docs, so the service starts with the resource it means
+to have, to give its fields ([adding a resource](#adding-a-resource) lists where). Only the lists'
+JSON key, `items`, which every resource's list shares, stays.
 
 Some of the template is optional, and a service can leave it out: `WITHOUT=tracing`, or several,
 comma-separated, or `WITHOUT=all`. `go run ./cmd/initservice -list-features` lists them:

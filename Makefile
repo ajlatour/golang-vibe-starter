@@ -86,10 +86,11 @@ help: ## List the targets
 # feature:init
 .PHONY: init init-check init-docs-check
 
-init: ## Make this copy a service of its own: make init NAME=orders MODULE=github.com/acme/orders [WITHOUT=tracing]
+init: ## Make this copy a service of its own: make init NAME=orders MODULE=github.com/acme/orders [WITHOUT=tracing] [RESOURCE=order]
 	@if [ -z "$(NAME)" ] || [ -z "$(MODULE)" ]; then \
 		echo "usage: make init NAME=<service name> MODULE=<Go module path>"; exit 2; fi
-	go run ./cmd/initservice -name $(NAME) -module $(MODULE) $(if $(WITHOUT),-without $(WITHOUT))
+	go run ./cmd/initservice -name $(NAME) -module $(MODULE) $(if $(WITHOUT),-without $(WITHOUT)) \
+		$(if $(RESOURCE),-resource $(RESOURCE)) $(if $(RESOURCE_PLURAL),-resource-plural $(RESOURCE_PLURAL))
 
 init-check: ## Run make init on copies of this repository, with each feature left out, then vet and test them
 	TEMPLATE_CHECK=1 go test -count=1 -timeout 25m -run TestInitOnACopy ./cmd/initservice
@@ -97,13 +98,14 @@ init-check: ## Run make init on copies of this repository, with each feature lef
 # Each feature left out on its own, and all of them.
 INIT_CASES = $(shell go run ./cmd/initservice -list-features | sed -n 's/.*"Name": "\(.*\)",/\1/p') all
 
-init-docs-check: ## Run make init on copies, each feature left out and then all, and check each one's scripts, workflows and docs site (Docker)
-	@set -e; for without in $(INIT_CASES); do \
-		echo "== make init WITHOUT=$$without"; \
+init-docs-check: ## Run make init on copies (each feature left out, all, and the resource renamed), and check their scripts, workflows and docs sites (Docker)
+	@set -e; for without in $(INIT_CASES) rename; do \
+		args="-without $$without"; [ "$$without" = rename ] && args="-resource category -resource-plural categories"; \
+		echo "== make init $$args"; \
 		rm -rf bin/init-copy; git worktree prune; \
 		git worktree add -q --detach bin/init-copy HEAD; \
-		(cd bin/init-copy && go run ./cmd/initservice -name orders -module github.com/acme/orders -without $$without >/dev/null && \
-			git add -A && $(MAKE) -s lint-files docs-check >/dev/null) || { echo "FAILED: WITHOUT=$$without"; exit 1; }; \
+		(cd bin/init-copy && go run ./cmd/initservice -name orders -module github.com/acme/orders $$args >/dev/null && \
+			git add -A && $(MAKE) -s lint-files docs-check >/dev/null) || { echo "FAILED: $$args"; exit 1; }; \
 		git worktree remove --force bin/init-copy; \
 	done
 # end feature:init
