@@ -1,0 +1,19 @@
+{
+  "sha": "60011f4ad71fc18b59ed02cb63abc1dd9db43f6e",
+  "time": "2026-10-20T09:09:17Z",
+  "subject": "Merge pull request #81 from ajlatour/init-flags",
+  "minutes": 25,
+  "heap_live_bytes": {
+    "start": 908072,
+    "end": 957384
+  },
+  "goroutines": {
+    "start": 47,
+    "end": 47
+  },
+  "mapped_bytes": {
+    "start": 18209032,
+    "end": 18209032
+  },
+  "grew": []
+}
