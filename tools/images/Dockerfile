@@ -6,10 +6,10 @@
 # anywhere Dependabot doesn't look.
 
 # The docs site's renderer (make docs).
-FROM pandoc/core:3.7@sha256:388e8ed4db8f9586e924f6fed4be88f64cada231777d7f4b8f10a8ae438a7ec9 AS pandoc
+FROM pandoc/core:3.11@sha256:62518bfb6833705dc90a1634d8d879299bd820b3f74ad3b32fba8b618452553a AS pandoc
 
 # The API spec's linter and renderer (make spec, spec-lint, docs).
-FROM redocly/cli:2.57.0@sha256:e320090ecd380878ff2aa671a928d5ac28fcbb7bb6230250d772790811125aea AS redocly
+FROM redocly/cli:2.70.0@sha256:f09828706881234790394d0f4032b2956c902f093e80ef08ab6ba3234c1aca7a AS redocly
 
 # Linters for the shell scripts and the GitHub workflows (make lint).
 FROM koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d AS shellcheck
