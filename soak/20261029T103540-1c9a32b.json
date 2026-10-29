@@ -1,0 +1,19 @@
+{
+  "sha": "1c9a32b408d93f5658a2ffb3f174bb42365f2f0a",
+  "time": "2026-10-29T10:35:38Z",
+  "subject": "Merge pull request #82 from ajlatour/init-resource",
+  "minutes": 25,
+  "heap_live_bytes": {
+    "start": 949656,
+    "end": 954976
+  },
+  "goroutines": {
+    "start": 47,
+    "end": 47
+  },
+  "mapped_bytes": {
+    "start": 18471176,
+    "end": 18471176
+  },
+  "grew": []
+}
