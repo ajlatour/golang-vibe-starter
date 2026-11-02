@@ -6,10 +6,10 @@
 # anywhere Dependabot doesn't look.
 
 # The docs site's renderer (make docs).
-FROM pandoc/core:3.7@sha256:388e8ed4db8f9586e924f6fed4be88f64cada231777d7f4b8f10a8ae438a7ec9 AS pandoc
+FROM pandoc/core:3.11@sha256:62518bfb6833705dc90a1634d8d879299bd820b3f74ad3b32fba8b618452553a AS pandoc
 
 # The API spec's linter and renderer (make spec, spec-lint, docs).
-FROM redocly/cli:2.57.0@sha256:e320090ecd380878ff2aa671a928d5ac28fcbb7bb6230250d772790811125aea AS redocly
+FROM redocly/cli:2.72.1@sha256:d39a229ebd8250fea62f44c377ddb04797e8a155140eda49db17f1caaa9334ff AS redocly
 
 # Linters for the shell scripts and the GitHub workflows (make lint).
 FROM koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d AS shellcheck
@@ -17,5 +17,5 @@ FROM rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fe
 
 # feature:release
 # The release image's SBOM generator (BuildKit's --sbom; the Release workflow).
-FROM docker/buildkit-syft-scanner:stable-1@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9 AS syft
+FROM docker/buildkit-syft-scanner:stable-1@sha256:873a7458c3c8ac8e32c7b796c10e1600b07b963d2aa000a72a2d97aaaa2d6315 AS syft
 # end feature:release
